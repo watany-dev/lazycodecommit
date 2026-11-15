@@ -106,3 +106,12 @@ describe("concurrent saves", () => {
     expect(await s.cache.get("home")).toBe(2);
   });
 });
+
+describe("flush", () => {
+  it("waits for saves in flight", async () => {
+    const s = state();
+    void s.cache.set("home", 1);
+    await s.flush();
+    expect(JSON.parse(await readFile(join(dir, "cache.json"), "utf8"))).toEqual({ home: 1 });
+  });
+});

@@ -5,6 +5,7 @@ import { createGit } from "./git/git.js";
 import { loadConfig } from "./state/config.js";
 import { createLocalState } from "./state/local.js";
 
+let quit = false;
 process.exitCode = await run(process.argv.slice(2), {
   io: processIo(),
   createGit,
@@ -15,4 +16,11 @@ process.exitCode = await run(process.argv.slice(2), {
   openReview: async (request) => (await import("./tui/index.js")).openReview(request),
   openBranches: async (request) => (await import("./tui/index.js")).openBranches(request),
   openBrowse: async (request) => (await import("./tui/index.js")).openBrowse(request),
+  openHome: async (request) => {
+    await (await import("./tui/index.js")).openHome(request);
+    // Detail calls still in flight after q would keep the process (and the
+    // terminal) for seconds; nothing is waiting for them.
+    quit = true;
+  },
 });
+if (quit) process.exit();

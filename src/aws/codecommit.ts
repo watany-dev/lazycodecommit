@@ -12,6 +12,7 @@ import {
   GetRepositoryCommand,
   ListBranchesCommand,
   ListPullRequestsCommand,
+  ListRepositoriesCommand,
   MergePullRequestByFastForwardCommand,
   MergePullRequestBySquashCommand,
   MergePullRequestByThreeWayCommand,
@@ -80,6 +81,8 @@ export interface CodeCommitApi {
   region(): Promise<string>;
   /** The caller's ARN (sts:GetCallerIdentity): "me" for the inbox. */
   callerArn(): Promise<string>;
+  /** Every repository name in the region, sorted by name. */
+  listRepositories(): Promise<string[]>;
   defaultBranch(repository: string): Promise<string | undefined>;
   cloneUrls(repository: string): Promise<{ https: string; ssh: string }>;
   listBranches(repository: string): Promise<string[]>;
@@ -181,6 +184,23 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
       const out = await sts.send(new GetCallerIdentityCommand({}));
       if (!out.Arn) throw new Error("sts:GetCallerIdentity returned no ARN");
       return out.Arn;
+    },
+
+    async listRepositories() {
+      const names: string[] = [];
+      let nextToken: string | undefined;
+      do {
+        const out = await client.send(
+          new ListRepositoriesCommand({
+            sortBy: "repositoryName",
+            order: "ascending",
+            ...(nextToken ? { nextToken } : {}),
+          }),
+        );
+        for (const r of out.repositories ?? []) if (r.repositoryName) names.push(r.repositoryName);
+        nextToken = out.nextToken;
+      } while (nextToken);
+      return names;
     },
 
     async defaultBranch(repository) {

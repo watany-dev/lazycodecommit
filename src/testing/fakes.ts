@@ -69,6 +69,7 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     writes,
     region: async () => "us-west-2",
     callerArn: async () => "arn:aws:iam::123456789012:user/me",
+    listRepositories: async () => [...new Set(prs.map((p) => p.repository))].toSorted(),
     defaultBranch: async () => "main",
     cloneUrls: async (repo) => ({
       https: `https://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
@@ -146,6 +147,7 @@ export function fakeState(): FakeState {
     identities,
     seenAt,
     sections,
+    flush: async () => {},
     identity: {
       get: async (k) => identities.get(k),
       set: async (k, v) => void identities.set(k, v),

@@ -1,10 +1,12 @@
 import { render } from "ink";
 import type { BranchActions } from "../core/branch.js";
 import type { BrowseActions } from "../core/browse.js";
+import type { HomeActions } from "../core/home.js";
 import { openReviewService, type ReviewService } from "../core/review.js";
 import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
+import { HomeApp } from "./HomeApp.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
 
 // This module is loaded with a dynamic import, so CLI subcommands never load Ink or React.
@@ -14,6 +16,8 @@ interface ServiceRequest {
   readonly profile?: string;
   /** Set inside a clone of the repository: diffs then come from git. */
   readonly git?: Git;
+  /** Called when a PR is opened or left, for the home screen's unread marks. */
+  readonly markSeen?: (pullRequestId: string) => void;
 }
 
 export interface ReviewRequest extends ServiceRequest {
@@ -30,14 +34,21 @@ export interface BranchesRequest extends ServiceRequest {
   createPullRequest(head: string): Promise<{ pullRequestId: string } | { message: string }>;
 }
 
+export interface HomeRequest extends ServiceRequest {
+  readonly actions: HomeActions;
+  /** The clone's repository: only its PRs take their diffs from `git`. */
+  readonly cloneRepository?: string;
+}
+
 function service(request: ServiceRequest): ReviewService {
-  return openReviewService(
+  const s = openReviewService(
     {
       ...(request.region ? { region: request.region } : {}),
       ...(request.profile ? { profile: request.profile } : {}),
     },
     request.git,
   );
+  return request.markSeen ? { ...s, markSeen: request.markSeen } : s;
 }
 
 export async function openReview(request: ReviewRequest): Promise<void> {
@@ -78,5 +89,21 @@ export interface BrowseRequest {
 /** The remote tree and files through the API only (spec: clone なしブラウズ). */
 export async function openBrowse(request: BrowseRequest): Promise<void> {
   const app = render(<BrowseApp actions={request.actions} path={request.path} />);
+  await app.waitUntilExit();
+}
+
+export async function openHome(request: HomeRequest): Promise<void> {
+  const { git, cloneRepository, ...rest } = request;
+  const base = { ...rest, markSeen: request.actions.markSeen };
+  const withGit = git ? service({ ...base, git }) : undefined;
+  const withoutGit = service(base);
+  const app = render(
+    <HomeApp
+      actions={request.actions}
+      reviewService={(repository) =>
+        withGit && repository === cloneRepository ? withGit : withoutGit
+      }
+    />,
+  );
   await app.waitUntilExit();
 }

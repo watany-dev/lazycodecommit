@@ -29,7 +29,10 @@ type Operation =
   | "getPullRequestActivity";
 
 /** What the review screen calls: the aws/review.ts functions with the client bound. */
-export type ReviewService = { readonly [K in Operation]: WithoutClient<(typeof aws)[K]> };
+export type ReviewService = { readonly [K in Operation]: WithoutClient<(typeof aws)[K]> } & {
+  /** Records that the user opened a PR, for the home screen's unread marks. */
+  readonly markSeen?: (pullRequestId: string) => void;
+};
 
 const MAX_COMMITS = 100;
 

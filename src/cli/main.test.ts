@@ -5,7 +5,7 @@ import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import { type FakeState, fakeApi, fakeGit, fakeState, pullRequest } from "../testing/fakes.js";
-import type { BranchesRequest, BrowseRequest, ReviewRequest } from "../tui/index.js";
+import type { BranchesRequest, BrowseRequest, HomeRequest, ReviewRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
 interface Setup {
@@ -28,6 +28,7 @@ async function cli(args: string[], setup: Setup = {}) {
   const reviews: ReviewRequest[] = [];
   const branchScreens: BranchesRequest[] = [];
   const browseScreens: BrowseRequest[] = [];
+  const homes: HomeRequest[] = [];
   const deps: Deps = {
     io: {
       out: (l) => out.push(l),
@@ -58,6 +59,7 @@ async function cli(args: string[], setup: Setup = {}) {
       await setup.onBranches?.(request);
     },
     openBrowse: async (request) => void browseScreens.push(request),
+    openHome: async (request) => void homes.push(request),
   };
   const code = await run(args, deps);
   return {
@@ -69,6 +71,7 @@ async function cli(args: string[], setup: Setup = {}) {
     reviews,
     branchScreens,
     browseScreens,
+    homes,
   };
 }
 
@@ -630,7 +633,10 @@ describe("completion", () => {
       expect(r.out).toContain("lazycc");
       expect(r.apiOptions).toEqual([]);
     }
-    expect((await cli(["completion", "bash"])).out).toContain('"pr merge") flags="');
+    const bash = (await cli(["completion", "bash"])).out;
+    expect(bash).toContain('"pr merge") flags="');
+    expect(bash).toContain("status");
+    expect(bash).not.toMatch(/\bhome\b/);
   });
 
   it.each([[["completion"]], [["completion", "tcsh"]]])("exits 2 for %j", async (args) => {
@@ -781,6 +787,7 @@ describe("the review screen on a terminal", () => {
         repository: "demo",
         start: { pullRequestId: "3" },
         region: "ap-northeast-1",
+        markSeen: expect.any(Function),
         git: expect.anything(),
       },
     ]);
@@ -792,7 +799,13 @@ describe("the review screen on a terminal", () => {
       git: { topLevel: async () => null },
     });
     expect(r.reviews).toEqual([
-      { repository: "demo", start: null, region: "us-west-2", profile: "p" },
+      {
+        repository: "demo",
+        start: null,
+        region: "us-west-2",
+        profile: "p",
+        markSeen: expect.any(Function),
+      },
     ]);
   });
 
@@ -1074,5 +1087,86 @@ describe("terminal safety", () => {
     const r = await cli(["pr", "view", "3", "--json"], { api });
     expect(r.out).not.toMatch(CONTROL);
     expect(json(r.out).title).toBe(hostile);
+  });
+});
+
+describe("home", () => {
+  const ME = "arn:aws:iam::123456789012:user/me";
+
+  it("opens on the clone's repository on a terminal", async () => {
+    const state = fakeState();
+    const r = await cli([], { interactive: true, state });
+    expect(r.code).toBe(0);
+    const [home] = r.homes;
+    expect(home).toMatchObject({ region: "ap-northeast-1", cloneRepository: "demo" });
+    expect(home?.git).toBeDefined();
+    expect(home?.actions).toMatchObject({ me: ME, region: "ap-northeast-1", initial: ["demo"] });
+  });
+
+  it("opens on the picker outside a clone with nothing watched, and takes flags", async () => {
+    const r = await cli(["--profile", "p"], {
+      interactive: true,
+      git: { topLevel: async () => null },
+    });
+    expect(r.apiOptions).toEqual([{ profile: "p" }]);
+    expect(r.homes[0]?.actions.initial).toBeUndefined();
+    expect(r.homes[0]).not.toHaveProperty("cloneRepository");
+  });
+
+  it("uses the config's repos and -R", async () => {
+    const config = { repos: ["a", "b"] };
+    expect((await cli([], { interactive: true, config })).homes[0]?.actions.initial).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(
+      (await cli(["-R", "x"], { interactive: true, config })).homes[0]?.actions.initial,
+    ).toEqual(["x"]);
+  });
+
+  it("rejects an unknown flag, and home as a command", async () => {
+    expect((await cli(["--nope"], { interactive: true })).code).toBe(2);
+    expect((await cli(["--nope"])).code).toBe(2);
+    expect((await cli(["home"], { interactive: true })).err).toContain("Unknown command: home");
+  });
+
+  it("asks for a terminal, or status, when given flags without one", async () => {
+    const r = await cli(["-R", "x"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("needs a terminal; use lazycc status");
+    expect(r.homes).toEqual([]);
+  });
+
+  it("marks PRs read from pr view and the branch table", async () => {
+    const state = fakeState();
+    const r = await cli(["pr", "view", "3"], {
+      interactive: true,
+      state,
+      api: fakeApi([pullRequest({ id: "3" })]),
+    });
+    r.reviews[0]?.markSeen?.("3");
+    await state.flush();
+    expect([...state.seenAt.keys()]).toEqual(["ap-northeast-1/3"]);
+    const b = await cli(["branch"], { interactive: true });
+    expect(b.branchScreens[0]?.markSeen).toBeTypeOf("function");
+  });
+
+  it("keeps quiet when a read mark cannot be saved", async () => {
+    const state = fakeState();
+    const broken = {
+      ...state,
+      seen: {
+        ...state.seen,
+        mark: async () => {
+          throw new Error("EROFS");
+        },
+      },
+    };
+    const r = await cli(["pr", "view", "3"], {
+      interactive: true,
+      state: broken,
+      api: fakeApi([pullRequest({ id: "3" })]),
+    });
+    expect(() => r.reviews[0]?.markSeen?.("3")).not.toThrow();
   });
 });

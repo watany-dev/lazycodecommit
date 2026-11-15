@@ -124,6 +124,17 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   const [reactionsByComment, setReactionsByComment] = useState<ReactionsByComment>(new Map());
 
+  // Read when opened, and again when left, so the user's own comments or
+  // approval made here do not mark the PR unread.
+  // While a detail loads, prDetail still holds the PR opened before.
+  const openId = screen === "prs" || loading ? undefined : prDetail?.pullRequestId;
+  useEffect(() => {
+    const markSeen = service.markSeen;
+    if (!openId || !markSeen) return;
+    markSeen(openId);
+    return () => markSeen(openId);
+  }, [openId, service]);
+
   const postCommentAction = useAsyncAction(
     async (content: string) => {
       if (!prDetail) return;
