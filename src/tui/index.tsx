@@ -1,4 +1,5 @@
-import { render } from "ink";
+import { type Instance, render } from "ink";
+import type { ReactNode } from "react";
 import type { BranchActions } from "../core/branch.js";
 import type { BrowseActions } from "../core/browse.js";
 import type { HomeActions } from "../core/home.js";
@@ -7,7 +8,9 @@ import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
 import { HomeApp } from "./HomeApp.js";
+import { PickScreen } from "./PickScreen.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
+import type { TopSwitch, TopView } from "./top.js";
 
 // This module is loaded with a dynamic import, so CLI subcommands never load Ink or React.
 
@@ -27,7 +30,7 @@ export interface ReviewRequest extends ServiceRequest {
   readonly start: ReviewStart;
 }
 
-export interface BranchesRequest extends ServiceRequest {
+export interface BranchesView {
   readonly actions: BranchActions;
   /**
    * Runs `pr create` for `head` in the plain terminal (editor, push prompt) while
@@ -36,10 +39,23 @@ export interface BranchesRequest extends ServiceRequest {
   createPullRequest(head: string): Promise<{ pullRequestId: string } | { message: string }>;
 }
 
-export interface HomeRequest extends ServiceRequest {
-  readonly actions: HomeActions;
+/** Builds each view for a repository; cli/main.ts binds them to the account. */
+export interface TopViews {
+  home(): Promise<HomeActions>;
+  branches(repository: string): BranchesView;
+  browse(repository: string): Promise<BrowseActions>;
+}
+
+/** spec: 画面遷移. The three top-level views and the repository they show. */
+export interface TopRequest extends ServiceRequest {
+  readonly start: TopView;
+  /** The repository the branch table and browse show; picked with r when unset. */
+  readonly repository?: string;
   /** The clone's repository: only its PRs take their diffs from `git`. */
   readonly cloneRepository?: string;
+  /** Where browse opens the first time (--path). */
+  readonly browsePath?: string;
+  readonly views: TopViews;
 }
 
 function service(request: ServiceRequest): ReviewService {
@@ -64,52 +80,117 @@ export async function openReview(request: ReviewRequest): Promise<void> {
   await app.waitUntilExit();
 }
 
-/** The branch table; leaves the TUI for `n` and comes back on the new PR (spec: PR 作成). */
-export async function openBranches(request: BranchesRequest): Promise<void> {
-  const reviews = service(request);
-  let start: BranchesStart = null;
+/**
+ * Runs the top-level views one render at a time: a view that wants another
+ * view, the picker, or the plain terminal (pr create) exits, and this loop
+ * renders what comes next. The views keep no state across a switch; home
+ * starts again from its cache.
+ */
+export async function openTop(request: TopRequest): Promise<void> {
+  const { git, cloneRepository, views, ...rest } = request;
+  const base = { ...rest };
+  const withGit = git ? service({ ...base, git }) : undefined;
+  const withoutGit = service(base);
+  const reviewService = (repository: string) =>
+    withGit && repository === cloneRepository ? withGit : withoutGit;
+
+  let view = request.start;
+  let repository = request.repository;
+  let browsePath = request.browsePath ?? "";
+  let branchesStart: BranchesStart = null;
+  let note: string | null = null;
+  /** Where q from the picker returns to; none means the picker was the start. */
+  let previous: TopView | null = null;
+  let screen: Instance | undefined;
+  const run = async (node: ReactNode) => {
+    screen = render(node);
+    await screen.waitUntilExit();
+  };
+  // Ink leaves a view's last frame on exit; the next view replaces it instead.
+  const clearScreen = () => screen?.clear();
+
   for (;;) {
-    let head: string | undefined;
-    const app = render(
-      <BranchesApp
-        actions={request.actions}
-        service={reviews}
-        start={start}
-        onCreate={(name) => {
-          head = name;
+    let next: TopSwitch | undefined;
+    const onSwitch = (s: TopSwitch) => {
+      next = s;
+      clearScreen();
+    };
+    if (view !== "home" && repository === undefined) next = { pick: true };
+    else if (view === "home") {
+      const actions = await views.home();
+      await run(
+        <HomeApp
+          actions={actions}
+          reviewService={reviewService}
+          note={note}
+          onSwitch={onSwitch}
+          onRepository={(r) => {
+            repository = r;
+          }}
+        />,
+      );
+    } else if (view === "branches") {
+      const branches = views.branches(repository as string);
+      let head: string | undefined;
+      await run(
+        <BranchesApp
+          actions={branches.actions}
+          service={reviewService(repository as string)}
+          start={branchesStart ?? (note ? { message: note } : null)}
+          onCreate={(name) => {
+            head = name;
+          }}
+          onSwitch={onSwitch}
+        />,
+      );
+      branchesStart = null;
+      if (head !== undefined) {
+        const outcome = await branches.createPullRequest(head);
+        branchesStart =
+          "pullRequestId" in outcome ? { reviewPullRequestId: outcome.pullRequestId } : outcome;
+        note = null;
+        continue;
+      }
+    } else {
+      let actions: BrowseActions;
+      try {
+        actions = await views.browse(repository as string);
+      } catch (err) {
+        // An empty repository has no default branch to open.
+        if (previous === null && request.start === "browse") throw err;
+        note = err instanceof Error ? err.message : String(err);
+        view = previous ?? "home";
+        continue;
+      }
+      const path = browsePath;
+      browsePath = "";
+      await run(<BrowseApp actions={actions} path={path} onSwitch={onSwitch} />);
+    }
+    note = null;
+    const asked = next as TopSwitch | undefined;
+    if (!asked) return;
+    if ("view" in asked) {
+      previous = view;
+      view = asked.view;
+      continue;
+    }
+    let picked: string | undefined;
+    await run(
+      <PickScreen
+        actions={await views.home()}
+        current={repository}
+        reviewService={reviewService}
+        onDone={(r) => {
+          picked = r;
+          clearScreen();
         }}
       />,
     );
-    await app.waitUntilExit();
-    if (head === undefined) return;
-    const outcome = await request.createPullRequest(head);
-    start = "pullRequestId" in outcome ? { reviewPullRequestId: outcome.pullRequestId } : outcome;
+    if (picked) repository = picked;
+    else if (repository === undefined) {
+      // q from a picker nothing was picked in: back where we came from, or out.
+      if (previous === null) return;
+      view = previous;
+    }
   }
-}
-
-export interface BrowseRequest {
-  readonly actions: BrowseActions;
-  readonly path: string;
-}
-
-/** The remote tree and files through the API only (spec: clone なしブラウズ). */
-export async function openBrowse(request: BrowseRequest): Promise<void> {
-  const app = render(<BrowseApp actions={request.actions} path={request.path} />);
-  await app.waitUntilExit();
-}
-
-export async function openHome(request: HomeRequest): Promise<void> {
-  const { git, cloneRepository, ...rest } = request;
-  const base = { ...rest, markSeen: request.actions.markSeen };
-  const withGit = git ? service({ ...base, git }) : undefined;
-  const withoutGit = service(base);
-  const app = render(
-    <HomeApp
-      actions={request.actions}
-      reviewService={(repository) =>
-        withGit && repository === cloneRepository ? withGit : withoutGit
-      }
-    />,
-  );
-  await app.waitUntilExit();
 }

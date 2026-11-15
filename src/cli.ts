@@ -17,10 +17,8 @@ process.exitCode = await run(process.argv.slice(2), {
   loadConfig,
   createState: createLocalState,
   openReview: async (request) => (await import("./tui/index.js")).openReview(request),
-  openBranches: async (request) => (await import("./tui/index.js")).openBranches(request),
-  openBrowse: async (request) => (await import("./tui/index.js")).openBrowse(request),
-  openHome: async (request) => {
-    await (await import("./tui/index.js")).openHome(request);
+  openTop: async (request) => {
+    await (await import("./tui/index.js")).openTop(request);
     // Detail calls still in flight after q would keep the process (and the
     // terminal) for seconds; nothing is waiting for them.
     quit = true;

@@ -99,6 +99,30 @@ async function setup(a = actions()) {
 beforeEach(() => exit.mockReset());
 
 describe("HomeApp", () => {
+  it("leaves for the branch table or browse on 2 and 3, and shows a note", async () => {
+    for (const [k, want] of [
+      ["2", { view: "branches" }],
+      ["3", { view: "browse" }],
+    ] as const) {
+      exit.mockReset();
+      const onSwitch = vi.fn();
+      const r = render(
+        <HomeApp
+          actions={actions()}
+          reviewService={() => service}
+          note="empty repository"
+          onSwitch={onSwitch}
+        />,
+      );
+      await vi.waitFor(() => expect(r.lastFrame()).toContain("Add retry"));
+      expect(r.lastFrame()).toContain("empty repository");
+      await press(r.stdin, "1", k);
+      expect(onSwitch.mock.calls).toEqual([[want]]);
+      expect(exit).toHaveBeenCalledOnce();
+      r.unmount();
+    }
+  });
+
   it("lists PRs awaiting approval, drops the ones I approved, and saves the result", async () => {
     const { lastFrame, a } = await setup();
     await vi.waitFor(() => expect(lastFrame()).not.toContain("Fix cache"));
