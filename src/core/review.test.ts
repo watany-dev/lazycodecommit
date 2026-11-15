@@ -11,10 +11,14 @@ vi.mock("../aws/review.js", async (importOriginal) => {
   );
   return {
     ...spied,
-    getPullRequestDetail: vi.fn(),
+    getPullRequestDetail: vi.fn(async () => ({
+      pullRequest: {},
+      differences: [],
+      commentThreads: [],
+    })),
     getAllDifferences: vi.fn(async () => [{ changeType: "M", afterBlob: { blobId: "api" } }]),
     getBlobContent: vi.fn(async () => "from api"),
-    getCommitsForPR: vi.fn(async () => [{ commitId: "api" }]),
+    getCommitsForPR: vi.fn(async () => [{ commitId: "api", message: "m", authorName: "n" }]),
     postComment: vi.fn(async () => ({ commentId: "c1" })),
   };
 });
@@ -174,6 +178,69 @@ describe("createReviewService in a clone", () => {
     expect(await broken.getAllDifferences("demo", "p", "c")).toEqual([
       { changeType: "M", afterBlob: { blobId: "api" } },
     ]);
-    expect(await broken.getCommitsForPR("demo", "src", "mb")).toEqual([{ commitId: "api" }]);
+    expect(await broken.getCommitsForPR("demo", "src", "mb")).toMatchObject([{ commitId: "api" }]);
+  });
+});
+
+describe("text written by other people", () => {
+  // An escape sequence that would clear the screen and write the clipboard (OSC 52).
+  const EVIL = "a\x1b]52;c;aGk=\x07\x1b[2Jb";
+  const SHOWN = "a^[]52;c;aGk=^G^[[2Jb";
+
+  it("reaches the review screen with control characters made visible", async () => {
+    const service = createReviewService(client, fakeGit());
+    const comment = { commentId: "c", content: `${EVIL}\r\nline 2\ttab` };
+    vi.mocked(aws.listPullRequests).mockResolvedValueOnce({
+      pullRequests: [
+        {
+          pullRequestId: "1",
+          title: EVIL,
+          authorArn: "a",
+          creationDate: new Date(0),
+          status: "OPEN",
+        },
+      ],
+    });
+    vi.mocked(aws.getPullRequestDetail).mockResolvedValueOnce({
+      pullRequest: { pullRequestId: "1", title: EVIL, description: EVIL },
+      differences: [{ afterBlob: { blobId: "b", path: "p" } }],
+      commentThreads: [{ location: null, comments: [comment] }],
+    });
+    // A deleted comment has no content.
+    vi.mocked(aws.getComments).mockResolvedValueOnce([
+      { location: null, comments: [comment, { commentId: "d", deleted: true }] },
+    ]);
+    vi.mocked(aws.getPullRequestActivity).mockResolvedValueOnce({
+      events: [{ eventDate: new Date(0), eventType: "X", actorArn: "a", description: EVIL }],
+    });
+
+    expect((await service.listPullRequests("demo")).pullRequests[0]?.title).toBe(SHOWN);
+    const detail = await service.getPullRequestDetail("1", "demo");
+    expect(detail.pullRequest).toMatchObject({ title: SHOWN, description: SHOWN });
+    expect(detail.commentThreads[0]?.comments[0]?.content).toBe(`${SHOWN}\nline 2\ttab`);
+    expect(detail.differences).toEqual([{ afterBlob: { blobId: "b", path: "p" } }]);
+    expect((await service.getComments("1"))[0]?.comments).toEqual([
+      { commentId: "c", content: `${SHOWN}\nline 2\ttab` },
+      { commentId: "d", deleted: true },
+    ]);
+    expect(
+      (await service.getPullRequestActivity({ pullRequestId: "1" })).events[0]?.description,
+    ).toBe(SHOWN);
+  });
+
+  it("covers blobs and commits from git as well as from the API", async () => {
+    const git = fakeGit({
+      blob: async () => Buffer.from(`${EVIL}\r\nx`),
+      firstParentLog: async () => [
+        { id: "c1", parents: [], author: EVIL, date: new Date(0), subject: EVIL },
+      ],
+    });
+    const local = createReviewService(client, git);
+    expect(await local.getBlobContent("demo", "b")).toBe(`${SHOWN}\nx`);
+    expect(await local.getCommitsForPR("demo", "s", "m")).toMatchObject([
+      { message: SHOWN, authorName: SHOWN },
+    ]);
+    vi.mocked(aws.getBlobContent).mockResolvedValueOnce(EVIL);
+    expect(await createReviewService(client).getBlobContent("demo", "b")).toBe(SHOWN);
   });
 });

@@ -1,6 +1,7 @@
 import type { CodeCommitClient, Difference, PullRequestTarget } from "@aws-sdk/client-codecommit";
 import * as aws from "../aws/review.js";
 import type { Git, TreeChange } from "../git/git.js";
+import { printable } from "./text.js";
 
 type WithoutClient<F> = F extends (client: CodeCommitClient, ...args: infer A) => infer R
   ? (...args: A) => R
@@ -46,6 +47,10 @@ export function openReviewService(
  * commits cannot be fetched.
  */
 export function createReviewService(client: CodeCommitClient, git?: Git): ReviewService {
+  return displaySafe(createRawService(client, git));
+}
+
+function createRawService(client: CodeCommitClient, git?: Git): ReviewService {
   const api: ReviewService = {
     listPullRequests: (...a) => aws.listPullRequests(client, ...a),
     getPullRequestDetail: (...a) => aws.getPullRequestDetail(client, ...a),
@@ -118,6 +123,62 @@ export function createReviewService(client: CodeCommitClient, git?: Git): Review
           })),
         () => aws.getCommitsForPR(client, repositoryName, sourceCommit, mergeBase),
       ),
+  };
+}
+
+function threads(list: aws.CommentThread[]): aws.CommentThread[] {
+  return list.map((t) => ({
+    ...t,
+    comments: t.comments.map((c) =>
+      c.content === undefined ? c : { ...c, content: printable(c.content, true) },
+    ),
+  }));
+}
+
+/**
+ * Free text that other people wrote (titles, descriptions, comments, commit
+ * messages, file contents) with control characters made visible: Ink passes
+ * escape sequences through to the terminal. Identifiers such as file paths are
+ * left alone, because they are sent back to the API.
+ */
+function displaySafe(service: ReviewService): ReviewService {
+  return {
+    ...service,
+    listPullRequests: async (...a) => {
+      const r = await service.listPullRequests(...a);
+      return {
+        ...r,
+        pullRequests: r.pullRequests.map((p) => ({ ...p, title: printable(p.title) })),
+      };
+    },
+    getPullRequestDetail: async (...a) => {
+      const r = await service.getPullRequestDetail(...a);
+      const { title, description } = r.pullRequest;
+      return {
+        ...r,
+        pullRequest: {
+          ...r.pullRequest,
+          ...(title === undefined ? {} : { title: printable(title) }),
+          ...(description === undefined ? {} : { description: printable(description, true) }),
+        },
+        commentThreads: threads(r.commentThreads),
+      };
+    },
+    getComments: async (...a) => threads(await service.getComments(...a)),
+    getBlobContent: async (...a) => printable(await service.getBlobContent(...a), true),
+    getCommitsForPR: async (...a) =>
+      (await service.getCommitsForPR(...a)).map((c) => ({
+        ...c,
+        message: printable(c.message),
+        authorName: printable(c.authorName),
+      })),
+    getPullRequestActivity: async (...a) => {
+      const r = await service.getPullRequestActivity(...a);
+      return {
+        ...r,
+        events: r.events.map((e) => ({ ...e, description: printable(e.description) })),
+      };
+    },
   };
 }
 

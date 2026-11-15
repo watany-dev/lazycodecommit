@@ -263,6 +263,16 @@ describe("createGit", () => {
     await expect(git.aheadBehind("origin/main", "origin/nope")).rejects.toBeInstanceOf(GitError);
   });
 
+  it("reads an author name holding the ASCII unit separator", async () => {
+    sh(work, "switch", "-q", "-c", "odd");
+    await writeFile(join(work, "f.txt"), "odd\n");
+    sh(work, "-c", "user.name=a\x1fb", "commit", "-q", "-am", "odd");
+    sh(work, "push", "-q", "origin", "odd");
+    const odd = (await createGit(work).remoteBranches()).find((b) => b.name === "odd");
+    expect(odd).toMatchObject({ author: "a\x1fb", tip: sh(work, "rev-parse", "origin/odd") });
+    expect(odd?.date.getTime()).not.toBeNaN();
+  });
+
   it("switches quietly when asked", async () => {
     sh(work, "switch", "-q", "-c", "topic");
     sh(work, "push", "-q", "origin", "topic");

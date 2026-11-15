@@ -18,9 +18,19 @@ export const FOLD_THRESHOLD = 4;
 
 const SEPARATOR_TEXT = "─".repeat(50);
 
-/** Counts lines in `text` without allocating an array (equivalent to split("\n").length). */
+/**
+ * The lines of a file: a final newline ends the last line rather than starting
+ * an empty one, and an empty file (or the missing side of an add or delete) has none.
+ */
+function splitLines(text: string): string[] {
+  if (text === "") return [];
+  return (text.endsWith("\n") ? text.slice(0, -1) : text).split("\n");
+}
+
+/** Counts lines the way splitLines splits them, without allocating an array. */
 export function countLines(text: string): number {
-  let count = 1;
+  if (text === "") return 0;
+  let count = text.endsWith("\n") ? 0 : 1;
   let idx = text.indexOf("\n");
   while (idx !== -1) {
     count++;
@@ -220,8 +230,8 @@ export function buildDisplayLines(
       let diffLines = diffCache?.get(cacheKey);
       if (!diffLines) {
         // Split only on cache miss; the warm path never needs the line arrays
-        const beforeLines = texts.before.split("\n");
-        const afterLines = texts.after.split("\n");
+        const beforeLines = splitLines(texts.before);
+        const afterLines = splitLines(texts.after);
         const { beforeLimit, afterLimit } = getSliceLimits(
           beforeLines.length,
           afterLines.length,

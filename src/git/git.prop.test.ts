@@ -61,3 +61,49 @@ describe("Git.commits on a real repository", () => {
     );
   }, 60_000);
 });
+
+describe("Git.firstParentLog on a real repository", () => {
+  const name = fc
+    .string({
+      unit: fc.constantFrom("a", "Z", " ", "é", "日", "\x1e", "\x1f"),
+      minLength: 1,
+      maxLength: 12,
+    })
+    // git trims spaces and other "crud" from the ends of a name, and refuses an empty one.
+    .filter((n) => /^[aZé日].*[aZé日]$|^[aZé日]$/su.test(n));
+
+  it("returns each commit's id, author and subject as git itself reads them", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.tuple(name, message), { minLength: 1, maxLength: 3 }),
+        async (commits) => {
+          const base = sh("rev-parse", "HEAD").trim();
+          const want = [];
+          for (const [author, m] of commits) {
+            await writeFile(join(dir, "MSG"), m);
+            sh(
+              "-c",
+              `user.name=${author}`,
+              "commit",
+              "-q",
+              "--allow-empty",
+              "--allow-empty-message",
+              "-F",
+              join(dir, "MSG"),
+            );
+            const [id, parent, date] = sh("log", "-1", "--format=%H %P %aI").trim().split(" ");
+            want.push({
+              id,
+              parents: [parent],
+              author: sh("log", "-1", "--format=%an").replace(/\n$/, ""),
+              date: new Date(date as string),
+              subject: sh("log", "-1", "--format=%s").replace(/\n$/, ""),
+            });
+          }
+          expect(await createGit(dir).firstParentLog(base, "HEAD", 10)).toEqual(want);
+        },
+      ),
+      { numRuns: 30 },
+    );
+  }, 60_000);
+});

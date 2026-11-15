@@ -20,19 +20,12 @@ import {
   pullRequestStatus,
   resolvePullRequest,
 } from "../core/pr.js";
+import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import type { BranchesRequest, BrowseRequest, ReviewRequest } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
-import {
-  branchJson,
-  branchLines,
-  listLines,
-  printable,
-  prJson,
-  statusLines,
-  viewLines,
-} from "./format.js";
+import { branchJson, branchLines, listLines, prJson, statusLines, viewLines } from "./format.js";
 
 export interface Io {
   out(line: string): void;

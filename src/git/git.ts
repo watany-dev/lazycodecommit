@@ -89,8 +89,6 @@ export interface Git {
   aheadBehind(base: string, head: string): Promise<{ ahead: number; behind: number }>;
 }
 
-const FIELD = "\x1f";
-const RECORD = "\x1e";
 const NO_BLOB = /^0+$/;
 
 export function createGit(cwd: string): Git {
@@ -223,14 +221,15 @@ export function createGit(cwd: string): Git {
     async remoteBranches() {
       const out = await required([
         "for-each-ref",
-        `--format=%(refname:lstrip=3)${FIELD}%(objectname)${FIELD}%(committerdate:iso-strict)${FIELD}%(authorname)`,
+        // NUL between fields: an author name can hold any byte but NUL and newline.
+        "--format=%(refname:lstrip=3)%00%(objectname)%00%(committerdate:iso-strict)%00%(authorname)",
         "refs/remotes/origin",
       ]);
       return out
         .split("\n")
         .filter((line) => line !== "")
         .map((line) => {
-          const [name = "", tip = "", date = "", author = ""] = line.split(FIELD);
+          const [name = "", tip = "", date = "", author = ""] = line.split("\0");
           return { name, tip, date: new Date(date), author };
         })
         .filter((b) => b.name !== "HEAD");
@@ -243,29 +242,35 @@ export function createGit(cwd: string): Git {
     },
 
     async firstParentLog(base, head, max) {
+      // NUL-separated like commits(): names and subjects can hold any byte but NUL.
       const out = await required([
         "log",
+        "-z",
         "--first-parent",
         `--max-count=${max}`,
-        `--format=%H${FIELD}%P${FIELD}%an${FIELD}%aI${FIELD}%s${RECORD}`,
+        "--format=%H%x00%P%x00%an%x00%aI%x00%s",
         `${base}..${head}`,
         "--",
       ]);
-      return out
-        .split(RECORD)
-        .map((record) => record.trim())
-        .filter((record) => record !== "")
-        .map((record) => {
-          const [id = "", parents = "", author = "", date = "", subject = ""] = record.split(FIELD);
-          return {
-            id,
-            parents: parents ? parents.split(" ") : [],
-            author,
-            date: new Date(date),
-            subject,
-          };
-        })
-        .toReversed();
+      const fields = out.split("\0");
+      const commits: LoggedCommit[] = [];
+      for (let i = 0; i + 4 < fields.length; i += 5) {
+        const [id, parents, author, date, subject] = fields.slice(i, i + 5) as [
+          string,
+          string,
+          string,
+          string,
+          string,
+        ];
+        commits.push({
+          id,
+          parents: parents ? parents.split(" ") : [],
+          author,
+          date: new Date(date),
+          subject,
+        });
+      }
+      return commits.toReversed();
     },
   };
 }
