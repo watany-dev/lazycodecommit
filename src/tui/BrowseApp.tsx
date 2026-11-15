@@ -3,6 +3,7 @@ import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
+import { printable } from "../core/text.js";
 import { formatErrorMessage } from "./utils/formatError.js";
 
 interface Props {
@@ -256,7 +257,7 @@ export function BrowseApp({ actions, path: startPath }: Props) {
       ) : loading && !folder && !file ? (
         <Text color="cyan">Loading...</Text>
       ) : loadError ? (
-        <Text color="red">Error: {loadError}</Text>
+        <Text color="red">Error: {printable(loadError)}</Text>
       ) : file ? (
         <FileView file={file} lines={lines} scroll={scroll} height={height} />
       ) : (
@@ -275,7 +276,7 @@ export function BrowseApp({ actions, path: startPath }: Props) {
           <Text color="cyan">Loading...</Text>
         ) : note ? (
           // Wrapped, not truncated: a console URL must stay whole to be copied.
-          <Text {...(note.error ? { color: "red" } : {})}>{note.text}</Text>
+          <Text {...(note.error ? { color: "red" } : {})}>{printable(note.text)}</Text>
         ) : picker ? (
           <Text dimColor>Type to filter, or a commit ID · ↑/↓ pick · Enter open · Esc cancel</Text>
         ) : file ? (

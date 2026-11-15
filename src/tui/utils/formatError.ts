@@ -1,3 +1,5 @@
+import { printable } from "../../core/text.js";
+
 type ErrorContext =
   | "comment"
   | "reply"
@@ -108,5 +110,5 @@ export function formatErrorMessage(
     return "Network error. Check your connection.";
   }
 
-  return sanitizeMessage(err.message);
+  return printable(sanitizeMessage(err.message));
 }

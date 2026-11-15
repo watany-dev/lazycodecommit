@@ -244,3 +244,23 @@ describe("buildDisplayLines line endings", () => {
     ]);
   });
 });
+
+describe("buildDisplayLines file paths", () => {
+  it("makes control characters in a path visible in its header, and keeps the path for the API", () => {
+    const path = "a\x1b]52;c;aGk=\x07.txt";
+    const differences: Difference[] = [{ afterBlob: { blobId: "E", path }, changeType: "A" }];
+    const diffTexts = new Map([[":E", { before: "", after: "x\n" }]]);
+    const status = new Map<string, "loading" | "loaded" | "error">([[":E", "loaded"]]);
+    const lines = buildDisplayLines(
+      differences,
+      diffTexts,
+      status,
+      new Map(),
+      [],
+      new Map(),
+      NO_REACTIONS,
+    );
+    expect(lines.find((l) => l.type === "header")?.text).toBe("a^[]52;c;aGk=^G.txt");
+    expect(lines.find((l) => l.type === "add")?.filePath).toBe(path);
+  });
+});
