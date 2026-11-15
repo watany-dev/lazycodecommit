@@ -41,10 +41,11 @@ export interface IdentityStore {
   set(key: string, arn: string): Promise<void>;
 }
 
-/** When each PR was last opened, keyed by `${region}/${id}` (PR ids are unique per region). */
+/** When each PR was last opened, keyed by seenKey. */
 interface SeenStore {
   all(): Promise<ReadonlyMap<string, Date>>;
-  mark(key: string, at: Date): Promise<void>;
+  /** Keeps the later time; `replaces` is an older key for the same PR, removed. */
+  mark(key: string, at: Date, replaces?: string): Promise<void>;
 }
 
 /** Last results per screen ("home", the branch table, ...), each its own section. */
@@ -71,8 +72,47 @@ export interface LocalState {
   flush(): Promise<void>;
 }
 
-export function seenKey(region: string, id: string): string {
-  return `${region}/${id}`;
+/** What names a PR across accounts: its id and its author, whose ARN holds the account. */
+export interface SeenPr {
+  readonly id: string;
+  readonly authorArn?: string | undefined;
+}
+
+/** The account in an ARN (arn:partition:service:region:account:...). */
+export function accountOf(arn: string | undefined): string {
+  return arn?.split(":")[4] || "unknown";
+}
+
+/**
+ * `${region}/${account}/${id}`: PR ids are unique per account and region only,
+ * so a user of two accounts would otherwise see one PR's mark on another.
+ */
+export function seenKey(region: string, pr: SeenPr): string {
+  return `${region}/${accountOf(pr.authorArn)}/${pr.id}`;
+}
+
+/** Older versions keyed by region and id alone. */
+const legacySeenKey = (region: string, pr: SeenPr) => `${region}/${pr.id}`;
+
+/**
+ * When the PR was last opened. A mark from an older version is still read, so
+ * an upgrade does not mark every PR unread; marking the PR replaces it.
+ */
+export function lastSeen(
+  seen: ReadonlyMap<string, Date>,
+  region: string,
+  pr: SeenPr,
+): Date | undefined {
+  return seen.get(seenKey(region, pr)) ?? seen.get(legacySeenKey(region, pr));
+}
+
+export function markSeen(
+  state: Pick<LocalState, "seen">,
+  region: string,
+  pr: SeenPr,
+  at: Date,
+): Promise<void> {
+  return state.seen.mark(seenKey(region, pr), at, legacySeenKey(region, pr));
 }
 
 export function createLocalState(env: Env): LocalState {
@@ -117,8 +157,9 @@ export function createLocalState(env: Env): LocalState {
         }
         return map;
       },
-      mark: (key, at) =>
+      mark: (key, at, replaces) =>
         update("seen.json", (o) => {
+          if (replaces !== undefined) delete o[replaces];
           const prev = typeof o[key] === "string" ? Date.parse(o[key] as string) : Number.NaN;
           if (!(prev >= at.getTime())) o[key] = at.toISOString();
         }),

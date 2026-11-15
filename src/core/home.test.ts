@@ -45,7 +45,7 @@ describe("homeActions", () => {
     const items = await Promise.all(inbox.items.map(actions.details));
     expect(items[1]?.rules).toBeDefined();
     await actions.save({ ...inbox, items });
-    actions.markSeen("1");
+    actions.markSeen(inbox.items[0]!.pr);
     await state.flush();
     const cached = await actions.cached(["b", "a"]);
     expect(cached?.items.map((i) => [i.pr.id, i.unread])).toEqual([
@@ -105,6 +105,6 @@ describe("homeActions", () => {
     Object.assign(state.cache, { set: fail });
     Object.assign(state.seen, { mark: fail });
     await expect(actions.save(await actions.fetch(["a"]))).resolves.toBeUndefined();
-    expect(() => actions.markSeen("1")).not.toThrow();
+    expect(() => actions.markSeen({ id: "1" })).not.toThrow();
   });
 });

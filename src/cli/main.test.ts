@@ -1275,9 +1275,9 @@ describe("home", () => {
       state,
       api: fakeApi([pullRequest({ id: "3" })]),
     });
-    r.reviews[0]?.markSeen?.("3");
+    r.reviews[0]?.markSeen?.({ id: "3", authorArn: "arn:aws:iam::111122223333:user/a" });
     await state.flush();
-    expect([...state.seenAt.keys()]).toEqual(["ap-northeast-1/3"]);
+    expect([...state.seenAt.keys()]).toEqual(["ap-northeast-1/111122223333/3"]);
     const b = await cli(["branch"], { interactive: true });
     expect(b.tops[0]?.markSeen).toBeTypeOf("function");
   });
@@ -1298,6 +1298,6 @@ describe("home", () => {
       state: broken,
       api: fakeApi([pullRequest({ id: "3" })]),
     });
-    expect(() => r.reviews[0]?.markSeen?.("3")).not.toThrow();
+    expect(() => r.reviews[0]?.markSeen?.({ id: "3" })).not.toThrow();
   });
 });

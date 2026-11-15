@@ -379,7 +379,7 @@ describe("HomeApp", () => {
     await press(stdin, "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #11"));
     await press(stdin, "q");
-    await vi.waitFor(() => expect(a.markSeen).toHaveBeenCalledWith("11"));
+    await vi.waitFor(() => expect(a.markSeen).toHaveBeenCalledWith({ id: "11", authorArn: BOB }));
   });
 });
 

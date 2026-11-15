@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { CodeCommitApi, PullRequest, RuleEvaluation } from "../aws/codecommit.js";
 import { mapLimit } from "../aws/mapLimit.js";
 import type { Config } from "../state/config.js";
-import { type IdentityStore, seenKey } from "../state/local.js";
+import { type IdentityStore, lastSeen } from "../state/local.js";
 import { OPEN_SCAN_LIMIT } from "./pr.js";
 
 export type Section = "awaiting" | "mine";
@@ -228,7 +228,7 @@ export async function fetchInbox(repositories: readonly string[], deps: InboxDep
     items.push({
       section,
       pr,
-      unread: isUnread(pr, deps.seen.get(seenKey(deps.region, pr.id)), deps.me),
+      unread: isUnread(pr, lastSeen(deps.seen, deps.region, pr), deps.me),
     });
   }
   return {
@@ -377,7 +377,7 @@ export function withUnread(inbox: Inbox, region: string, seen: ReadonlyMap<strin
     ...inbox,
     items: inbox.items.map((item) => ({
       ...item,
-      unread: isUnread(item.pr, seen.get(seenKey(region, item.pr.id)), inbox.me),
+      unread: isUnread(item.pr, lastSeen(seen, region, item.pr), inbox.me),
     })),
   };
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { explainAwsError, isCredentialError } from "../aws/errors.js";
-import { type LocalState, seenKey } from "../state/local.js";
+import { accountOf, type LocalState } from "../state/local.js";
 
 /** The commits a comment is posted against: the PR's destination and source tips. */
 export interface Commits {
@@ -341,14 +341,13 @@ export function draftKey(pr: {
   readonly pullRequestId?: string | undefined;
   readonly authorArn?: string | undefined;
 }): string {
-  const account = pr.authorArn?.split(":")[4] || "unknown";
-  return `${account}/${pr.pullRequestId ?? ""}`;
+  return `${accountOf(pr.authorArn)}/${pr.pullRequestId ?? ""}`;
 }
 
-/** drafts.json, keyed like seen.json: PR ids are unique per region. */
+/** drafts.json, keyed like seen.json: `${region}/${account}/${id}`. */
 export function draftStorage(store: LocalState["drafts"], region: string): DraftStorage {
   return {
-    load: async (key) => parseDrafts(await store.get(seenKey(region, key))),
-    save: (key, drafts) => store.set(seenKey(region, key), drafts),
+    load: async (key) => parseDrafts(await store.get(`${region}/${key}`)),
+    save: (key, drafts) => store.set(`${region}/${key}`, drafts),
   };
 }

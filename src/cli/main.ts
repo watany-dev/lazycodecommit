@@ -41,7 +41,7 @@ import {
 import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
-import { type LocalState, seenKey } from "../state/local.js";
+import { type LocalState, markSeen as markSeenIn, type SeenPr } from "../state/local.js";
 import type { ReviewRequest, TopRequest, TopViews } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
 import {
@@ -393,8 +393,8 @@ async function runCommand(
   };
   const local = deps.createState(io.env);
   // Opening a PR in any review screen counts as reading it on the home screen.
-  const markSeen = (id: string) => {
-    local.seen.mark(seenKey(region, id), new Date()).catch(() => {});
+  const markSeen = (pr: SeenPr) => {
+    markSeenIn(local, region, pr, new Date()).catch(() => {});
   };
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
   const review = (start: ReviewRequest["start"]) =>
@@ -744,8 +744,8 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     ...optional("browsePath", top.path),
     views,
     region,
-    markSeen: (id) => {
-      state.seen.mark(seenKey(region, id), new Date()).catch(() => {});
+    markSeen: (pr) => {
+      markSeenIn(state, region, pr, new Date()).catch(() => {});
     },
     drafts: draftStorage(state.drafts, region),
     ...optional("mergeStrategy", preferredStrategy(config)),
@@ -756,9 +756,9 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
           home: {
             ...optional("region", homeCtx.region),
             ...optional("profile", homeCtx.profile),
-            markSeen: (id: string) => {
+            markSeen: (pr: SeenPr) => {
               void homeAccount
-                .then(({ region: r }) => state.seen.mark(seenKey(r, id), new Date()))
+                .then(({ region: r }) => markSeenIn(state, r, pr, new Date()))
                 .catch(() => {});
             },
           },

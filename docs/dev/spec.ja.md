@@ -383,7 +383,7 @@ remote URL を環境変数より優先するのは、リポジトリのリージ
 場所は ~/.local/state/lazycc/(XDG_STATE_HOME に従う)。
 | ファイル | 内容 |
 |---|---|
-| seen.json | PR ごとの最終閲覧時刻 |
+| seen.json | PR ごとの最終閲覧時刻(キーはリージョン/アカウント/PR 番号。PR 番号はアカウントとリージョンの中でしか一意でないため。アカウントは作成者の ARN から取る) |
 | cache.json | ホームの前回取得結果 |
 | identity.json | 認証情報ごとの ARN(キーはアクセスキー ID のハッシュ) |
 | drafts.json | PR ごとのコメントの下書き(投稿するまで残す) |
