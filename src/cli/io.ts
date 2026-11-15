@@ -62,3 +62,18 @@ export function processIo(): Io {
     },
   };
 }
+
+/**
+ * A reader that stops early (`lazycc pr list | head -1`) closes the pipe, and
+ * the next write fails with EPIPE. Stop quietly, as git and gh do, rather than
+ * die on an unhandled error with a stack trace.
+ */
+export function exitOnClosedPipe(
+  stream: Pick<NodeJS.EventEmitter, "on">,
+  exit: (code: number) => void,
+): void {
+  stream.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+    exit(0);
+  });
+}
