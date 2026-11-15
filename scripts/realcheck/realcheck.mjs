@@ -65,7 +65,7 @@ if (opt.help) {
   --ssh                         also clone over SSH (needs an IAM SSH key and ~/.ssh/config)
   --keep                        do not delete the repository and work directory
   --yes                         do not ask before creating the repository
-  --no-redact                   keep the account id in the report
+  --no-redact                   keep the account id and IAM user and session names in the report
   --no-pack                     skip npm pack / npx
   --no-tui                      skip the TUI start checks
   --lazycc <path>               cli.mjs to run (default: dist/cli.mjs)
@@ -1242,6 +1242,13 @@ const EXECUTION_STATUSES = new Set([
   "Superseded",
 ]);
 
+/** Who started a build, by kind only: a hand-started build names the IAM user or session. */
+function initiatorKind(initiator) {
+  if (!initiator) return "none";
+  const service = /^(codepipeline|events\.amazonaws\.com|GitHub-Hookshot)/.exec(initiator);
+  return service ? service[1] : "principal";
+}
+
 async function ciResults() {
   const project = opt["ci-project"];
   const pipeline = opt["ci-pipeline"];
@@ -1285,9 +1292,9 @@ async function ciResults() {
         );
       record(
         "ci.codebuild.source",
-        "Source types and initiators of those builds",
+        "Source types and initiator kinds of those builds",
         "INFO",
-        builds.map((b) => `${b.source?.type}/${b.initiator}`).join(", "),
+        builds.map((b) => `${b.source?.type}/${initiatorKind(b.initiator)}`).join(", "),
       );
     }
   }
@@ -1469,10 +1476,45 @@ function report() {
   ];
   let text = lines.join("\n");
   if (!opt["no-redact"]) {
+    text = redactPrincipals(text);
     if (account) text = text.replaceAll(account, "<ACCOUNT>");
     text = text.replace(/(arn:aws[\w-]*:[\w-]+:[\w-]*:)\d{12}(?=:)/g, "$1<ACCOUNT>");
   }
   writeFileSync(reportPath, text);
+}
+
+/** A name is replaced only where none of these borders it; "." and "," end a sentence or list item. */
+const NAME_CHAR = /[\w+=@-]/;
+
+/**
+ * The report is pasted back into chats, so IAM user and session names (often an
+ * email) go: in every user/… and assumed-role/Role/… ARN, then wherever lazycc
+ * printed the name alone (Author: alice, Reviewer/bob: …). Role names stay.
+ */
+function redactPrincipals(text) {
+  const names = new Map();
+  const arn =
+    /(arn:aws[\w-]*:(?:iam|sts)::[^:\s]*:)(user\/|assumed-role\/[\w+=,.@-]+\/)((?:[\w+=,.@-]+\/)*[\w+=,.@-]+)/g;
+  text = text.replace(arn, (_, head, kind, name) => {
+    const tag = kind === "user/" ? "<USER>" : "<SESSION>";
+    names.set(name.split("/").at(-1), tag);
+    return `${head}${kind}${tag}`;
+  });
+  for (const [name, tag] of names) text = replaceName(text, name, tag);
+  return text;
+}
+
+function replaceName(text, name, tag) {
+  let out = "";
+  let from = 0;
+  for (let at = text.indexOf(name); at !== -1; at = text.indexOf(name, at + 1)) {
+    const before = text[at - 1] ?? "";
+    const after = text[at + name.length] ?? "";
+    if (NAME_CHAR.test(before) || NAME_CHAR.test(after)) continue;
+    out += text.slice(from, at) + tag;
+    from = at + name.length;
+  }
+  return out + text.slice(from);
 }
 
 // ---------------------------------------------------------------- main

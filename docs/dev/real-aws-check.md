@@ -61,7 +61,7 @@ Bun が入っていれば `bun install && bun run build` のあと、同じく
 | `--ci-project <name>`、`--ci-pipeline <name>` | 既存の CodeBuild プロジェクトとパイプラインの直近の実行を読み、lazycc が一致に使うフィールドがあるか、`ci` を設定した `pr view` が動くか（ADR 0010）。読むだけで、ビルドの開始や設定の変更はしない。`codebuild:ListBuildsForProject`・`BatchGetBuilds`・`codepipeline:ListPipelineExecutions` が要る |
 | `--ssh` | SSH の clone（IAM の SSH 公開鍵と `~/.ssh/config` の `User` が必要） |
 | `--keep` | リポジトリと作業ディレクトリを残す（コンソールで見るときに使う） |
-| `--no-redact` | レポートのアカウント ID を伏せない |
+| `--no-redact` | レポートのアカウント ID と IAM ユーザー名・セッション名を伏せない |
 
 2 つ目の identity は、CloudShell なら同じアカウントのロールを引き受ける
 プロファイルを `~/.aws/config` に書けば作れる。
@@ -80,8 +80,9 @@ credential_source = EcsContainer
 
 終わるとカレントディレクトリに `lazycc-realcheck-<日時>.md` ができる。
 CloudShell なら「アクション → ファイルのダウンロード」で取り出し、スレッドに
-添付するか貼る。アカウント ID は `<ACCOUNT>` に置き換え済み。IAM のユーザー名や
-ロール名は残る。
+添付するか貼る。アカウント ID は `<ACCOUNT>`、IAM ユーザー名は `<USER>`、
+引き受けたロールのセッション名（メールアドレスのことが多い）は `<SESSION>` に
+置き換え済み。ビルドを始めた人は種類（`principal` など）だけを書く。ロール名は残る。
 
 レポートの先頭に「Differences and failures」がある。
 
