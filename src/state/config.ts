@@ -118,12 +118,12 @@ function validate(path: string, raw: unknown): Config {
  * Sets `repos` in the config file (the repository picker's w), keeping every
  * other key. JSON has no comments to lose; the file is rewritten with two-space
  * indents. A file that does not load is left alone and the error is thrown.
- * A function is given the file's current repos, under the lock, and returns
- * the new list; the list saved is returned.
+ * `update` gets the file's current repos, under the lock, and returns the new
+ * list; the list saved is returned.
  */
 export async function saveRepos(
   env: Readonly<Record<string, string | undefined>>,
-  update: readonly string[] | ((current: readonly string[]) => readonly string[]),
+  update: (current: readonly string[]) => readonly string[],
 ): Promise<readonly string[]> {
   const path = configPath(env);
   await mkdir(dirname(path), { recursive: true });
@@ -131,7 +131,7 @@ export async function saveRepos(
   let repos: readonly string[] = [];
   await withLock(path, async () => {
     const config = await loadConfig(env);
-    repos = typeof update === "function" ? update(config.repos ?? []) : update;
+    repos = update(config.repos ?? []);
     const current = { ...config } as Record<string, unknown>;
     if (repos.length > 0) current["repos"] = repos;
     else delete current["repos"];

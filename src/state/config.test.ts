@@ -102,28 +102,28 @@ const read = async () => JSON.parse(await readFile(join(dir, "lazycc", "config.j
 
 describe("saveRepos", () => {
   it("creates the file when there is none", async () => {
-    await saveRepos(env(), ["a"]);
+    await saveRepos(env(), () => ["a"]);
     expect(await read()).toEqual({ repos: ["a"] });
   });
 
   it("keeps the other keys, including unknown ones, and drops an empty list", async () => {
     await write('{"region":"us-east-1","future":{"x":1},"repos":["a"]}');
-    await saveRepos(env(), ["a", "b"]);
+    await saveRepos(env(), () => ["a", "b"]);
     expect(await read()).toEqual({ region: "us-east-1", future: { x: 1 }, repos: ["a", "b"] });
-    await saveRepos(env(), []);
+    await saveRepos(env(), () => []);
     expect(await read()).toEqual({ region: "us-east-1", future: { x: 1 } });
   });
 
   it("leaves a broken file alone", async () => {
     await write("{oops");
-    await expect(saveRepos(env(), ["a"])).rejects.toThrow(ConfigError);
+    await expect(saveRepos(env(), () => ["a"])).rejects.toThrow(ConfigError);
     expect(await readFile(join(dir, "lazycc", "config.json"), "utf8")).toBe("{oops");
   });
 
   it("saves from two lazycc at once one after the other, and leaves no lock", async () => {
     const { readdir } = await import("node:fs/promises");
     await write('{"region":"us-east-1"}');
-    await Promise.all([saveRepos(env(), ["a"]), saveRepos(env(), ["b"])]);
+    await Promise.all([saveRepos(env(), () => ["a"]), saveRepos(env(), () => ["b"])]);
     expect([["a"], ["b"]]).toContainEqual((await read())["repos"]);
     expect(await read()).toMatchObject({ region: "us-east-1" });
     expect(await readdir(join(dir, "lazycc"))).toEqual(["config.json"]);
@@ -134,7 +134,7 @@ describe("saveRepos", () => {
     await writeFile(join(dir, "real.json"), "{}");
     await mkdir(join(dir, "lazycc"), { recursive: true });
     await symlink(join(dir, "real.json"), join(dir, "lazycc", "config.json"));
-    await saveRepos(env(), ["a"]);
+    await saveRepos(env(), () => ["a"]);
     expect((await lstat(join(dir, "lazycc", "config.json"))).isSymbolicLink()).toBe(true);
     expect(JSON.parse(await readFile(join(dir, "real.json"), "utf8"))).toEqual({ repos: ["a"] });
   });
