@@ -40,12 +40,21 @@
     "@biomejs/biome": "2.6.6",
     "@types/bun": "1.4.4",
     "@types/node": "20.19.43",
+    "@types/react": "19.2.14",
     "@vitest/coverage-v8": "5.1.0",
     "aws-sdk-client-mock": "^4.1.0",
     "fast-check": "^4.10.2",
+    "ink": "6.7.0",
+    "ink-testing-library": "4.0.0",
+    "ink-text-input": "6.0.0",
     "knip": "6.44.2",
     "oxlint": "1.92.0",
+    "react": "19.2.4",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
+  },
+  "patchedDependencies": {
+    "ink@6.7.0": "patches/ink@6.7.0.patch",
+    "string-width@8.1.1": "patches/string-width@8.1.1.patch"
   }
 }

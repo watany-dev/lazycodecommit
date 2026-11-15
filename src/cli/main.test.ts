@@ -5,9 +5,11 @@ import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
+import type { ReviewRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
 interface Setup {
+  interactive?: boolean;
   git?: Partial<Git>;
   api?: CodeCommitApi;
   config?: Config | Error;
@@ -18,13 +20,14 @@ async function cli(args: string[], setup: Setup = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const apiOptions: object[] = [];
+  const reviews: ReviewRequest[] = [];
   const deps: Deps = {
     io: {
       out: (l) => out.push(l),
       err: (l) => err.push(l),
       env: setup.env ?? {},
       cwd: "/work",
-      interactive: false,
+      interactive: setup.interactive ?? false,
       confirm: async () => true,
       edit: async (t) => t,
       readFile: async () => null,
@@ -38,9 +41,10 @@ async function cli(args: string[], setup: Setup = {}) {
       if (setup.config instanceof Error) throw setup.config;
       return setup.config ?? {};
     },
+    openReview: async (request) => void reviews.push(request),
   };
   const code = await run(args, deps);
-  return { code, out: out.join("\n"), err: err.join("\n"), apiOptions };
+  return { code, out: out.join("\n"), err: err.join("\n"), apiOptions, reviews };
 }
 
 const json = (s: string) => JSON.parse(s);
@@ -462,5 +466,43 @@ describe("clone", () => {
       },
     });
     expect(r).toMatchObject({ code: 1, err: "lazycc: git clone failed" });
+  });
+});
+
+describe("the review screen on a terminal", () => {
+  it("opens pr view on the PR, with git inside the clone", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })]);
+    const r = await cli(["pr", "view"], { api, interactive: true });
+    expect(r).toMatchObject({ code: 0, out: "" });
+    expect(r.reviews).toEqual([
+      {
+        repository: "demo",
+        start: { pullRequestId: "3" },
+        region: "ap-northeast-1",
+        git: expect.anything(),
+      },
+    ]);
+  });
+
+  it("opens the PR list for a bare pr list, without git outside a clone", async () => {
+    const r = await cli(["pr", "list", "-R", "demo", "--profile", "p"], {
+      interactive: true,
+      git: { topLevel: async () => null },
+    });
+    expect(r.reviews).toEqual([
+      { repository: "demo", start: null, region: "us-west-2", profile: "p" },
+    ]);
+  });
+
+  it.each([
+    [["pr", "view", "3", "--json"]],
+    [["pr", "list", "--state", "open"]],
+    [["pr", "list", "-L", "5"]],
+    [["pr", "list", "--json"]],
+  ])("prints text for %j", async (args) => {
+    const api = fakeApi([pullRequest({ id: "3" })]);
+    const r = await cli(args, { api, interactive: true });
+    expect(r.reviews).toEqual([]);
+    expect(r.out).not.toBe("");
   });
 });
