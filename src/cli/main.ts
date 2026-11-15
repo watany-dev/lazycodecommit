@@ -179,7 +179,8 @@ function parse(
 const str = (v: Values, key: string) =>
   typeof v[key] === "string" ? (v[key] as string) : undefined;
 
-export async function run(args: readonly string[], deps: Deps): Promise<number> {
+export async function run(args: readonly string[], rawDeps: Deps): Promise<number> {
+  const deps = { ...rawDeps, io: printableIo(rawDeps.io) };
   const { io } = deps;
   const [noun, verb, ...rest] = args;
   let profile: string | undefined;
@@ -273,7 +274,15 @@ async function runCommand(
     readFile: io.readFile,
     note: io.err,
   };
-  const print = (value: unknown) => io.out(JSON.stringify(value, null, 2));
+  // JSON.stringify escapes C0 controls but not C1 (U+0080-U+009F); \u escapes
+  // keep the data exact and the terminal safe.
+  const print = (value: unknown) =>
+    io.out(
+      JSON.stringify(value, null, 2).replace(
+        /[\u0080-\u009f]/g,
+        (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+      ),
+    );
   const done = (line: string, pr: PullRequest) => {
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
@@ -486,6 +495,20 @@ async function runCommand(
       return 0;
     }
   }
+}
+
+/**
+ * Every line we print carries text from elsewhere (titles, branch names, commit
+ * messages, git's and the SDK's errors), so none may reach the terminal as an
+ * escape sequence. Our own output has no control characters but \n and \t.
+ */
+function printableIo(io: Io): Io {
+  return {
+    ...io,
+    out: (line) => io.out(printable(line, true)),
+    err: (line) => io.err(printable(line, true)),
+    confirm: (question) => io.confirm(printable(question)),
+  };
 }
 
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
