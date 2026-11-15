@@ -30,8 +30,13 @@ export async function resolveContext(input: ContextInput): Promise<RepoContext> 
   const url = root ? await input.git.remoteUrl("origin") : null;
   const remote = url ? parseRemoteUrl(url) : null;
 
-  // --repo naming another repository means we are not working in its clone.
-  const inClone = root !== null && remote !== null && (!input.repo || input.repo === remote.repo);
+  // --repo or --region naming another repository means we are not in its clone:
+  // a repository of the same name in another region is a different repository.
+  const inClone =
+    root !== null &&
+    remote !== null &&
+    (!input.repo || input.repo === remote.repo) &&
+    (!input.region || !remote.region || input.region === remote.region);
   const repository = input.repo ?? remote?.repo;
   if (!repository) {
     const why =

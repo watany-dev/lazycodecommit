@@ -95,6 +95,8 @@ remote URL は次の3形式を解釈し、リージョンとプロファイル�
 | SSH | ssh://git-codecommit.ap-northeast-1.amazonaws.com/v1/repos/my-repo |
 | git-remote-codecommit | codecommit::ap-northeast-1://profile@my-repo |
 
+--repo や --region が origin と別のリポジトリ(名前かリージョンが違う)を指すときは、clone 外として扱う。同じ名前でもリージョンが違えば別のリポジトリなので、origin への push やローカルのコミットからの下書きは行わない。
+
 ## PR 作成
 
 lazycc pr create は、clone 内なら引数なしで push から PR 作成まで終える。
