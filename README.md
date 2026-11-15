@@ -239,7 +239,9 @@ bun run ci   # everything CI checks, before every push
 
 See [docs/dev/ci.md](docs/dev/ci.md) for the pipeline and release process,
 and [docs/dev/spec.ja.md](docs/dev/spec.ja.md) for the specification
-(Japanese).
+(Japanese). [docs/dev/real-aws-check.md](docs/dev/real-aws-check.md) runs
+everything against a throwaway CodeCommit repository on real AWS and writes
+one report.
 
 ## License
 
