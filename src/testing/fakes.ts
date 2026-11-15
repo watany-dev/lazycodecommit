@@ -14,6 +14,10 @@ export function fakeGit(overrides: Partial<Git> = {}): Git {
     switchBranch: async () => {},
     fastForward: async () => {},
     clone: async () => {},
+    mergeBase: async () => "base0",
+    diffTree: async () => [],
+    blob: async () => Buffer.from(""),
+    firstParentLog: async () => [],
     ...overrides,
   };
 }

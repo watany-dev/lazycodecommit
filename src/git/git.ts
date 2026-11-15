@@ -17,6 +17,22 @@ export interface Commit {
   readonly body: string;
 }
 
+/** One path in `git diff-tree`: blob ids before and after, absent on an add or delete. */
+export interface TreeChange {
+  readonly status: string;
+  readonly path: string;
+  readonly before?: string;
+  readonly after?: string;
+}
+
+interface LoggedCommit {
+  readonly id: string;
+  readonly parents: readonly string[];
+  readonly author: string;
+  readonly date: Date;
+  readonly subject: string;
+}
+
 /** The only door to git (spec: "git を呼ぶのはこの層だけ"). */
 export interface Git {
   /** Repository root, or null outside a work tree. */
@@ -37,15 +53,27 @@ export interface Git {
   commits(base: string, head: string): Promise<Commit[]>;
   /** `git push -u origin <branch>`, with git's output on stderr. */
   push(branch: string): Promise<void>;
-  /** `git fetch origin <refspec>...`, with git's output on stderr. */
-  fetch(refspecs: readonly string[]): Promise<void>;
+  /** `git fetch origin <refspec>...`, with git's output on stderr unless `quiet` (under the TUI). */
+  fetch(refspecs: readonly string[], opts?: { readonly quiet: boolean }): Promise<void>;
   /** `git switch <branch>`, or `git switch -c <branch> --track <track>` to create it. */
   switchBranch(branch: string, opts?: { readonly track: string }): Promise<void>;
   /** `git merge --ff-only <ref>` into the checked-out branch. */
   fastForward(ref: string): Promise<void>;
   /** `git clone <url> [args...]` in the working directory. */
   clone(url: string, args: readonly string[]): Promise<void>;
+  /** Best common ancestor, or null when there is none or a commit is missing. */
+  mergeBase(a: string, b: string): Promise<string | null>;
+  /** Changed files between two commits, like GetDifferences: no rename detection. */
+  diffTree(before: string, after: string): Promise<TreeChange[]>;
+  /** Contents of a blob. */
+  blob(id: string): Promise<Buffer>;
+  /** Up to `max` commits in `base..head` along first parents, oldest first. */
+  firstParentLog(base: string, head: string, max: number): Promise<LoggedCommit[]>;
 }
+
+const FIELD = "\x1f";
+const RECORD = "\x1e";
+const NO_BLOB = /^0+$/;
 
 export function createGit(cwd: string): Git {
   function git(
@@ -124,10 +152,73 @@ export function createGit(cwd: string): Git {
     },
 
     push: (branch) => streamed(["push", "-u", "origin", branch]),
-    fetch: (refspecs) => streamed(["fetch", "origin", ...refspecs]),
+    async fetch(refspecs, opts) {
+      const args = ["fetch", "origin", ...refspecs];
+      if (opts?.quiet) await required(["-c", "advice.fetchShowForcedUpdates=false", ...args]);
+      else await streamed(args);
+    },
     switchBranch: (branch, opts) =>
       streamed(opts ? ["switch", "-c", branch, "--track", opts.track] : ["switch", branch]),
     fastForward: (ref) => streamed(["merge", "--ff-only", ref]),
     clone: (url, args) => streamed(["clone", url, ...args]),
+    mergeBase: (a, b) => value(["merge-base", a, b]),
+
+    async diffTree(before, after) {
+      const out = await required(["diff-tree", "-r", "-z", "--no-renames", before, after]);
+      // -z: ":<mode> <mode> <blob> <blob> <status>\0<path>\0" per file.
+      const parts = out.split("\0");
+      const changes: TreeChange[] = [];
+      for (let i = 0; i + 1 < parts.length; i += 2) {
+        const [, , a = "", b = "", status = ""] = (parts[i] as string).split(" ");
+        changes.push({
+          status,
+          path: parts[i + 1] as string,
+          ...(NO_BLOB.test(a) ? {} : { before: a }),
+          ...(NO_BLOB.test(b) ? {} : { after: b }),
+        });
+      }
+      return changes;
+    },
+
+    blob(id) {
+      const args = ["cat-file", "blob", id];
+      return new Promise((resolve, reject) => {
+        execFile(
+          "git",
+          args,
+          { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 },
+          (error, stdout, stderr) => {
+            if (error) reject(new GitError(args, stderr.toString("utf8"), error.code as number));
+            else resolve(stdout);
+          },
+        );
+      });
+    },
+
+    async firstParentLog(base, head, max) {
+      const out = await required([
+        "log",
+        "--first-parent",
+        `--max-count=${max}`,
+        `--format=%H${FIELD}%P${FIELD}%an${FIELD}%aI${FIELD}%s${RECORD}`,
+        `${base}..${head}`,
+        "--",
+      ]);
+      return out
+        .split(RECORD)
+        .map((record) => record.trim())
+        .filter((record) => record !== "")
+        .map((record) => {
+          const [id = "", parents = "", author = "", date = "", subject = ""] = record.split(FIELD);
+          return {
+            id,
+            parents: parents ? parents.split(" ") : [],
+            author,
+            date: new Date(date),
+            subject,
+          };
+        })
+        .toReversed();
+    },
   };
 }

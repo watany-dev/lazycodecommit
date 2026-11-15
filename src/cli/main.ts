@@ -16,6 +16,7 @@ import {
 } from "../core/pr.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
+import type { ReviewRequest } from "../tui/index.js";
 import { listLines, printable, prJson, statusLines, viewLines } from "./format.js";
 
 export interface Io {
@@ -35,6 +36,8 @@ export interface Deps {
   createGit(cwd: string): Git;
   createApi(options: { region?: string; profile?: string }): Promise<CodeCommitApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
+  /** Opens the review TUI; cli.ts loads it lazily so other commands never load Ink. */
+  openReview(request: ReviewRequest): Promise<void>;
 }
 
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
@@ -216,6 +219,15 @@ async function runCommand(
     note: io.err,
   };
   const print = (value: unknown) => io.out(JSON.stringify(value, null, 2));
+  // On a terminal, pr view and a bare pr list open the review screen instead of printing.
+  const review = (start: ReviewRequest["start"]) =>
+    deps.openReview({
+      repository: ctx.repository,
+      start,
+      region,
+      ...optional("profile", ctx.profile),
+      ...(ctx.clone ? { git } : {}),
+    });
 
   switch (command) {
     case "clone": {
@@ -295,6 +307,15 @@ async function runCommand(
       return 0;
     }
     case "pr list": {
+      if (
+        io.interactive &&
+        !json &&
+        values["state"] === undefined &&
+        values["limit"] === undefined
+      ) {
+        await review(null);
+        return 0;
+      }
       const state = (str(values, "state") ?? "open").toUpperCase();
       if (state !== "OPEN" && state !== "CLOSED")
         throw new UsageError("--state must be open or closed");
@@ -311,6 +332,10 @@ async function runCommand(
     }
     case "pr view": {
       const pr = await resolvePullRequest(positionals[0], prDeps);
+      if (io.interactive && !json) {
+        await review({ pullRequestId: pr.id });
+        return 0;
+      }
       if (json) print(prJson(pr, region));
       else for (const line of viewLines(pr, region)) io.out(line);
       return 0;

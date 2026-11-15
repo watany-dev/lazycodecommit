@@ -130,6 +130,10 @@ describe("createGit", () => {
     await expect(git.fetch(["refs/heads/nope:refs/remotes/origin/nope"])).rejects.toBeInstanceOf(
       GitError,
     );
+    sh(work, "update-ref", "-d", "refs/remotes/origin/topic");
+    await git.fetch(["+refs/heads/topic:refs/remotes/origin/topic"], { quiet: true });
+    expect(await git.resolveCommit("refs/remotes/origin/topic")).toBe(tip);
+    await expect(git.fetch(["refs/heads/nope:x"], { quiet: true })).rejects.toThrow(/nope/);
   });
 
   it("creates a tracking branch, switches, and fast-forwards", async () => {
@@ -166,6 +170,66 @@ describe("createGit", () => {
     await git.clone(bare, ["copy"]);
     expect(sh(join(dir, "copy"), "rev-parse", "HEAD")).toBe(sh(work, "rev-parse", "HEAD"));
     await expect(git.clone(join(dir, "missing.git"), [])).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("lists changed blobs between two commits, without rename detection", async () => {
+    await writeFile(join(work, "keep.txt"), "same\n");
+    await writeFile(join(work, "gone.txt"), "bye\n");
+    sh(work, "add", ".");
+    sh(work, "commit", "-q", "-m", "base");
+    const base = sh(work, "rev-parse", "HEAD");
+    await writeFile(join(work, "keep.txt"), "changed\n");
+    sh(work, "mv", "gone.txt", "moved.txt");
+    await writeFile(join(work, "new file.txt"), "hi\n");
+    sh(work, "add", ".");
+    sh(work, "commit", "-q", "-m", "change");
+    const head = sh(work, "rev-parse", "HEAD");
+    const blob = (rev: string) => sh(work, "rev-parse", rev);
+    const changes = await createGit(work).diffTree(base, head);
+    expect(changes).toEqual([
+      { status: "D", path: "gone.txt", before: blob(`${base}:gone.txt`) },
+      {
+        status: "M",
+        path: "keep.txt",
+        before: blob(`${base}:keep.txt`),
+        after: blob(`${head}:keep.txt`),
+      },
+      { status: "A", path: "moved.txt", after: blob(`${head}:moved.txt`) },
+      { status: "A", path: "new file.txt", after: blob(`${head}:new file.txt`) },
+    ]);
+    expect(await createGit(work).diffTree(head, head)).toEqual([]);
+    await expect(createGit(work).diffTree("nope", head)).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("reads a blob as bytes", async () => {
+    await writeFile(join(work, "bin"), Buffer.from([0, 1, 2, 255]));
+    sh(work, "add", ".");
+    sh(work, "commit", "-q", "-m", "bin");
+    const git = createGit(work);
+    expect([...(await git.blob(sh(work, "rev-parse", "HEAD:bin")))]).toEqual([0, 1, 2, 255]);
+    await expect(git.blob("0".repeat(40))).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("finds the merge base and walks first parents newest last", async () => {
+    const base = sh(work, "rev-parse", "HEAD");
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("one");
+    await commit("two\n\nbody");
+    sh(work, "switch", "-q", "main");
+    await commit("main moves");
+    const git = createGit(work);
+    expect(await git.mergeBase("main", "topic")).toBe(base);
+    expect(await git.mergeBase("main", "nope")).toBeNull();
+    const log = await git.firstParentLog(base, "topic", 100);
+    expect(log.map((c) => c.subject)).toEqual(["one", "two"]);
+    expect(log[0]).toMatchObject({
+      id: sh(work, "rev-parse", "topic~1"),
+      parents: [base],
+      author: "t",
+    });
+    expect(log[0]?.date).toBeInstanceOf(Date);
+    expect((await git.firstParentLog(base, "topic", 1)).map((c) => c.subject)).toEqual(["two"]);
+    await expect(git.firstParentLog("nope", "topic", 1)).rejects.toBeInstanceOf(GitError);
   });
 
   it("rejects when git cannot start", async () => {

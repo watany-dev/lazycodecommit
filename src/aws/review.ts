@@ -1,0 +1,708 @@
+import {
+  type Approval,
+  CodeCommitClient,
+  type Comment,
+  DeleteCommentContentCommand,
+  DescribePullRequestEventsCommand,
+  type Difference,
+  EvaluatePullRequestApprovalRulesCommand,
+  type Evaluation,
+  GetBlobCommand,
+  GetCommentReactionsCommand,
+  GetCommentsForPullRequestCommand,
+  GetCommitCommand,
+  GetDifferencesCommand,
+  GetMergeConflictsCommand,
+  GetPullRequestApprovalStatesCommand,
+  GetPullRequestCommand,
+  ListPullRequestsCommand,
+  MergePullRequestByFastForwardCommand,
+  MergePullRequestBySquashCommand,
+  MergePullRequestByThreeWayCommand,
+  PostCommentForPullRequestCommand,
+  PostCommentReplyCommand,
+  type PullRequest,
+  type PullRequestEvent,
+  type PullRequestTarget,
+  PutCommentReactionCommand,
+  UpdateCommentCommand,
+  UpdatePullRequestApprovalStateCommand,
+  UpdatePullRequestStatusCommand,
+} from "@aws-sdk/client-codecommit";
+import { mapLimit } from "./codecommit.js";
+
+const textDecoder = new TextDecoder();
+
+/** Foreground list fetch: 25 IDs at 10-wide is 3 waves instead of 5. */
+const LIST_PULL_REQUEST_CONCURRENCY = 10;
+/** Background reaction fetch: 100 comments at 15-wide is ~7 waves instead of 20. */
+const REACTION_FETCH_CONCURRENCY = 15;
+
+export interface CodeCommitConfig {
+  profile?: string;
+  region?: string;
+}
+
+export type PullRequestDisplayStatus = "OPEN" | "CLOSED" | "MERGED";
+
+export interface PullRequestSummary {
+  pullRequestId: string;
+  title: string;
+  authorArn: string;
+  creationDate: Date;
+  status: PullRequestDisplayStatus;
+}
+
+export interface CommentThread {
+  location: {
+    filePath: string;
+    filePosition: number;
+    relativeFileVersion: "BEFORE" | "AFTER";
+  } | null;
+  comments: Comment[];
+}
+
+export interface PullRequestDetail {
+  pullRequest: PullRequest;
+  differences: Difference[];
+  commentThreads: CommentThread[];
+}
+
+export function createClient(config: CodeCommitConfig): CodeCommitClient {
+  return new CodeCommitClient({
+    ...(config.region && { region: config.region }),
+    ...(config.profile && { profile: config.profile }),
+    requestHandler: {
+      requestTimeout: 10_000,
+      connectionTimeout: 5_000,
+    },
+  });
+}
+
+export async function listPullRequests(
+  client: CodeCommitClient,
+  repositoryName: string,
+  nextToken?: string,
+  pullRequestStatus?: "OPEN" | "CLOSED",
+): Promise<{ pullRequests: PullRequestSummary[]; nextToken?: string }> {
+  const listCommand = new ListPullRequestsCommand({
+    repositoryName,
+    pullRequestStatus: pullRequestStatus ?? "OPEN",
+    maxResults: 25,
+    nextToken,
+  });
+  const listResponse = await client.send(listCommand);
+  const pullRequestIds = listResponse.pullRequestIds ?? [];
+
+  const pullRequests: PullRequestSummary[] = (
+    await mapLimit(pullRequestIds, LIST_PULL_REQUEST_CONCURRENCY, async (id) => {
+      const getCommand = new GetPullRequestCommand({ pullRequestId: id });
+      const getResponse = await client.send(getCommand);
+      const pr = getResponse.pullRequest;
+      if (!pr) return null;
+
+      const apiStatus = pr.pullRequestStatus ?? "OPEN";
+      const isMerged = pr.pullRequestTargets?.[0]?.mergeMetadata?.isMerged === true;
+      const displayStatus: PullRequestDisplayStatus =
+        apiStatus === "CLOSED" && isMerged ? "MERGED" : (apiStatus as PullRequestDisplayStatus);
+
+      return {
+        pullRequestId: pr.pullRequestId ?? id,
+        title: pr.title ?? "(no title)",
+        authorArn: pr.authorArn ?? "unknown",
+        creationDate: pr.creationDate ?? new Date(),
+        status: displayStatus,
+      };
+    })
+  ).filter((pr): pr is PullRequestSummary => pr !== null);
+
+  const result: { pullRequests: PullRequestSummary[]; nextToken?: string } = { pullRequests };
+  if (listResponse.nextToken != null) result.nextToken = listResponse.nextToken;
+  return result;
+}
+
+export async function getAllDifferences(
+  client: CodeCommitClient,
+  repositoryName: string,
+  beforeCommitSpecifier: string,
+  afterCommitSpecifier: string,
+): Promise<Difference[]> {
+  const allDifferences: Difference[] = [];
+  let nextToken: string | undefined;
+  do {
+    const response = await client.send(
+      new GetDifferencesCommand({
+        repositoryName,
+        beforeCommitSpecifier,
+        afterCommitSpecifier,
+        NextToken: nextToken,
+      }),
+    );
+    allDifferences.push(...(response.differences ?? []));
+    nextToken = response.NextToken;
+  } while (nextToken);
+  return allDifferences;
+}
+
+/**
+ * `loadDifferences` replaces the GetDifferences call, so a clone can diff with git
+ * (spec: clone 内の diff). It gets the PR's first target, which has both commits.
+ */
+export async function getPullRequestDetail(
+  client: CodeCommitClient,
+  pullRequestId: string,
+  repositoryName: string,
+  loadDifferences?: (target: PullRequestTarget) => Promise<Difference[]>,
+): Promise<PullRequestDetail> {
+  const getCommand = new GetPullRequestCommand({ pullRequestId });
+  const getResponse = await client.send(getCommand);
+  const pullRequest = getResponse.pullRequest;
+  if (!pullRequest) {
+    throw new Error(`Pull request ${pullRequestId} not found.`);
+  }
+
+  const target = pullRequest.pullRequestTargets?.[0];
+  const hasCommits = !!(target?.sourceCommit && target?.destinationCommit);
+
+  const [differences, commentThreads] = await Promise.all([
+    !hasCommits
+      ? Promise.resolve([])
+      : loadDifferences
+        ? loadDifferences(target!)
+        : getAllDifferences(
+            client,
+            repositoryName,
+            target!.destinationCommit!,
+            target!.sourceCommit!,
+          ),
+    getComments(client, pullRequestId, {
+      repositoryName,
+      ...(hasCommits
+        ? {
+            afterCommitId: target!.sourceCommit!,
+            beforeCommitId: target!.destinationCommit!,
+          }
+        : {}),
+    }),
+  ]);
+
+  return { pullRequest, differences, commentThreads };
+}
+
+function sortCommentsRootFirst(comments: Comment[]): Comment[] {
+  const root: Comment[] = [];
+  const replies: Comment[] = [];
+  for (const c of comments) {
+    if (c.inReplyTo) {
+      replies.push(c);
+    } else {
+      root.push(c);
+    }
+  }
+  replies.sort((a, b) => (a.creationDate?.getTime() ?? 0) - (b.creationDate?.getTime() ?? 0));
+  return [...root, ...replies];
+}
+
+export async function getComments(
+  client: CodeCommitClient,
+  pullRequestId: string,
+  params?: {
+    repositoryName?: string;
+    afterCommitId?: string;
+    beforeCommitId?: string;
+  },
+): Promise<CommentThread[]> {
+  const commentThreads: CommentThread[] = [];
+  const baseInput = {
+    pullRequestId,
+    ...(params?.repositoryName ? { repositoryName: params.repositoryName } : {}),
+    ...(params?.afterCommitId && params?.beforeCommitId
+      ? {
+          afterCommitId: params.afterCommitId,
+          beforeCommitId: params.beforeCommitId,
+        }
+      : {}),
+  };
+  let nextToken: string | undefined;
+  do {
+    const commentsResponse = await client.send(
+      new GetCommentsForPullRequestCommand({ ...baseInput, nextToken }),
+    );
+    for (const thread of commentsResponse.commentsForPullRequestData ?? []) {
+      const location = thread.location?.filePath
+        ? {
+            filePath: thread.location.filePath,
+            filePosition: thread.location.filePosition ?? 0,
+            relativeFileVersion:
+              (thread.location.relativeFileVersion as "BEFORE" | "AFTER") ?? "AFTER",
+          }
+        : null;
+      commentThreads.push({
+        location,
+        comments: sortCommentsRootFirst(thread.comments ?? []),
+      });
+    }
+    nextToken = commentsResponse.nextToken;
+  } while (nextToken);
+  return commentThreads;
+}
+
+export async function postComment(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+    repositoryName: string;
+    beforeCommitId: string;
+    afterCommitId: string;
+    content: string;
+    location?: {
+      filePath: string;
+      filePosition: number;
+      relativeFileVersion: "BEFORE" | "AFTER";
+    };
+  },
+): Promise<Comment> {
+  const command = new PostCommentForPullRequestCommand({
+    pullRequestId: params.pullRequestId,
+    repositoryName: params.repositoryName,
+    beforeCommitId: params.beforeCommitId,
+    afterCommitId: params.afterCommitId,
+    content: params.content,
+    location: params.location
+      ? {
+          filePath: params.location.filePath,
+          filePosition: params.location.filePosition,
+          relativeFileVersion: params.location.relativeFileVersion,
+        }
+      : undefined,
+  });
+  const response = await client.send(command);
+  if (!response.comment) throw new Error("Empty comment response from CodeCommit API.");
+  return response.comment;
+}
+
+export async function postCommentReply(
+  client: CodeCommitClient,
+  params: {
+    inReplyTo: string;
+    content: string;
+  },
+): Promise<Comment> {
+  const command = new PostCommentReplyCommand({
+    inReplyTo: params.inReplyTo,
+    content: params.content,
+  });
+  const response = await client.send(command);
+  if (!response.comment) throw new Error("Empty reply response from CodeCommit API.");
+  return response.comment;
+}
+
+export async function updateApprovalState(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+    revisionId: string;
+    approvalState: "APPROVE" | "REVOKE";
+  },
+): Promise<void> {
+  const command = new UpdatePullRequestApprovalStateCommand({
+    pullRequestId: params.pullRequestId,
+    revisionId: params.revisionId,
+    approvalState: params.approvalState,
+  });
+  await client.send(command);
+}
+
+export async function getApprovalStates(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+    revisionId: string;
+  },
+): Promise<Approval[]> {
+  const command = new GetPullRequestApprovalStatesCommand({
+    pullRequestId: params.pullRequestId,
+    revisionId: params.revisionId,
+  });
+  const response = await client.send(command);
+  return response.approvals ?? [];
+}
+
+export async function evaluateApprovalRules(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+    revisionId: string;
+  },
+): Promise<Evaluation | null> {
+  const command = new EvaluatePullRequestApprovalRulesCommand({
+    pullRequestId: params.pullRequestId,
+    revisionId: params.revisionId,
+  });
+  const response = await client.send(command);
+  return response.evaluation ?? null;
+}
+
+const MAX_BLOB_SIZE = 1024 * 1024; // 1MB limit for TUI display
+
+export async function getBlobContent(
+  client: CodeCommitClient,
+  repositoryName: string,
+  blobId: string,
+): Promise<string> {
+  const command = new GetBlobCommand({ repositoryName, blobId });
+  const response = await client.send(command);
+  return response.content ? blobText(response.content) : "";
+}
+
+/** What the diff view shows for a blob's bytes, from the API or from git. */
+export function blobText(content: Uint8Array): string {
+  if (content.byteLength > MAX_BLOB_SIZE) return "[File too large to display]";
+  return textDecoder.decode(content);
+}
+
+export type MergeStrategy = "fast-forward" | "squash" | "three-way";
+
+export interface ConflictSummary {
+  mergeable: boolean;
+  conflictCount: number;
+  conflictFiles: string[];
+}
+
+export async function mergePullRequest(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+    repositoryName: string;
+    sourceCommitId?: string | undefined;
+    strategy: MergeStrategy;
+  },
+): Promise<PullRequest> {
+  let command;
+  switch (params.strategy) {
+    case "fast-forward":
+      command = new MergePullRequestByFastForwardCommand({
+        pullRequestId: params.pullRequestId,
+        repositoryName: params.repositoryName,
+        sourceCommitId: params.sourceCommitId,
+      });
+      break;
+    case "squash":
+      command = new MergePullRequestBySquashCommand({
+        pullRequestId: params.pullRequestId,
+        repositoryName: params.repositoryName,
+        sourceCommitId: params.sourceCommitId,
+      });
+      break;
+    case "three-way":
+      command = new MergePullRequestByThreeWayCommand({
+        pullRequestId: params.pullRequestId,
+        repositoryName: params.repositoryName,
+        sourceCommitId: params.sourceCommitId,
+      });
+      break;
+  }
+  const response = await client.send(command);
+  if (!response.pullRequest) throw new Error("Empty merge response from CodeCommit API.");
+  return response.pullRequest;
+}
+
+export async function getMergeConflicts(
+  client: CodeCommitClient,
+  params: {
+    repositoryName: string;
+    sourceCommitId: string;
+    destinationCommitId: string;
+    strategy: MergeStrategy;
+  },
+): Promise<ConflictSummary> {
+  const mergeOptionMap: Record<
+    MergeStrategy,
+    "FAST_FORWARD_MERGE" | "SQUASH_MERGE" | "THREE_WAY_MERGE"
+  > = {
+    "fast-forward": "FAST_FORWARD_MERGE",
+    squash: "SQUASH_MERGE",
+    "three-way": "THREE_WAY_MERGE",
+  };
+
+  const command = new GetMergeConflictsCommand({
+    repositoryName: params.repositoryName,
+    sourceCommitSpecifier: params.sourceCommitId,
+    destinationCommitSpecifier: params.destinationCommitId,
+    mergeOption: mergeOptionMap[params.strategy],
+  });
+  const response = await client.send(command);
+
+  return {
+    mergeable: response.mergeable ?? false,
+    conflictCount: response.conflictMetadataList?.length ?? 0,
+    conflictFiles: (response.conflictMetadataList ?? [])
+      .map((c) => c.filePath ?? "(unknown)")
+      .filter(Boolean),
+  };
+}
+
+export async function closePullRequest(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+  },
+): Promise<PullRequest> {
+  const command = new UpdatePullRequestStatusCommand({
+    pullRequestId: params.pullRequestId,
+    pullRequestStatus: "CLOSED",
+  });
+  const response = await client.send(command);
+  if (!response.pullRequest) throw new Error("Empty close response from CodeCommit API.");
+  return response.pullRequest;
+}
+
+export interface CommitInfo {
+  commitId: string;
+  shortId: string;
+  message: string;
+  authorName: string;
+  authorDate: Date;
+  parentIds: string[];
+}
+
+export async function getCommit(
+  client: CodeCommitClient,
+  repositoryName: string,
+  commitId: string,
+): Promise<CommitInfo> {
+  const command = new GetCommitCommand({ repositoryName, commitId });
+  const response = await client.send(command);
+  const commit = response.commit;
+  if (!commit) throw new Error(`Commit ${commitId} not found.`);
+
+  return {
+    commitId: commit.commitId ?? commitId,
+    shortId: (commit.commitId ?? commitId).slice(0, 7),
+    /* v8 ignore next -- split always returns at least one element */
+    message: (commit.message ?? "").split("\n")[0] ?? "",
+    authorName: commit.author?.name ?? "unknown",
+    authorDate: commit.author?.date ? new Date(commit.author.date) : new Date(),
+    parentIds: commit.parents ?? [],
+  };
+}
+
+const MAX_COMMITS = 100;
+
+export async function getCommitsForPR(
+  client: CodeCommitClient,
+  repositoryName: string,
+  sourceCommit: string,
+  mergeBase: string,
+): Promise<CommitInfo[]> {
+  const commits: CommitInfo[] = [];
+  let currentId = sourceCommit;
+
+  while (currentId !== mergeBase && commits.length < MAX_COMMITS) {
+    const commit = await getCommit(client, repositoryName, currentId);
+    commits.push(commit);
+    if (commit.parentIds.length === 0) break;
+    currentId = commit.parentIds[0]!;
+  }
+
+  return commits.toReversed();
+}
+
+export async function updateComment(
+  client: CodeCommitClient,
+  params: {
+    commentId: string;
+    content: string;
+  },
+): Promise<Comment> {
+  const command = new UpdateCommentCommand({
+    commentId: params.commentId,
+    content: params.content,
+  });
+  const response = await client.send(command);
+  if (!response.comment) throw new Error("Empty update response from CodeCommit API.");
+  return response.comment;
+}
+
+export async function deleteComment(
+  client: CodeCommitClient,
+  params: {
+    commentId: string;
+  },
+): Promise<Comment> {
+  const command = new DeleteCommentContentCommand({
+    commentId: params.commentId,
+  });
+  const response = await client.send(command);
+  if (!response.comment) throw new Error("Empty delete response from CodeCommit API.");
+  return response.comment;
+}
+
+/** Aggregated reaction information for a single comment */
+export interface ReactionSummary {
+  emoji: string;
+  shortCode: string;
+  count: number;
+  userArns: string[];
+}
+
+/** commentId → ReactionSummary[] mapping */
+export type ReactionsByComment = Map<string, ReactionSummary[]>;
+
+export async function putReaction(
+  client: CodeCommitClient,
+  params: {
+    commentId: string;
+    reactionValue: string;
+  },
+): Promise<void> {
+  const command = new PutCommentReactionCommand({
+    commentId: params.commentId,
+    reactionValue: params.reactionValue,
+  });
+  await client.send(command);
+}
+
+async function getReactionsForComment(
+  client: CodeCommitClient,
+  commentId: string,
+): Promise<ReactionSummary[]> {
+  const command = new GetCommentReactionsCommand({
+    commentId,
+  });
+  const response = await client.send(command);
+
+  return (response.reactionsForComment ?? []).map((r) => ({
+    emoji: r.reaction?.emoji ?? "",
+    shortCode: r.reaction?.shortCode ?? "",
+    count: (r.reactionUsers?.length ?? 0) + (r.reactionsFromDeletedUsersCount ?? 0),
+    userArns: r.reactionUsers ?? [],
+  }));
+}
+
+export async function getReactionsForComments(
+  client: CodeCommitClient,
+  commentIds: string[],
+): Promise<ReactionsByComment> {
+  const results: ReactionsByComment = new Map();
+  const settled = await mapLimit(commentIds, REACTION_FETCH_CONCURRENCY, async (commentId) => {
+    try {
+      const reactions = await getReactionsForComment(client, commentId);
+      return { commentId, reactions };
+    } catch {
+      return { commentId, reactions: [] as ReactionSummary[] };
+    }
+  });
+  for (const { commentId, reactions } of settled) {
+    if (reactions.length > 0) {
+      results.set(commentId, reactions);
+    }
+  }
+  return results;
+}
+
+/** PR アクティビティイベントの表示用データ */
+export interface PrActivityEvent {
+  eventDate: Date;
+  eventType: string;
+  actorArn: string;
+  description: string;
+}
+
+interface PullRequestActivityResult {
+  events: PrActivityEvent[];
+  nextToken?: string;
+}
+
+export async function getPullRequestActivity(
+  client: CodeCommitClient,
+  params: {
+    pullRequestId: string;
+    nextToken?: string;
+    maxResults?: number;
+  },
+): Promise<PullRequestActivityResult> {
+  const command = new DescribePullRequestEventsCommand({
+    pullRequestId: params.pullRequestId,
+    ...(params.nextToken !== undefined ? { nextToken: params.nextToken } : {}),
+    maxResults: params.maxResults ?? 50,
+  });
+  const response = await client.send(command);
+
+  const events = (response.pullRequestEvents ?? []).map(mapPrEvent);
+
+  return {
+    events,
+    ...(response.nextToken !== undefined ? { nextToken: response.nextToken } : {}),
+  };
+}
+
+function mapPrEvent(event: PullRequestEvent): PrActivityEvent {
+  const actorArn = event.actorArn ?? "";
+  const eventDate = event.eventDate ?? new Date(0);
+  const eventType = event.pullRequestEventType ?? "UNKNOWN";
+  const description = buildEventDescription(event);
+
+  return { eventDate, eventType, actorArn, description };
+}
+
+function buildEventDescription(event: PullRequestEvent): string {
+  // Cast to string so the switch can handle future/undocumented event types safely
+  const type = (event.pullRequestEventType ?? "") as string;
+
+  switch (type) {
+    case "PULL_REQUEST_CREATED":
+      return "created this PR";
+
+    case "PULL_REQUEST_STATUS_CHANGED": {
+      const status = event.pullRequestStatusChangedEventMetadata?.pullRequestStatus;
+      if (status === "CLOSED") return "closed this PR";
+      if (status === "OPEN") return "reopened this PR";
+      return "changed PR status";
+    }
+
+    case "PULL_REQUEST_SOURCE_REFERENCE_UPDATED":
+      return "updated the source branch";
+
+    case "PULL_REQUEST_MERGE_STATE_CHANGED": {
+      const merged = event.pullRequestMergedStateChangedEventMetadata?.mergeMetadata?.isMerged;
+      if (merged) return "merged this PR";
+      return "merge state changed";
+    }
+
+    case "PULL_REQUEST_APPROVAL_RULE_CREATED": {
+      const name = event.approvalRuleEventMetadata?.approvalRuleName ?? "";
+      return `created approval rule "${name}"`;
+    }
+
+    case "PULL_REQUEST_APPROVAL_RULE_DELETED": {
+      const name = event.approvalRuleEventMetadata?.approvalRuleName ?? "";
+      return `deleted approval rule "${name}"`;
+    }
+
+    case "PULL_REQUEST_APPROVAL_RULE_UPDATED": {
+      const name = event.approvalRuleEventMetadata?.approvalRuleName ?? "";
+      return `updated approval rule "${name}"`;
+    }
+
+    case "PULL_REQUEST_APPROVAL_RULE_OVERRIDDEN": {
+      const overrideStatus = event.approvalRuleOverriddenEventMetadata?.overrideStatus;
+      if (overrideStatus === "OVERRIDE") return "overrode approval rules";
+      if (overrideStatus === "REVOKE") return "revoked approval rule override";
+      return "changed approval rule override";
+    }
+
+    case "PULL_REQUEST_APPROVALS_RESET":
+      return "approvals reset (source branch updated)";
+
+    case "PULL_REQUEST_APPROVAL_STATE_CHANGED": {
+      const approvalStatus = event.approvalStateChangedEventMetadata?.approvalStatus;
+      if (approvalStatus === "APPROVE") return "approved this PR";
+      if (approvalStatus === "REVOKE") return "revoked approval";
+      return "changed approval state";
+    }
+
+    default:
+      return type;
+  }
+}

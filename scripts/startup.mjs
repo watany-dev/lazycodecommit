@@ -1,14 +1,38 @@
 // Cold-start gate: the spec targets 300 ms for a CLI subcommand, excluding API
 // waits. Runs the built bin under the current Node.js and fails when the
-// median wall time of RUNS starts exceeds the budget.
+// median wall time of RUNS starts exceeds the budget. First it checks the other
+// half of that requirement: the files a subcommand loads up front (the entry
+// and its static imports) contain neither Ink nor React, which only the TUI's
+// dynamic import may pull in.
 // Usage: node scripts/startup.mjs [path/to/cli.mjs]   (default: dist/cli.mjs)
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 const BUDGET_MS = 300;
 const RUNS = 15;
 const bin = process.argv[2] ?? fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
+
+const UI_MARKERS = ['Symbol.for("react.', '"ink-root"'];
+const seen = new Set();
+const pending = [bin];
+while (pending.length > 0) {
+  const file = pending.pop();
+  if (seen.has(file)) continue;
+  seen.add(file);
+  const code = readFileSync(file, "utf8");
+  const marker = UI_MARKERS.find((m) => code.includes(m));
+  if (marker) {
+    console.error("startup: %s is loaded by every command but contains %s", file, marker);
+    process.exit(1);
+  }
+  // Static imports only (`from"./x.mjs"`, `import"./x.mjs"`); `import("./x.mjs")` is lazy.
+  for (const [, spec] of code.matchAll(/(?:from|import)\s*["'](\.\/[^"']+)["']/g)) {
+    pending.push(join(dirname(file), spec));
+  }
+}
 
 const times = [];
 for (let i = 0; i < RUNS; i++) {
@@ -27,6 +51,6 @@ for (let i = 0; i < RUNS; i++) {
 times.sort((a, b) => a - b);
 const median = times[Math.floor(RUNS / 2)];
 console.log(
-  `startup: median ${median.toFixed(1)} ms over ${RUNS} runs (budget ${BUDGET_MS} ms, ${process.version})`,
+  `startup: median ${median.toFixed(1)} ms over ${RUNS} runs (budget ${BUDGET_MS} ms, ${process.version}); ${seen.size} file(s) loaded up front, none with Ink or React`,
 );
 if (median > BUDGET_MS) process.exit(1);

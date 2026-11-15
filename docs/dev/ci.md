@@ -15,7 +15,7 @@ actionlint and zizmor (through `uvx`; zizmor's online audits need `GH_TOKEN`).
 | `Audit (bun audit)`                      | Known advisories in dependencies; also runs daily                                                                                          |
 | `Test (ubuntu-24.04)`, `Test (macos-15)` | Vitest with the coverage gate                                                                                                              |
 | `Package`                                | `bun run build` and `npm pack`; uploads the tarball                                                                                        |
-| `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, and gates cold start (median of 15 `--version` runs) at the spec's 300 ms |
+| `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, gates cold start (median of 15 `--version` runs) at the spec's 300 ms, and fails if the files every command loads contain Ink or React |
 | `Workflow lint (actionlint)`, `Zizmor`   | Workflow correctness and security; zizmor findings fail the job in its log                                                                 |
 | `Semgrep`                                | `p/default`, fails on findings; SARIF to code scanning except from fork PRs, whose token cannot upload                                     |
 

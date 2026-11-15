@@ -10,4 +10,5 @@ process.exitCode = await run(process.argv.slice(2), {
   // The SDK is the heavy part of the bundle; load it only for commands that call AWS.
   createApi: async (options) => (await import("./aws/codecommit.js")).createCodeCommitApi(options),
   loadConfig,
+  openReview: async (request) => (await import("./tui/index.js")).openReview(request),
 });

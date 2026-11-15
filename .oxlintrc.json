@@ -11,7 +11,13 @@
     "no-await-in-loop": "off",
     "no-unused-vars": "error",
     "no-fallthrough": "error",
-    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
     "no-var": "error",
     "prefer-const": "error",
     "no-shadow-restricted-names": "error",
@@ -44,13 +50,30 @@
     "no-implied-eval": "error",
     "no-prototype-builtins": "error",
     "react/no-danger": "error",
-    "react/jsx-no-script-url": "error"
+    "react/jsx-no-script-url": "error",
+    "react/react-in-jsx-scope": "off"
   },
   "overrides": [
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       "rules": {
         "typescript/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": ["src/tui/**"],
+      "rules": {
+        "react/refs": "off",
+        "react/immutability": "off",
+        "react/set-state-in-effect": "off",
+        "react/exhaustive-effect-dependencies": "off",
+        "react-hooks/exhaustive-deps": "off"
+      }
+    },
+    {
+      "files": ["src/tui/**/*.test.tsx"],
+      "rules": {
+        "unicorn/consistent-function-scoping": "off"
       }
     }
   ],
