@@ -10,6 +10,7 @@ import {
   ListPullRequestsCommand,
   type PullRequest as SdkPullRequest,
 } from "@aws-sdk/client-codecommit";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 
 export type PullRequestStatus = "OPEN" | "CLOSED";
 
@@ -28,6 +29,13 @@ export interface PullRequest {
   readonly revisionId: string;
   readonly creationDate: Date;
   readonly lastActivityDate: Date;
+  /** The rules on this PR; `content` is the rule's JSON as CodeCommit stores it. */
+  readonly approvalRules: readonly ApprovalRule[];
+}
+
+export interface ApprovalRule {
+  readonly name: string;
+  readonly content: string;
 }
 
 export interface RuleEvaluation {
@@ -49,6 +57,8 @@ export interface NewPullRequest {
 export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
+  /** The caller's ARN (sts:GetCallerIdentity): "me" for the inbox. */
+  callerArn(): Promise<string>;
   defaultBranch(repository: string): Promise<string | undefined>;
   cloneUrls(repository: string): Promise<{ https: string; ssh: string }>;
   /** Tip commit of a remote branch, or undefined when the branch does not exist. */
@@ -91,6 +101,10 @@ export function toPullRequest(pr: SdkPullRequest | undefined): PullRequest {
     revisionId: pr.revisionId ?? "",
     creationDate: pr.creationDate ?? new Date(0),
     lastActivityDate: pr.lastActivityDate ?? pr.creationDate ?? new Date(0),
+    approvalRules: (pr.approvalRules ?? []).map((r) => ({
+      name: r.approvalRuleName ?? "",
+      content: r.approvalRuleContent ?? "",
+    })),
   };
 }
 
@@ -113,13 +127,21 @@ export async function mapLimit<T, R>(
 }
 
 export function createCodeCommitApi(options: { region?: string; profile?: string }): CodeCommitApi {
-  const client = new CodeCommitClient({
+  const clientConfig = {
     ...(options.region ? { region: options.region } : {}),
     ...(options.profile ? { profile: options.profile } : {}),
-  });
+  };
+  const client = new CodeCommitClient(clientConfig);
 
   return {
     region: () => client.config.region(),
+
+    async callerArn() {
+      const sts = new STSClient({ ...clientConfig, region: await client.config.region() });
+      const out = await sts.send(new GetCallerIdentityCommand({}));
+      if (!out.Arn) throw new Error("sts:GetCallerIdentity returned no ARN");
+      return out.Arn;
+    },
 
     async defaultBranch(repository) {
       const out = await client.send(new GetRepositoryCommand({ repositoryName: repository }));

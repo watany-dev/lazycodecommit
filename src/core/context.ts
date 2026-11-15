@@ -18,7 +18,12 @@ export interface ContextInput {
   readonly git: Git;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly config: Config;
+  /** Ignore the clone we are in (its origin's region and profile). */
+  readonly outsideClone?: boolean;
 }
+
+/** Like RepoContext, but outside a clone and without --repo there is no repository. */
+export type AccountContext = Omit<RepoContext, "repository"> & { readonly repository?: string };
 
 /**
  * Picks the repository, region and profile (spec: リポジトリの推定, プロファイルと
@@ -26,7 +31,19 @@ export interface ContextInput {
  * AWS_PROFILE / AWS_REGION, then the config file, then the SDK's defaults.
  */
 export async function resolveContext(input: ContextInput): Promise<RepoContext> {
-  const root = await input.git.topLevel();
+  const { why, repository, ...ctx } = await resolveAccount(input);
+  if (repository) return { repository, ...ctx };
+  throw new UsageError(`Cannot tell which repository to use: ${why}. Pass --repo <name>.`);
+}
+
+/** resolveContext for commands that work across repositories (home, status). */
+export async function resolveAccountContext(input: ContextInput): Promise<AccountContext> {
+  const { why: _, ...ctx } = await resolveAccount(input);
+  return ctx;
+}
+
+async function resolveAccount(input: ContextInput): Promise<AccountContext & { why: string }> {
+  const root = input.outsideClone ? null : await input.git.topLevel();
   const url = root ? await input.git.remoteUrl("origin") : null;
   const remote = url ? parseRemoteUrl(url) : null;
 
@@ -38,15 +55,12 @@ export async function resolveContext(input: ContextInput): Promise<RepoContext> 
     (!input.repo || input.repo === remote.repo) &&
     (!input.region || !remote.region || input.region === remote.region);
   const repository = input.repo ?? remote?.repo;
-  if (!repository) {
-    const why =
-      root === null
-        ? "not inside a git repository"
-        : url === null
-          ? "this clone has no origin remote"
-          : `origin (${url}) is not a CodeCommit remote`;
-    throw new UsageError(`Cannot tell which repository to use: ${why}. Pass --repo <name>.`);
-  }
+  const why =
+    root === null
+      ? "not inside a git repository"
+      : url === null
+        ? "this clone has no origin remote"
+        : `origin (${url}) is not a CodeCommit remote`;
 
   const fromRemote = inClone ? remote : null;
   const region =
@@ -58,7 +72,8 @@ export async function resolveContext(input: ContextInput): Promise<RepoContext> 
   const profile =
     input.profile || fromRemote?.profile || input.env["AWS_PROFILE"] || input.config.profile;
   return {
-    repository,
+    why,
+    ...(repository ? { repository } : {}),
     ...(region ? { region } : {}),
     ...(profile ? { profile } : {}),
     ...(inClone ? { clone: { root } } : {}),

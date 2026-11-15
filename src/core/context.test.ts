@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeGit } from "../testing/fakes.js";
-import { resolveContext } from "./context.js";
+import { resolveAccountContext, resolveContext } from "./context.js";
 
 const GRC = "codecommit::eu-west-1://remote-profile@demo";
 
@@ -102,5 +102,30 @@ describe("resolveContext", () => {
     await expect(resolveContext({ git: fakeGit(git), env: {}, config: {} })).rejects.toThrow(
       message,
     );
+  });
+});
+
+describe("resolveAccountContext", () => {
+  it("leaves the repository out outside a clone", async () => {
+    const ctx = await resolveAccountContext({
+      git: fakeGit({ topLevel: async () => null }),
+      env: { AWS_PROFILE: "dev" },
+      config: { region: "ap-northeast-1" },
+    });
+    expect(ctx).toEqual({ region: "ap-northeast-1", profile: "dev" });
+  });
+
+  it("keeps the clone's repository", async () => {
+    const ctx = await resolveAccountContext({
+      git: fakeGit({ remoteUrl: async () => GRC }),
+      env: {},
+      config: {},
+    });
+    expect(ctx).toEqual({
+      repository: "demo",
+      region: "eu-west-1",
+      profile: "remote-profile",
+      clone: { root: "/work" },
+    });
   });
 });

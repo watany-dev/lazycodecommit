@@ -43,7 +43,7 @@ export function consoleUrl(region: string, repository: string, id: string): stri
   return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/pull-requests/${id}/details?region=${region}`;
 }
 
-function concurrency(config: Config): number {
+export function concurrency(config: Config): number {
   return config.concurrency ?? DEFAULT_CONCURRENCY;
 }
 

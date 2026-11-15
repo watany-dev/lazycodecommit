@@ -1,4 +1,5 @@
-import type { PullRequest } from "../aws/codecommit.js";
+import type { PullRequest, RuleEvaluation } from "../aws/codecommit.js";
+import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
 
@@ -62,14 +63,20 @@ export function prJson(pr: PullRequest, region: string) {
 }
 
 export function listLines(prs: readonly PullRequest[]): string[] {
-  if (prs.length === 0) return [];
-  const rows = prs.map((pr) => [
-    `#${pr.id}`,
-    printable(pr.title),
-    `${pr.sourceBranch} → ${pr.destinationBranch}`,
-    shortArn(pr.authorArn),
-    date(pr.lastActivityDate),
-  ]);
+  return table(
+    prs.map((pr) => [
+      `#${pr.id}`,
+      printable(pr.title),
+      `${pr.sourceBranch} → ${pr.destinationBranch}`,
+      shortArn(pr.authorArn),
+      date(pr.lastActivityDate),
+    ]),
+  );
+}
+
+/** Columns padded to their widest cell; the last column is not padded. */
+function table(rows: readonly (readonly string[])[]): string[] {
+  if (rows.length === 0) return [];
   const widths = rows[0]?.map((_, i) => Math.max(...rows.map((r) => cells(r[i] as string)))) ?? [];
   return rows.map((r) =>
     r
@@ -114,4 +121,75 @@ export function statusLines(s: PrStatus, region: string): string[] {
     `  conflicts:      ${s.mergeable ? "none" : "yes, cannot merge cleanly"}`,
     `  ${consoleUrl(region, pr.repository, pr.id)}`,
   ];
+}
+
+function rulesCell(rules: RuleEvaluation | undefined): string {
+  if (!rules) return "rules ?";
+  if (rules.overridden) return "rules overridden";
+  const total = rules.satisfied.length + rules.notSatisfied.length;
+  if (total === 0) return "no rules";
+  return rules.approved ? "approved" : `rules ${rules.satisfied.length}/${total}`;
+}
+
+function conflictCell(mergeable: boolean | undefined): string {
+  return mergeable === undefined ? "conflicts ?" : mergeable ? "no conflicts" : "conflicts";
+}
+
+function inboxSection(title: string, rows: string[][]): string[] {
+  return [
+    `${title} (${rows.length})`,
+    ...(rows.length === 0 ? ["  none"] : table(rows).map((l) => `  ${l}`)),
+  ];
+}
+
+const unreadMark = (i: InboxItem) => (i.unread ? "●" : " ");
+
+/** `lazycc status`: the home screen's two sections as text. ● marks unread. */
+export function inboxLines(items: readonly InboxItem[]): string[] {
+  const awaiting = items.filter((i) => i.section === "awaiting");
+  const mine = items.filter((i) => i.section === "mine");
+  return [
+    ...inboxSection(
+      "Awaiting your approval",
+      awaiting.map((i) => [
+        unreadMark(i),
+        printable(i.pr.repository),
+        `#${i.pr.id}`,
+        printable(i.pr.title),
+        shortArn(i.pr.authorArn),
+        date(i.pr.lastActivityDate),
+      ]),
+    ),
+    "",
+    ...inboxSection(
+      "Your pull requests",
+      mine.map((i) => [
+        unreadMark(i),
+        printable(i.pr.repository),
+        `#${i.pr.id}`,
+        printable(i.pr.title),
+        rulesCell(i.rules),
+        conflictCell(i.mergeable),
+        date(i.pr.lastActivityDate),
+      ]),
+    ),
+  ];
+}
+
+export function inboxJson(inbox: Inbox, items: readonly InboxItem[], region: string) {
+  const row = (i: InboxItem) => ({
+    ...prJson(i.pr, region),
+    unread: i.unread,
+    ...(i.section === "awaiting"
+      ? { approvedBy: i.approvedBy ?? null }
+      : { approvalRules: i.rules ?? null, mergeable: i.mergeable ?? null }),
+    ...(i.detailError ? { detailError: i.detailError } : {}),
+  });
+  return {
+    me: inbox.me,
+    repositories: inbox.repositories,
+    awaiting: items.filter((i) => i.section === "awaiting").map(row),
+    mine: items.filter((i) => i.section === "mine").map(row),
+    errors: inbox.errors.map((e) => ({ repository: e.repository, message: e.error.message })),
+  };
 }
