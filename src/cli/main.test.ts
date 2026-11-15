@@ -5,22 +5,27 @@ import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
-import type { ReviewRequest } from "../tui/index.js";
+import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
 interface Setup {
   interactive?: boolean;
+  onBranches?: (request: BranchesRequest) => Promise<void>;
   git?: Partial<Git>;
   api?: CodeCommitApi;
   config?: Config | Error;
   env?: Record<string, string>;
+  edit?: (text: string) => Promise<string>;
+  files?: Record<string, string>;
 }
 
 async function cli(args: string[], setup: Setup = {}) {
   const out: string[] = [];
   const err: string[] = [];
+  const confirms: string[] = [];
   const apiOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
+  const branchScreens: BranchesRequest[] = [];
   const deps: Deps = {
     io: {
       out: (l) => out.push(l),
@@ -28,9 +33,12 @@ async function cli(args: string[], setup: Setup = {}) {
       env: setup.env ?? {},
       cwd: "/work",
       interactive: setup.interactive ?? false,
-      confirm: async () => true,
-      edit: async (t) => t,
-      readFile: async () => null,
+      confirm: async (question) => {
+        confirms.push(question);
+        return true;
+      },
+      edit: setup.edit ?? (async (t) => t),
+      readFile: async (path) => setup.files?.[path] ?? null,
     },
     createGit: () => fakeGit(setup.git),
     createApi: async (o) => {
@@ -42,9 +50,21 @@ async function cli(args: string[], setup: Setup = {}) {
       return setup.config ?? {};
     },
     openReview: async (request) => void reviews.push(request),
+    openBranches: async (request) => {
+      branchScreens.push(request);
+      await setup.onBranches?.(request);
+    },
   };
   const code = await run(args, deps);
-  return { code, out: out.join("\n"), err: err.join("\n"), apiOptions, reviews };
+  return {
+    code,
+    out: out.join("\n"),
+    err: err.join("\n"),
+    confirms,
+    apiOptions,
+    reviews,
+    branchScreens,
+  };
 }
 
 const json = (s: string) => JSON.parse(s);
@@ -424,6 +444,179 @@ describe("pr checkout", () => {
   });
 });
 
+const commentApi = () => fakeApi([pullRequest({ id: "6", title: "Add \x1b[2Jthing" })]);
+
+describe("pr comment", () => {
+  it("posts --body and prints where", async () => {
+    const a = commentApi();
+    const r = await cli(["pr", "comment", "6", "-b", "LGTM"], { api: a });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual(["comment 6 LGTM"]);
+    expect(r.out.split("\n")).toEqual([
+      "Commented on #6 Add ^[[2Jthing",
+      "https://ap-northeast-1.console.aws.amazon.com/codesuite/codecommit/repositories/demo/pull-requests/6/details?region=ap-northeast-1",
+    ]);
+  });
+
+  it("reads --body-file, and prints JSON", async () => {
+    const a = commentApi();
+    const r = await cli(["pr", "comment", "6", "-F", "note.md", "--json"], {
+      api: a,
+      files: { "note.md": "\nLooks good.\n" },
+    });
+    expect(a.writes).toEqual(["comment 6 Looks good."]);
+    expect(json(r.out)).toMatchObject({ commentId: "c1", pullRequest: { id: "6" } });
+  });
+
+  it("opens the editor on a terminal, and gives up on an empty comment", async () => {
+    const a = commentApi();
+    await cli(["pr", "comment", "6"], { api: a, interactive: true, edit: async () => "Hi\n" });
+    expect(a.writes).toEqual(["comment 6 Hi"]);
+    const r = await cli(["pr", "comment", "6"], { api: a, interactive: true });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: Aborted: the comment is empty." });
+    expect(a.writes).toHaveLength(1);
+  });
+
+  it("defaults to the current branch's PR inside a clone", async () => {
+    const a = fakeApi([pullRequest({ id: "3" })]);
+    await cli(["pr", "comment", "-b", "x"], { api: a });
+    expect(a.writes).toEqual(["comment 3 x"]);
+  });
+
+  it.each([
+    [["pr", "comment", "6"], "Not a terminal: pass --body or --body-file"],
+    [
+      ["pr", "comment", "6", "-b", "a", "-F", "f"],
+      "--body and --body-file cannot be used together",
+    ],
+    [["pr", "comment", "x", "-b", "a"], "Not a pull request id: x"],
+  ])("exits 2 for %j", async (args, message) => {
+    const r = await cli(args, { api: commentApi() });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(message);
+  });
+
+  it("exits 1 for a missing body file", async () => {
+    const r = await cli(["pr", "comment", "6", "-F", "nope.md"], { api: commentApi() });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: --body-file: nope.md does not exist" });
+  });
+});
+
+describe("pr approve", () => {
+  it("approves, and revokes with --revoke", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "approve", "6"], { api: a });
+    expect(r).toMatchObject({ code: 0 });
+    expect(r.out.split("\n")[0]).toBe("Approved #6 A pull request");
+    const v = await cli(["pr", "approve", "6", "--revoke", "--json"], { api: a });
+    expect(json(v.out)).toMatchObject({ approved: false, pullRequest: { id: "6" } });
+    expect(a.writes).toEqual(["approve 6", "revoke 6"]);
+  });
+
+  it("says so when you approve your own PR", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })], {
+      setApproval: async () => {
+        throw Object.assign(new Error("author"), {
+          name: "PullRequestCannotBeApprovedByAuthorException",
+        });
+      },
+    });
+    const r = await cli(["pr", "approve", "6"], { api: a });
+    expect(r).toMatchObject({ code: 1 });
+    expect(r.err).toContain("You cannot approve your own pull request");
+  });
+});
+
+describe("pr merge", () => {
+  it.each([
+    ["--ff", "fast-forward"],
+    ["--squash", "squash"],
+    ["--three-way", "three-way"],
+  ])("merges with %s", async (flag, strategy) => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6", flag], { api: a });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual([`merge 6 ${strategy}`]);
+    expect(r.out.split("\n")[0]).toBe(`Merged #6 A pull request into main (${strategy})`);
+  });
+
+  it("prints the merged PR as JSON", async () => {
+    const r = await cli(["pr", "merge", "6", "--squash", "--json"], {
+      api: fakeApi([pullRequest({ id: "6" })]),
+    });
+    expect(json(r.out)).toMatchObject({ id: "6", status: "MERGED" });
+  });
+
+  it.each([
+    [[], "Pick a merge strategy: --ff, --squash or --three-way"],
+    [["--ff", "--squash"], "Pick one merge strategy: --ff, --squash or --three-way"],
+  ])("exits 2 for %j", async (flags, message) => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6", ...flags], { api: a });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(message);
+    expect(a.writes).toEqual([]);
+  });
+
+  it("accepts exactly one strategy flag, over every combination", async () => {
+    const flags = ["--ff", "--squash", "--three-way"];
+    for (let mask = 0; mask < 8; mask++) {
+      const picked = flags.filter((_, i) => mask & (1 << i));
+      const r = await cli(["pr", "merge", "6", ...picked], {
+        api: fakeApi([pullRequest({ id: "6" })]),
+      });
+      expect(r.code).toBe(picked.length === 1 ? 0 : 2);
+    }
+  });
+
+  it("explains a merge that needs a person", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })], {
+      merge: async () => {
+        throw Object.assign(new Error("conflicts"), { name: "ManualMergeRequiredException" });
+      },
+    });
+    const r = await cli(["pr", "merge", "6", "--ff"], { api: a });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("cannot be merged automatically");
+  });
+});
+
+describe("pr close", () => {
+  it("closes without merging", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "close", "6"], { api: a });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")[0]).toBe("Closed #6 A pull request");
+    expect(a.writes).toEqual(["close 6"]);
+    const j = await cli(["pr", "close", "6", "--json"], { api: a });
+    expect(json(j.out)).toMatchObject({ id: "6", status: "CLOSED" });
+  });
+});
+
+describe("writes to a PR that is no longer open", () => {
+  it.each([[["pr", "approve", "6"]], [["pr", "merge", "6", "--ff"]], [["pr", "close", "6"]]])(
+    "%j refuses a merged PR without calling AWS",
+    async (args) => {
+      const a = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
+      const r = await cli(args, { api: a });
+      expect(r).toMatchObject({ code: 1, err: "lazycc: #6 is already merged." });
+      expect(a.writes).toEqual([]);
+    },
+  );
+
+  it("names a closed PR as closed", async () => {
+    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED" })]);
+    const r = await cli(["pr", "close", "6"], { api: a });
+    expect(r.err).toBe("lazycc: #6 is already closed.");
+  });
+
+  it("still takes a comment, as the console does", async () => {
+    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
+    expect((await cli(["pr", "comment", "6", "-b", "x"], { api: a })).code).toBe(0);
+    expect(a.writes).toEqual(["comment 6 x"]);
+  });
+});
+
 describe("clone", () => {
   it("clones by repository name, passing a directory and git flags through", async () => {
     const cloned: unknown[] = [];
@@ -504,5 +697,160 @@ describe("the review screen on a terminal", () => {
     const r = await cli(args, { api, interactive: true });
     expect(r.reviews).toEqual([]);
     expect(r.out).not.toBe("");
+  });
+});
+
+const branchApi = () => fakeApi([pullRequest({ id: "3", title: "Topic \x1b[31mwork" })]);
+
+describe("branch", () => {
+  const git = {
+    remoteBranches: async () => [
+      { name: "main", tip: "m1", date: new Date("2026-11-01T00:00:00Z"), author: "alice" },
+      { name: "topic", tip: "s1", date: new Date("2026-11-03T00:00:00Z"), author: "bob" },
+    ],
+    aheadBehind: async () => ({ ahead: 2, behind: 0 }),
+  };
+
+  it("prints the table", async () => {
+    const r = await cli(["branch"], { api: branchApi(), git });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")).toEqual([
+      "* main   -          2026-11-01T00:00:00Z alice",
+      "  topic  PR  ↑2 ↓0  2026-11-03T00:00:00Z bob    #3 Topic ^[[31mwork  ✗ 1/2 rules",
+    ]);
+  });
+
+  it("prints JSON", async () => {
+    const r = await cli(["branch", "--json"], { api: branchApi(), git });
+    expect(json(r.out)).toMatchObject({
+      repository: "demo",
+      defaultBranch: "main",
+      branches: [
+        { name: "main", default: true, state: "none", pullRequest: null, ahead: null },
+        {
+          name: "topic",
+          state: "open",
+          pullRequest: { id: "3" },
+          ahead: 2,
+          behind: 0,
+          lastCommit: { date: "2026-11-03T00:00:00Z", author: "bob" },
+        },
+      ],
+    });
+  });
+
+  it("opens the branch screen on a terminal, creating PRs through pr create", async () => {
+    const outcomes: unknown[] = [];
+    const r = await cli(["branch"], {
+      api: branchApi(),
+      git,
+      interactive: true,
+      onBranches: async (request) => {
+        outcomes.push(await request.createPullRequest("feature"));
+        outcomes.push(await request.createPullRequest("topic"));
+        outcomes.push(await request.createPullRequest("main"));
+      },
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("");
+    expect(r.branchScreens[0]).toMatchObject({ region: "ap-northeast-1", git: expect.anything() });
+    expect(r.branchScreens[0]?.actions.repository).toBe("demo");
+    expect(outcomes).toEqual([
+      { pullRequestId: "42" },
+      { pullRequestId: "3" },
+      { message: expect.stringContaining("is the base branch") },
+    ]);
+  });
+
+  it("explains AWS errors from a create", async () => {
+    const failing = fakeApi([], {
+      createPullRequest: async () => {
+        throw Object.assign(new Error("expired"), { name: "ExpiredTokenException" });
+      },
+    });
+    let outcome: unknown;
+    await cli(["branch", "-R", "demo", "--profile", "dev"], {
+      api: failing,
+      interactive: true,
+      git: { topLevel: async () => null },
+      onBranches: async (request) => {
+        outcome = await request.createPullRequest("feature");
+      },
+    });
+    expect(outcome).toEqual({ message: expect.stringContaining("aws sso login --profile dev") });
+  });
+});
+
+describe("branch rules column", () => {
+  it.each([
+    [{ approved: true, overridden: true, satisfied: [], notSatisfied: [] }, "rules overridden"],
+    [{ approved: true, overridden: false, satisfied: ["a"], notSatisfied: [] }, "✓ 1/1 rules"],
+  ])("summarizes %j", async (rules, text) => {
+    const api = fakeApi([pullRequest({ id: "3" })], { evaluateApprovalRules: async () => rules });
+    const r = await cli(["branch", "-R", "demo"], { api, git: { topLevel: async () => null } });
+    expect(r.out).toContain(text);
+  });
+
+  it("leaves it empty without rules", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })], {
+      evaluateApprovalRules: async () => ({
+        approved: true,
+        overridden: false,
+        satisfied: [],
+        notSatisfied: [],
+      }),
+    });
+    const r = await cli(["branch", "-R", "demo"], { api, git: { topLevel: async () => null } });
+    expect(r.out).not.toContain("rules");
+  });
+});
+
+describe("terminal safety", () => {
+  // Any C0 or C1 control but \n and \t: what a terminal would act on.
+  // oxlint-disable-next-line no-control-regex -- finding them is the point
+  const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+  const hostile = "x\x1b]52;c;aGk=\x07\u009b2Jy";
+
+  it("keeps other people's text from reaching the terminal as escape sequences", async () => {
+    const api = fakeApi([
+      pullRequest({ id: "3", title: hostile, sourceBranch: hostile, destinationBranch: hostile }),
+    ]);
+    for (const args of [
+      ["pr", "view"],
+      ["pr", "view", "3"],
+      ["pr", "list"],
+      ["pr", "status"],
+    ]) {
+      const r = await cli(args, { api });
+      expect(r.out + r.err, args.join(" ")).not.toMatch(CONTROL);
+    }
+    const git = { commits: async () => [{ subject: hostile, body: hostile }] };
+    const plan = await cli(["pr", "create", "--fill", "--dry-run"], { git });
+    expect(plan.out + plan.err).not.toMatch(CONTROL);
+    // Git forbids C0 in ref names but not C1, so a local branch can hold CSI.
+    const push = await cli(["pr", "create", "--fill"], {
+      interactive: true,
+      git: { currentBranch: async () => "a\u009b2Jb", unpushedCount: async () => null },
+    });
+    expect(push.confirms).toEqual(["a^[[2Jb is not on origin. Push it to origin?"]);
+  });
+
+  it("makes error messages printable too", async () => {
+    const git = {
+      commits: async () => {
+        throw new GitError(["log"], `fatal: bad revision '${hostile}'`, 128);
+      },
+    };
+    const r = await cli(["pr", "create", "--fill"], { git });
+    expect(r.code).toBe(1);
+    expect(r.err).not.toMatch(CONTROL);
+    expect(r.err).toContain("x^[]52;c;aGk=^G^[[2Jy");
+  });
+
+  it("escapes C1 controls in JSON, which JSON.stringify leaves raw, without changing the data", async () => {
+    const api = fakeApi([pullRequest({ id: "3", title: hostile })]);
+    const r = await cli(["pr", "view", "3", "--json"], { api });
+    expect(r.out).not.toMatch(CONTROL);
+    expect(json(r.out).title).toBe(hostile);
   });
 });

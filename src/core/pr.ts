@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import type {
   CodeCommitApi,
+  MergeStrategy,
   PullRequest,
   PullRequestStatus,
   RuleEvaluation,
@@ -32,15 +33,22 @@ export interface PrDeps {
   readonly interactive: boolean;
   confirm(question: string): Promise<boolean>;
   edit(text: string): Promise<string>;
-  /** File contents, or null when the file does not exist. */
-  readFile(path: string): Promise<string | null>;
+  /**
+   * Null when the file does not exist. Rejects when `within` is given and the
+   * path, symlinks resolved, is not inside that directory.
+   */
+  readFile(path: string, within?: string): Promise<string | null>;
   /** Progress for the user, on stderr. */
   note(line: string): void;
 }
 
-export function consoleUrl(region: string, repository: string, id: string): string {
+export function repositoryConsoleUrl(region: string, repository: string, path: string): string {
   const host = region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com";
-  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/pull-requests/${id}/details?region=${region}`;
+  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/${path}?region=${region}`;
+}
+
+export function consoleUrl(region: string, repository: string, id: string): string {
+  return repositoryConsoleUrl(region, repository, `pull-requests/${id}/details`);
 }
 
 function concurrency(config: Config): number {
@@ -123,10 +131,9 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
 
   let draft: Draft;
   let unpushed: number | null = 0;
-  if (clone) {
-    if ((await git.resolveCommit(`refs/heads/${head}`)) === null) {
-      throw new UserError(`No local branch named ${head}.`);
-    }
+  // A branch someone else pushed has no local copy: take it from CodeCommit as it is.
+  const local = clone !== undefined && (await git.resolveCommit(`refs/heads/${head}`)) !== null;
+  if (clone && local) {
     const baseRef = await localBaseRef(git, base);
     const commits = await git.commits(baseRef, `refs/heads/${head}`);
     if (commits.length === 0) {
@@ -136,7 +143,11 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
     draft = withTemplate(draftFromCommits(head, commits), await readTemplate(clone.root, deps));
   } else {
     if ((await api.branchCommit(ctx.repository, head)) === undefined) {
-      throw new UserError(`${ctx.repository} has no branch named ${head}.`);
+      throw new UserError(
+        clone
+          ? `No local branch named ${head}, and ${ctx.repository} has none either.`
+          : `${ctx.repository} has no branch named ${head}.`,
+      );
     }
     draft = { title: head, body: "" };
   }
@@ -183,7 +194,12 @@ async function readBodyFile(path: string, deps: PrDeps): Promise<string> {
 
 async function readTemplate(root: string, deps: PrDeps): Promise<string | undefined> {
   const path = deps.config.pr?.template ?? DEFAULT_TEMPLATE;
-  return (await deps.readFile(isAbsolute(path) ? path : join(root, path))) ?? undefined;
+  // A repository-relative template comes from whoever can push: a symlink in it
+  // must not pull ~/.aws/credentials or /proc/self/environ into the PR body.
+  const text = isAbsolute(path)
+    ? await deps.readFile(path)
+    : await deps.readFile(join(root, path), root);
+  return text ?? undefined;
 }
 
 function shortRef(ref: string): string {
@@ -319,4 +335,66 @@ export async function checkoutPullRequest(
   // Refuses, with git's own message, when the local branch has diverged.
   await git.fastForward(remote);
   return { pr, branch, created: false };
+}
+
+function requireOpen(pr: PullRequest): void {
+  if (pr.status === "CLOSED")
+    throw new UserError(`#${pr.id} is already ${pr.isMerged ? "merged" : "closed"}.`);
+}
+
+export interface CommentResult {
+  readonly pr: PullRequest;
+  readonly commentId: string;
+}
+
+/** Comments on the whole PR. A closed PR still takes comments, as in the console. */
+export async function commentOnPullRequest(
+  id: string | undefined,
+  opts: { readonly body?: string; readonly bodyFile?: string },
+  deps: PrDeps,
+): Promise<CommentResult> {
+  if (opts.body !== undefined && opts.bodyFile !== undefined) {
+    throw new UsageError("--body and --body-file cannot be used together");
+  }
+  if (opts.body === undefined && opts.bodyFile === undefined && !deps.interactive) {
+    throw new UsageError("Not a terminal: pass --body or --body-file");
+  }
+  const pr = await resolvePullRequest(id, deps);
+  const body = (
+    opts.bodyFile !== undefined
+      ? await readBodyFile(opts.bodyFile, deps)
+      : (opts.body ?? (await deps.edit("")))
+  ).trim();
+  if (body === "") throw new UserError("Aborted: the comment is empty.");
+  return { pr, commentId: await deps.api.postComment(pr, body) };
+}
+
+export async function approvePullRequest(
+  id: string | undefined,
+  approve: boolean,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<PullRequest> {
+  const pr = await resolvePullRequest(id, deps);
+  requireOpen(pr);
+  await deps.api.setApproval(pr, approve);
+  return pr;
+}
+
+export async function mergePullRequest(
+  id: string | undefined,
+  strategy: MergeStrategy,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<PullRequest> {
+  const pr = await resolvePullRequest(id, deps);
+  requireOpen(pr);
+  return deps.api.merge(pr, strategy);
+}
+
+export async function closePullRequest(
+  id: string | undefined,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<PullRequest> {
+  const pr = await resolvePullRequest(id, deps);
+  requireOpen(pr);
+  return deps.api.close(pr);
 }

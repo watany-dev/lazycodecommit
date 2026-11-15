@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { UserError } from "../core/errors.js";
 import type { Io } from "./main.js";
@@ -46,8 +46,14 @@ export function processIo(): Io {
       }
     },
 
-    async readFile(path) {
+    async readFile(path, within) {
       try {
+        if (within !== undefined) {
+          const [real, root] = await Promise.all([realpath(path), realpath(within)]);
+          if (!real.startsWith(root + sep)) {
+            throw new UserError(`${path} resolves to ${real}, outside ${root}; not reading it`);
+          }
+        }
         return await readFile(path, "utf8");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;

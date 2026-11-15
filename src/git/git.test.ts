@@ -156,6 +156,19 @@ describe("createGit", () => {
     await expect(git.switchBranch("nope")).rejects.toBeInstanceOf(GitError);
   });
 
+  it("reads a branch name starting with a dash as a name, not an option", async () => {
+    // Git accepts such ref names, so anyone who can push can create one.
+    sh(work, "push", "-q", "origin", "HEAD:refs/heads/--orphan=pwn");
+    sh(work, "fetch", "-q", "origin");
+    const git = createGit(work);
+    for (const quiet of [true, false]) {
+      await expect(git.switchBranch("--orphan=pwn", { quiet })).rejects.toBeInstanceOf(GitError);
+      expect(await git.currentBranch()).toBe("main");
+    }
+    await expect(git.fastForward("--no-ff")).rejects.toBeInstanceOf(GitError);
+    expect(sh(work, "ls-files")).toBe("f.txt");
+  });
+
   it("refuses a fast-forward when the branches diverged", async () => {
     sh(work, "switch", "-q", "-c", "topic");
     await commit("mine");
@@ -230,6 +243,45 @@ describe("createGit", () => {
     expect(log[0]?.date).toBeInstanceOf(Date);
     expect((await git.firstParentLog(base, "topic", 1)).map((c) => c.subject)).toEqual(["two"]);
     await expect(git.firstParentLog("nope", "topic", 1)).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("lists origin's branches with their last commit, and counts ahead/behind", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("one");
+    await commit("two");
+    sh(work, "push", "-q", "origin", "topic");
+    sh(work, "switch", "-q", "main");
+    await commit("main moves");
+    sh(work, "push", "-q", "origin", "main");
+    sh(work, "remote", "set-head", "origin", "main");
+    const git = createGit(work);
+    const branches = await git.remoteBranches();
+    expect(branches.map((b) => b.name)).toEqual(["main", "topic"]);
+    expect(branches[1]).toMatchObject({ tip: sh(work, "rev-parse", "origin/topic"), author: "t" });
+    expect(branches[1]?.date).toBeInstanceOf(Date);
+    expect(await git.aheadBehind("origin/main", "origin/topic")).toEqual({ ahead: 2, behind: 1 });
+    await expect(git.aheadBehind("origin/main", "origin/nope")).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("reads an author name holding the ASCII unit separator", async () => {
+    sh(work, "switch", "-q", "-c", "odd");
+    await writeFile(join(work, "f.txt"), "odd\n");
+    sh(work, "-c", "user.name=a\x1fb", "commit", "-q", "-am", "odd");
+    sh(work, "push", "-q", "origin", "odd");
+    const odd = (await createGit(work).remoteBranches()).find((b) => b.name === "odd");
+    expect(odd).toMatchObject({ author: "a\x1fb", tip: sh(work, "rev-parse", "origin/odd") });
+    expect(odd?.date.getTime()).not.toBeNaN();
+  });
+
+  it("switches quietly when asked", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    sh(work, "push", "-q", "origin", "topic");
+    sh(work, "switch", "-q", "main");
+    sh(work, "branch", "-q", "-D", "topic");
+    const git = createGit(work);
+    await git.switchBranch("topic", { quiet: true });
+    expect(await git.currentBranch()).toBe("topic");
+    await expect(git.switchBranch("nope", { quiet: true })).rejects.toThrow(/nope/);
   });
 
   it("rejects when git cannot start", async () => {

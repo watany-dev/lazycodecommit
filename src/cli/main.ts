@@ -1,15 +1,20 @@
 import { type ParseArgsConfig, parseArgs } from "node:util";
 import { version } from "../../package.json" with { type: "json" };
-import type { CodeCommitApi } from "../aws/codecommit.js";
+import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
+import { branchActions, loadBranchTable } from "../core/branch.js";
 import { cloneRepository } from "../core/clone.js";
 import { type RepoContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
 import {
+  approvePullRequest,
   checkoutPullRequest,
+  closePullRequest,
+  commentOnPullRequest,
   consoleUrl,
   createPullRequest,
   listPullRequests,
+  mergePullRequest,
   type PrDeps,
   pullRequestStatus,
   resolvePullRequest,
@@ -17,8 +22,8 @@ import {
 import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
-import type { ReviewRequest } from "../tui/index.js";
-import { listLines, prJson, statusLines, viewLines } from "./format.js";
+import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
+import { branchJson, branchLines, listLines, prJson, statusLines, viewLines } from "./format.js";
 
 export interface Io {
   out(line: string): void;
@@ -29,7 +34,7 @@ export interface Io {
   readonly interactive: boolean;
   confirm(question: string): Promise<boolean>;
   edit(text: string): Promise<string>;
-  readFile(path: string): Promise<string | null>;
+  readFile(path: string, within?: string): Promise<string | null>;
 }
 
 export interface Deps {
@@ -37,8 +42,9 @@ export interface Deps {
   createGit(cwd: string): Git;
   createApi(options: { region?: string; profile?: string }): Promise<CodeCommitApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
-  /** Opens the review TUI; cli.ts loads it lazily so other commands never load Ink. */
+  /** Open the TUI; cli.ts loads it lazily so other commands never load Ink. */
   openReview(request: ReviewRequest): Promise<void>;
+  openBranches(request: BranchesRequest): Promise<void>;
 }
 
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
@@ -49,6 +55,11 @@ Usage:
   lazycc pr view [<id>]
   lazycc pr status
   lazycc pr checkout <id>
+  lazycc pr comment [<id>] [-b body | -F file]
+  lazycc pr approve [<id>] [--revoke]
+  lazycc pr merge [<id>] --ff | --squash | --three-way
+  lazycc pr close [<id>]
+  lazycc branch
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
   lazycc --version
 
@@ -93,7 +104,41 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
   "pr view": { positionals: 1, options: {} },
   "pr status": { positionals: 0, options: {} },
   "pr checkout": { positionals: 1, options: {} },
+  "pr comment": {
+    positionals: 1,
+    options: {
+      body: { type: "string", short: "b" },
+      "body-file": { type: "string", short: "F" },
+    },
+  },
+  "pr approve": { positionals: 1, options: { revoke: { type: "boolean" } } },
+  "pr merge": {
+    positionals: 1,
+    options: {
+      ff: { type: "boolean" },
+      squash: { type: "boolean" },
+      "three-way": { type: "boolean" },
+    },
+  },
+  "pr close": { positionals: 1, options: {} },
+  branch: { positionals: 0, options: {} },
 };
+
+const MERGE_FLAGS: Record<string, MergeStrategy> = {
+  ff: "fast-forward",
+  squash: "squash",
+  "three-way": "three-way",
+};
+
+function mergeStrategy(values: Values): MergeStrategy {
+  const picked = Object.keys(MERGE_FLAGS).filter((flag) => values[flag] === true);
+  if (picked.length !== 1) {
+    throw new UsageError(
+      `Pick ${picked.length === 0 ? "a" : "one"} merge strategy: --ff, --squash or --three-way`,
+    );
+  }
+  return MERGE_FLAGS[picked[0] as string] as MergeStrategy;
+}
 
 for (const spec of Object.values(COMMANDS)) Object.assign(spec.options, REPO);
 // The repository is the positional argument, and `--` passes the rest to git clone.
@@ -127,7 +172,8 @@ function parse(
 const str = (v: Values, key: string) =>
   typeof v[key] === "string" ? (v[key] as string) : undefined;
 
-export async function run(args: readonly string[], deps: Deps): Promise<number> {
+export async function run(args: readonly string[], rawDeps: Deps): Promise<number> {
+  const deps = { ...rawDeps, io: printableIo(rawDeps.io) };
   const { io } = deps;
   const [noun, verb, ...rest] = args;
   let profile: string | undefined;
@@ -174,6 +220,8 @@ export async function run(args: readonly string[], deps: Deps): Promise<number> 
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
     }
+    // Checked before any AWS call, so a typo cannot cost a round trip.
+    if (command === "pr merge") mergeStrategy(values);
     return await runCommand(command, values, positionals, deps, (ctx) => {
       profile = ctx.profile;
     });
@@ -219,7 +267,19 @@ async function runCommand(
     readFile: io.readFile,
     note: io.err,
   };
-  const print = (value: unknown) => io.out(JSON.stringify(value, null, 2));
+  // JSON.stringify escapes C0 controls but not C1 (U+0080-U+009F); \u escapes
+  // keep the data exact and the terminal safe.
+  const print = (value: unknown) =>
+    io.out(
+      JSON.stringify(value, null, 2).replace(
+        /[\u0080-\u009f]/g,
+        (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+      ),
+    );
+  const done = (line: string, pr: PullRequest) => {
+    io.out(line);
+    io.out(consoleUrl(region, pr.repository, pr.id));
+  };
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
   const review = (start: ReviewRequest["start"]) =>
     deps.openReview({
@@ -231,6 +291,34 @@ async function runCommand(
     });
 
   switch (command) {
+    case "branch": {
+      const branchDeps = { api, git, ctx, config };
+      if (io.interactive && !json) {
+        await deps.openBranches({
+          actions: branchActions(branchDeps, region),
+          region,
+          ...optional("profile", ctx.profile),
+          ...(ctx.clone ? { git } : {}),
+          async createPullRequest(head) {
+            try {
+              const result = await createPullRequest(
+                { head, fill: false, push: false, noPush: false, dryRun: false },
+                prDeps,
+              );
+              // dry-run is off, so the result is a PR, new or already open.
+              return { pullRequestId: (result as { pr: { id: string } }).pr.id };
+            } catch (error) {
+              return { message: describeError(error, ctx.profile) };
+            }
+          },
+        });
+        return 0;
+      }
+      const table = await loadBranchTable(branchDeps);
+      if (json) print(branchJson(table));
+      else for (const line of branchLines(table)) io.out(line);
+      return 0;
+    }
     case "clone": {
       const url = await cloneRepository(
         {
@@ -331,6 +419,47 @@ async function runCommand(
       else for (const line of listLines(prs)) io.out(line);
       return 0;
     }
+    case "pr comment": {
+      const { pr, commentId } = await commentOnPullRequest(
+        positionals[0],
+        {
+          ...optional("body", str(values, "body")),
+          ...optional("bodyFile", str(values, "body-file")),
+        },
+        prDeps,
+      );
+      if (json) print({ commentId, pullRequest: prJson(pr, region) });
+      else done(`Commented on #${pr.id} ${printable(pr.title)}`, pr);
+      return 0;
+    }
+    case "pr approve": {
+      const approve = values["revoke"] !== true;
+      const pr = await approvePullRequest(positionals[0], approve, prDeps);
+      if (json) print({ approved: approve, pullRequest: prJson(pr, region) });
+      else
+        done(
+          `${approve ? "Approved" : "Revoked your approval of"} #${pr.id} ${printable(pr.title)}`,
+          pr,
+        );
+      return 0;
+    }
+    case "pr merge": {
+      const strategy = mergeStrategy(values);
+      const pr = await mergePullRequest(positionals[0], strategy, prDeps);
+      if (json) print(prJson(pr, region));
+      else
+        done(
+          `Merged #${pr.id} ${printable(pr.title)} into ${pr.destinationBranch} (${strategy})`,
+          pr,
+        );
+      return 0;
+    }
+    case "pr close": {
+      const pr = await closePullRequest(positionals[0], prDeps);
+      if (json) print(prJson(pr, region));
+      else done(`Closed #${pr.id} ${printable(pr.title)}`, pr);
+      return 0;
+    }
     case "pr view": {
       const pr = await resolvePullRequest(positionals[0], prDeps);
       if (io.interactive && !json) {
@@ -361,6 +490,20 @@ async function runCommand(
   }
 }
 
+/**
+ * Every line we print carries text from elsewhere (titles, branch names, commit
+ * messages, git's and the SDK's errors), so none may reach the terminal as an
+ * escape sequence. Our own output has no control characters but \n and \t.
+ */
+function printableIo(io: Io): Io {
+  return {
+    ...io,
+    out: (line) => io.out(printable(line, true)),
+    err: (line) => io.err(printable(line, true)),
+    confirm: (question) => io.confirm(printable(question)),
+  };
+}
+
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
   return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
 }
@@ -371,17 +514,23 @@ function report(error: unknown, io: Io, profile: string | undefined): number {
     io.err("Run `lazycc --help` for usage.");
     return 2;
   }
-  if (error instanceof UserError || error instanceof ConfigError || error instanceof GitError) {
-    io.err(`lazycc: ${error.message}`);
-    return 1;
+  io.err(`lazycc: ${describeError(error, profile)}`);
+  if (io.env["LAZYCC_DEBUG"] && error instanceof Error && error.stack) io.err(error.stack);
+  return 1;
+}
+
+/** One line for the user, without the "lazycc: " prefix. */
+function describeError(error: unknown, profile: string | undefined): string {
+  if (
+    error instanceof UsageError ||
+    error instanceof UserError ||
+    error instanceof ConfigError ||
+    error instanceof GitError
+  ) {
+    return error.message;
   }
   const explained = explainAwsError(error, profile);
-  if (explained) {
-    io.err(`lazycc: ${explained}`);
-    return 1;
-  }
+  if (explained) return explained;
   const e = error instanceof Error ? error : new Error(String(error));
-  io.err(`lazycc: ${e.name === "Error" ? "" : `${e.name}: `}${e.message}`);
-  if (io.env["LAZYCC_DEBUG"] && e.stack) io.err(e.stack);
-  return 1;
+  return `${e.name === "Error" ? "" : `${e.name}: `}${e.message}`;
 }

@@ -1,15 +1,24 @@
 import {
   CodeCommitClient,
   CreatePullRequestCommand,
+  DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
   GetBranchCommand,
   GetMergeConflictsCommand,
   GetPullRequestApprovalStatesCommand,
   GetPullRequestCommand,
   GetRepositoryCommand,
+  ListBranchesCommand,
   ListPullRequestsCommand,
+  MergePullRequestByFastForwardCommand,
+  MergePullRequestBySquashCommand,
+  MergePullRequestByThreeWayCommand,
+  PostCommentForPullRequestCommand,
   type PullRequest as SdkPullRequest,
+  UpdatePullRequestApprovalStateCommand,
+  UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
+import { mapLimit } from "./mapLimit.js";
 
 export type PullRequestStatus = "OPEN" | "CLOSED";
 
@@ -46,11 +55,15 @@ export interface NewPullRequest {
   readonly clientRequestToken: string;
 }
 
+export type MergeStrategy = "fast-forward" | "squash" | "three-way";
+
 export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
   defaultBranch(repository: string): Promise<string | undefined>;
   cloneUrls(repository: string): Promise<{ https: string; ssh: string }>;
+  listBranches(repository: string): Promise<string[]>;
+  deleteBranch(repository: string, branch: string): Promise<void>;
   /** Tip commit of a remote branch, or undefined when the branch does not exist. */
   branchCommit(repository: string, branch: string): Promise<string | undefined>;
   listPullRequestIds(
@@ -63,7 +76,19 @@ export interface CodeCommitApi {
   approvers(pr: PullRequest): Promise<string[]>;
   evaluateApprovalRules(pr: PullRequest): Promise<RuleEvaluation>;
   mergeable(pr: PullRequest): Promise<boolean>;
+  /** Posts a comment on the whole PR and returns its id. */
+  postComment(pr: PullRequest, content: string): Promise<string>;
+  setApproval(pr: PullRequest, approve: boolean): Promise<void>;
+  /** Refuses when the source branch has moved past `pr.sourceCommit`. */
+  merge(pr: PullRequest, strategy: MergeStrategy): Promise<PullRequest>;
+  close(pr: PullRequest): Promise<PullRequest>;
 }
+
+const MERGE_COMMANDS = {
+  "fast-forward": MergePullRequestByFastForwardCommand,
+  squash: MergePullRequestBySquashCommand,
+  "three-way": MergePullRequestByThreeWayCommand,
+} as const;
 
 const HEADS = "refs/heads/";
 
@@ -94,24 +119,6 @@ export function toPullRequest(pr: SdkPullRequest | undefined): PullRequest {
   };
 }
 
-/** Runs `fn` over `items` with at most `limit` in flight, keeping order. */
-export async function mapLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i] as T);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
 export function createCodeCommitApi(options: { region?: string; profile?: string }): CodeCommitApi {
   const client = new CodeCommitClient({
     ...(options.region ? { region: options.region } : {}),
@@ -132,6 +139,28 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
       if (!m?.cloneUrlHttp || !m.cloneUrlSsh)
         throw new Error(`CodeCommit returned no clone URL for ${repository}`);
       return { https: m.cloneUrlHttp, ssh: m.cloneUrlSsh };
+    },
+
+    async listBranches(repository) {
+      const branches: string[] = [];
+      let nextToken: string | undefined;
+      do {
+        const out = await client.send(
+          new ListBranchesCommand({
+            repositoryName: repository,
+            ...(nextToken ? { nextToken } : {}),
+          }),
+        );
+        branches.push(...(out.branches ?? []));
+        nextToken = out.nextToken;
+      } while (nextToken);
+      return branches;
+    },
+
+    async deleteBranch(repository, branch) {
+      await client.send(
+        new DeleteBranchCommand({ repositoryName: repository, branchName: branch }),
+      );
     },
 
     async branchCommit(repository, branch) {
@@ -228,6 +257,49 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
         }),
       );
       return out.mergeable ?? false;
+    },
+
+    async postComment(pr, content) {
+      const out = await client.send(
+        new PostCommentForPullRequestCommand({
+          pullRequestId: pr.id,
+          repositoryName: pr.repository,
+          beforeCommitId: pr.destinationCommit,
+          afterCommitId: pr.sourceCommit,
+          content,
+        }),
+      );
+      if (!out.comment?.commentId) throw new Error("CodeCommit returned no comment");
+      return out.comment.commentId;
+    },
+
+    async setApproval(pr, approve) {
+      await client.send(
+        new UpdatePullRequestApprovalStateCommand({
+          pullRequestId: pr.id,
+          revisionId: pr.revisionId,
+          approvalState: approve ? "APPROVE" : "REVOKE",
+        }),
+      );
+    },
+
+    async merge(pr, strategy) {
+      const Command = MERGE_COMMANDS[strategy];
+      const out = await client.send(
+        new Command({
+          pullRequestId: pr.id,
+          repositoryName: pr.repository,
+          sourceCommitId: pr.sourceCommit,
+        }),
+      );
+      return toPullRequest(out.pullRequest);
+    },
+
+    async close(pr) {
+      const out = await client.send(
+        new UpdatePullRequestStatusCommand({ pullRequestId: pr.id, pullRequestStatus: "CLOSED" }),
+      );
+      return toPullRequest(out.pullRequest);
     },
   };
 }

@@ -1,4 +1,9 @@
-import type { CodeCommitApi, NewPullRequest, PullRequest } from "../aws/codecommit.js";
+import type {
+  CodeCommitApi,
+  MergeStrategy,
+  NewPullRequest,
+  PullRequest,
+} from "../aws/codecommit.js";
 import type { Commit, Git } from "../git/git.js";
 
 export function fakeGit(overrides: Partial<Git> = {}): Git {
@@ -18,6 +23,8 @@ export function fakeGit(overrides: Partial<Git> = {}): Git {
     diffTree: async () => [],
     blob: async () => Buffer.from(""),
     firstParentLog: async () => [],
+    remoteBranches: async () => [],
+    aheadBehind: async () => ({ ahead: 0, behind: 0 }),
     ...overrides,
   };
 }
@@ -42,20 +49,30 @@ export function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
   };
 }
 
+function closed(pr: PullRequest, isMerged: boolean): PullRequest {
+  return pullRequest({ ...pr, status: "CLOSED", isMerged });
+}
+
 export interface FakeApi extends CodeCommitApi {
   readonly created: NewPullRequest[];
+  /** Every write to an existing PR, in order: "comment 1 LGTM", "approve 1", "merge 1 squash"... */
+  readonly writes: string[];
 }
 
 export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitApi> = {}): FakeApi {
   const created: NewPullRequest[] = [];
+  const writes: string[] = [];
   const api: FakeApi = {
     created,
+    writes,
     region: async () => "us-west-2",
     defaultBranch: async () => "main",
     cloneUrls: async (repo) => ({
       https: `https://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
       ssh: `ssh://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
     }),
+    listBranches: async () => ["main", "topic"],
+    deleteBranch: async () => {},
     branchCommit: async (_repo, branch) => (branch === "missing" ? undefined : "r0ffee"),
     listPullRequestIds: async (_repo, status, limit) =>
       prs
@@ -90,6 +107,20 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
       notSatisfied: ["two"],
     }),
     mergeable: async () => true,
+    postComment: async (pr, content) => {
+      writes.push(`comment ${pr.id} ${content}`);
+      return "c1";
+    },
+    setApproval: async (pr, approve) =>
+      void writes.push(`${approve ? "approve" : "revoke"} ${pr.id}`),
+    merge: async (pr, strategy: MergeStrategy) => {
+      writes.push(`merge ${pr.id} ${strategy}`);
+      return closed(pr, true);
+    },
+    close: async (pr) => {
+      writes.push(`close ${pr.id}`);
+      return closed(pr, false);
+    },
     ...overrides,
   };
   return api;
