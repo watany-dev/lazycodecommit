@@ -4,11 +4,14 @@ import type { Git } from "../git/git.js";
 import type { Config } from "../state/config.js";
 import type { RepoContext } from "./context.js";
 import { UserError } from "./errors.js";
-import { listPullRequests, repositoryConsoleUrl } from "./pr.js";
+import {
+  concurrency as concurrencyOf,
+  listPullRequests,
+  OPEN_SCAN_LIMIT,
+  repositoryConsoleUrl,
+} from "./pr.js";
 
-const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_CLOSED_LOOKBACK = 100;
-const OPEN_SCAN_LIMIT = 1000;
 
 /** spec: 状態の判定. */
 type BranchState = "open" | "merged" | "none";
@@ -54,7 +57,7 @@ interface Branch {
  */
 export async function loadBranchTable(deps: BranchDeps): Promise<BranchTable> {
   const { api, git, ctx, config } = deps;
-  const concurrency = config.concurrency ?? DEFAULT_CONCURRENCY;
+  const concurrency = concurrencyOf(config);
   const [defaultBranch, branches, open, closed] = await Promise.all([
     api.defaultBranch(ctx.repository),
     listBranches(deps, concurrency),
