@@ -130,13 +130,10 @@ describe("createGit", () => {
     await expect(git.fetch(["refs/heads/nope:refs/remotes/origin/nope"])).rejects.toBeInstanceOf(
       GitError,
     );
-<<<<<<< HEAD
     sh(work, "update-ref", "-d", "refs/remotes/origin/topic");
     await git.fetch(["+refs/heads/topic:refs/remotes/origin/topic"], { quiet: true });
     expect(await git.resolveCommit("refs/remotes/origin/topic")).toBe(tip);
     await expect(git.fetch(["refs/heads/nope:x"], { quiet: true })).rejects.toThrow(/nope/);
-=======
->>>>>>> origin/claude/project-thread-efp285
   });
 
   it("creates a tracking branch, switches, and fast-forwards", async () => {
@@ -175,7 +172,6 @@ describe("createGit", () => {
     await expect(git.clone(join(dir, "missing.git"), [])).rejects.toBeInstanceOf(GitError);
   });
 
-<<<<<<< HEAD
   it("lists changed blobs between two commits, without rename detection", async () => {
     await writeFile(join(work, "keep.txt"), "same\n");
     await writeFile(join(work, "gone.txt"), "bye\n");
@@ -236,8 +232,6 @@ describe("createGit", () => {
     await expect(git.firstParentLog("nope", "topic", 1)).rejects.toBeInstanceOf(GitError);
   });
 
-=======
->>>>>>> origin/claude/project-thread-efp285
   it("rejects when git cannot start", async () => {
     await expect(createGit(join(dir, "gone")).topLevel()).rejects.toThrow();
     await expect(createGit(join(dir, "gone")).push("main")).rejects.toThrow();
