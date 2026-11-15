@@ -77,12 +77,16 @@ function run(cmd, args) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
-    child.stdout.on("data", (d) => (out += d));
+    let stdout = "";
+    child.stdout.on("data", (d) => {
+      out += d;
+      stdout += d;
+    });
     child.stderr.on("data", (d) => (out += d));
     const timer = setTimeout(() => child.kill("SIGKILL"), TIMEOUT_MS);
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      resolve({ code, signal, out });
+      resolve({ code, signal, out, stdout });
     });
   });
 }
@@ -111,7 +115,8 @@ seen.length = 0;
 const view = await run(process.execPath, [bin, "pr", "view", "1", "--repo", "smoke", "--json"]);
 let checks;
 try {
-  checks = JSON.parse(view.out).checks;
+  // stdout alone: on Node 20 the SDK warns on stderr.
+  checks = JSON.parse(view.stdout).checks;
 } catch {}
 if (view.code !== 0 || checks?.state !== "pass")
   fail("pr view did not read CI results from the stand-in endpoint", view);
