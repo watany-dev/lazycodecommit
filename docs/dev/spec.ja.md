@@ -274,6 +274,26 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 
 インラインコメントの位置は、取得元にかかわらず CodeCommit の filePath、filePosition、relativeFileVersion(BEFORE / AFTER)に対応させる。
 
+## CI 結果の表示
+
+PR のソースコミットに対する CodeBuild と CodePipeline の結果を出す。設定で見る先を指定したリポジトリだけが対象で、指定がなければ CodeBuild と CodePipeline の API を呼ばない(ADR 0009)。
+
+### 結び付け方
+- 設定の ci にリポジトリごとの CodeBuild プロジェクト名と CodePipeline のパイプライン名を書く。
+- 各プロジェクトとパイプラインの直近 20 件の実行から、ソースコミットが PR の sourceCommit と一致する最新の1件を出す。CodeBuild は resolvedSourceVersion、CodePipeline は sourceRevisions の revisionId で比べる。
+- リージョンと認証情報は CodeCommit と同じものを使う。
+
+### 表示する場所
+| 場所 | 表示 |
+|---|---|
+| pr view、pr status | 実行ごとの状態、名前、開始時刻、コンソール URL |
+| レビュー画面 | ヘッダーに全体の状態、詳細に実行ごとの行 |
+| ホームの「自分の PR」、lazycc status | 全体の状態を1列 |
+
+- 状態は pass、fail、pending、cancel、none(一致する実行がない)、error(取得に失敗)にまとめ、元の状態も残す。
+- 承認状態と同じく遅延取得し、取得に失敗しても PR の表示は止めない。失敗は error として理由を出す。
+- --json の形は ADR 0009 のとおり。設定がないリポジトリでは "checks": null にする。
+
 ## 画面遷移とキーバインド
 
 トップレベルはホーム、ブランチ表、ブラウズの3ビューで、レビュー画面はホームとブランチ表から降りる先にある。
@@ -345,10 +365,14 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
     "mergeOption": "squash"
   },
   "branch": { "closedPrLookback": 100 },
-  "concurrency": 8
+  "concurrency": 8,
+  "ci": {
+    "my-service": { "codebuild": ["my-service-pr-check"], "codepipeline": ["my-service-release"] }
+  }
 }
 ```
 
+- ci はリポジトリ名をキーに、CI 結果を読む CodeBuild プロジェクト(codebuild)と CodePipeline のパイプライン(codepipeline)を並べる。
 - pr.mergeOption("ff"、"squash"、"three-way")は、pr merge でフラグを省略したときの方式と、レビュー画面のマージで最初に選ばれている方式になる。
 
 ### プロファイルとリージョンの優先順位
@@ -386,7 +410,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 |---|---|---|
 | 言語 | TypeScript | 現行のレビュー画面と API 呼び出しを移植できる |
 | TUI | Ink | 同上 |
-| AWS | AWS SDK v3(client-codecommit、client-sts) | 同上 |
+| AWS | AWS SDK v3(client-codecommit、client-sts。CI 結果に client-codebuild、client-codepipeline) | 同上。CI 結果のクライアントは使うときだけ読み込む |
 | git | git コマンドを子プロセスで呼ぶ | 再実装しない原則に従い、git ライブラリの依存を持たない |
 | 開発 | Bun、Vitest、oxlint | 現行と同じ |
 | 配布 | npm パッケージ(npx で起動) | CloudShell にインストールなしで入る |
@@ -397,7 +421,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | cli/ | 引数解析、テキストと JSON の出力、終了コード |
 | tui/ | Ink の画面(ホーム、ブランチ表、ブラウズ、レビュー、リポジトリ選択) |
 | core/ | 受信箱の組み立て、ブランチ状態の判定、PR 下書きの生成 |
-| aws/ | CodeCommit と STS の呼び出し、ページング、並列取得 |
+| aws/ | CodeCommit、STS、CodeBuild、CodePipeline の呼び出し、ページング、並列取得 |
 | git/ | git コマンドの実行。git を呼ぶのはこの層だけ |
 | state/ | 設定、キャッシュ、既読の読み書き |
 
@@ -441,6 +465,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | checkout | GetPullRequest、GitPull |
 | clone | GetRepository、GitPull |
 | fetch(clone 内の diff) | GitPull |
+| CI 結果(設定の ci にあるリポジトリのみ) | codebuild:ListBuildsForProject、codebuild:BatchGetBuilds、codepipeline:ListPipelineExecutions |
 
 - sts:GetCallerIdentity は権限の付与なしで呼べる。
 - 権限不足のエラーでは、不足しているアクション名を表示する。
@@ -454,6 +479,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | 2. TUI とブランチ表 | TUI の枠組み、レビュー画面の移植、branch、pr checkout、clone | ブランチ表から PR 作成とレビューに進める。現行のレビュー機能がすべて動く |
 | 3. ホーム | 横断取得、キャッシュ、既読、status、リポジトリ選択と監視対象 | 承認待ちと自分の PR の確認が lazycc の起動だけで済む |
 | 4. ブラウズと残りの CLI | browse、pr comment、pr approve、pr merge、pr close、シェル補完 | CloudShell で clone なしにコードを読める |
+| 5. CI 結果 | 設定の ci、pr view、pr status、レビュー画面、ホームへの表示 | 設定したリポジトリの PR で、ソースコミットの CodeBuild と CodePipeline の結果が見える |
 
 ## 決定事項
 
@@ -467,6 +493,6 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | PR テンプレートの置き場所 | `.codecommit/pull_request_template.md` を既定にし、設定で変更できる | [0004](../adr/0004-pr-template-location.md) |
 | 承認待ちの定義 | 簡易条件に、承認プールに自分が入っているかの条件を足す | [0005](../adr/0005-awaiting-my-approval.md) |
 | 未読判定の検証 | フェーズ3の完了条件として実機で確認する | [0006](../adr/0006-unread-detection.md) |
-| CI 結果の表示 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
+| CI 結果の表示 | フェーズ5で、設定に書いたプロジェクトとパイプラインの実行をソースコミットで PR に結び付ける | [0009](../adr/0009-ci-results.md)(0007 を置き換え) |
 | コメントの下書き一括投稿 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
 | マージ方式の既定値 | フラグがなければ設定の `pr.mergeOption` を使う | [0008](../adr/0008-merge-option-default.md) |
