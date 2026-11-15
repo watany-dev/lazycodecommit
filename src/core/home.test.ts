@@ -140,6 +140,16 @@ describe("homeActions", () => {
     expect(file).toEqual({ repos: ["b"] });
   });
 
+  it("keeps a repository another lazycc started watching meanwhile", async () => {
+    const first = setup().actions;
+    const second = setup().actions;
+    await first.toggleWatch("a");
+    expect(await second.toggleWatch("b")).toEqual(["a", "b"]);
+    const file = JSON.parse(await readFile(join(dir, "lazycc", "config.json"), "utf8"));
+    expect(file).toEqual({ repos: ["a", "b"] });
+    expect(await first.toggleWatch("a")).toEqual(["b"]);
+  });
+
   it("keeps the old list when the config cannot be saved", async () => {
     const { actions } = setup(["a"]);
     const { writeFile, mkdir } = await import("node:fs/promises");

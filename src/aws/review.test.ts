@@ -378,8 +378,7 @@ describe("getPullRequestDetail edge cases", () => {
     });
 
     const detail = await getPullRequestDetail("42", "my-service");
-    expect(detail.commentThreads).toHaveLength(1);
-    expect(detail.commentThreads[0]!.comments).toHaveLength(0);
+    expect(detail.commentThreads).toHaveLength(0);
   });
 
   it("defaults filePosition and relativeFileVersion in getPullRequestDetail", async () => {
@@ -660,6 +659,9 @@ describe("posting: what was never sent", () => {
   });
 });
 
+/** An hour of 2026-02-14, for comment dates. */
+const at = (h: number) => new Date(`2026-02-14T${String(h).padStart(2, "0")}:00:00Z`);
+
 describe("getComments", () => {
   it("returns comment threads from API response", async () => {
     mockSend.mockResolvedValueOnce({
@@ -683,12 +685,14 @@ describe("getComments", () => {
       ],
     });
 
+    // Two general comments, neither a reply: two threads, not one with a reply.
     const threads = await getComments("42");
-    expect(threads).toHaveLength(1);
-    expect(threads[0]!.location).toBeNull();
-    expect(threads[0]!.comments).toHaveLength(2);
-    expect(threads[0]!.comments[0]!.content).toBe("First comment");
-    expect(threads[0]!.comments[1]!.content).toBe("Second comment");
+    expect(threads).toHaveLength(2);
+    expect(threads.map((t) => t.location)).toEqual([null, null]);
+    expect(threads.map((t) => t.comments.map((c) => c.content))).toEqual([
+      ["First comment"],
+      ["Second comment"],
+    ]);
   });
 
   it("handles empty comments data", async () => {
@@ -706,8 +710,7 @@ describe("getComments", () => {
     });
 
     const threads = await getComments("42");
-    expect(threads).toHaveLength(1);
-    expect(threads[0]!.comments).toHaveLength(0);
+    expect(threads).toHaveLength(0);
   });
 
   it("returns location for inline comment threads", async () => {
@@ -855,6 +858,61 @@ describe("getComments", () => {
     expect(threads[0]!.comments[0]!.inReplyTo).toBeUndefined();
     expect(threads[0]!.comments[1]!.commentId).toBe("reply-1");
     expect(threads[0]!.comments[1]!.inReplyTo).toBe("root-1");
+  });
+
+  it("splits two comments on one line, each with its replies, into two threads", async () => {
+    // CodeCommit groups comments by location and commits, not by thread.
+    mockSend.mockResolvedValueOnce({
+      commentsForPullRequestData: [
+        {
+          location: { filePath: "a.ts", filePosition: 3, relativeFileVersion: "AFTER" },
+          comments: [
+            { commentId: "r1", content: "first", creationDate: at(1) },
+            { commentId: "r2", content: "second", creationDate: at(2) },
+            { commentId: "x2", inReplyTo: "r2", creationDate: at(3) },
+            { commentId: "x1", inReplyTo: "r1", creationDate: at(4) },
+            { commentId: "y1", inReplyTo: "x1", creationDate: at(5) },
+          ],
+        },
+      ],
+    });
+
+    const threads = await getComments("42");
+    expect(threads.map((t) => t.comments.map((c) => c.commentId))).toEqual([
+      ["r1", "x1", "y1"],
+      ["r2", "x2"],
+    ]);
+    expect(threads.every((t) => t.location?.filePosition === 3)).toBe(true);
+  });
+
+  it("keeps a thread whole when its replies come on the next page", async () => {
+    // A page holds up to maxResults comments, so one line's comments can be split.
+    const line = { filePath: "a.ts", filePosition: 3, relativeFileVersion: "AFTER" };
+    mockSend
+      .mockResolvedValueOnce({
+        commentsForPullRequestData: [
+          {
+            beforeCommitId: "d",
+            afterCommitId: "s",
+            location: line,
+            comments: [{ commentId: "r1" }],
+          },
+        ],
+        nextToken: "t",
+      })
+      .mockResolvedValueOnce({
+        commentsForPullRequestData: [
+          {
+            beforeCommitId: "d",
+            afterCommitId: "s",
+            location: line,
+            comments: [{ commentId: "x1", inReplyTo: "r1", creationDate: at(1) }],
+          },
+        ],
+      });
+
+    const threads = await getComments("42");
+    expect(threads.map((t) => t.comments.map((c) => c.commentId))).toEqual([["r1", "x1"]]);
   });
 
   it("sorts replies by creationDate within a thread", async () => {
@@ -1291,6 +1349,30 @@ describe("getMergeConflicts", () => {
       conflictCount: 2,
       conflictFiles: ["src/auth.ts", "src/config.ts"],
     });
+  });
+
+  it("counts the conflicting files on every page", async () => {
+    mockSend
+      .mockResolvedValueOnce({
+        mergeable: false,
+        conflictMetadataList: [{ filePath: "a.ts" }, { filePath: "b.ts" }],
+        nextToken: "t1",
+      })
+      .mockResolvedValueOnce({ mergeable: false, conflictMetadataList: [{ filePath: "c.ts" }] });
+
+    const result = await getMergeConflicts({
+      repositoryName: "my-service",
+      sourceCommitId: "abc123",
+      destinationCommitId: "def456",
+      strategy: "three-way",
+    });
+
+    expect(result).toEqual({
+      mergeable: false,
+      conflictCount: 3,
+      conflictFiles: ["a.ts", "b.ts", "c.ts"],
+    });
+    expect(mockSend.mock.calls[1]![0]!.input.nextToken).toBe("t1");
   });
 
   it("uses (unknown) for conflict files with missing filePath", async () => {

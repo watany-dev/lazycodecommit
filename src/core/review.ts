@@ -68,7 +68,8 @@ function withGit(api: aws.ReviewApi, git?: Git): ReviewService {
               target.mergeBase ?? (await git.mergeBase(destination, source)) ?? destination;
             return toDifferences(await git.diffTree(base, source));
           },
-          () => api.getAllDifferences(repositoryName, destination, source),
+          // The same diff from the API: from the merge base, not the destination's tip.
+          () => api.getAllDifferences(repositoryName, target.mergeBase ?? destination, source),
         );
       }),
     getAllDifferences: (repositoryName, before, after) =>
