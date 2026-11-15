@@ -688,8 +688,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
   const views: TopViews = {
     home: () =>
       (home ??= homeAccount.then(async (account) => {
-        const profile = homeCtx ? homeCtx.profile : ctx.profile;
-        const me = await resolveMe(account.api, state.identity, profile, io.env);
+        const me = await resolveMe(account.api, state.identity);
         return homeActions({
           api: account.api,
           state,
@@ -793,7 +792,7 @@ async function runStatus(
   });
   const region = ctx.region ?? (await api.region());
   const state = deps.createState(io.env);
-  const me = await resolveMe(api, state.identity, ctx.profile, io.env);
+  const me = await resolveMe(api, state.identity);
   const limit = concurrency(config);
   const listed = await fetchInbox(repositories, {
     api,

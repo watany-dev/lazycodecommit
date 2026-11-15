@@ -1014,7 +1014,8 @@ describe("status", () => {
     expect(r.out).toMatch(/#2 {2}Mine {2}✗ 1\/2 rules {2}no conflicts/);
     expect(r.out).not.toContain("Approved");
     expect(r.out).not.toContain("Elsewhere");
-    expect(state.identities.get("profile:default")).toBe(ME);
+    expect([...state.identities.values()]).toEqual([ME]);
+    expect([...state.identities.keys()][0]).toMatch(/^cred:/);
     expect(state.sections.get("home")).toMatchObject({ items: expect.any(Array) });
   });
 
