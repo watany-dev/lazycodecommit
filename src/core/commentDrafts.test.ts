@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { fakeState } from "../testing/fakes.js";
 import {
   type CommentDraft,
   type Commits,
   canEdit,
   describeFailure,
+  draftStorage,
   editDraft,
+  lineReader,
   newDraft,
   parseDrafts,
   postAnyway,
@@ -249,5 +252,56 @@ describe("parseDrafts", () => {
     expect(parseDrafts([...bad, ok])).toEqual([ok]);
     expect(parseDrafts({ not: "a list" })).toEqual([]);
     expect(parseDrafts(undefined)).toEqual([]);
+  });
+});
+
+describe("draftStorage", () => {
+  it("keeps each PR's drafts under its region and reads back only whole drafts", async () => {
+    const state = fakeState();
+    const storage = draftStorage(state.drafts, "us-east-1");
+    const d = general();
+    await storage.save("7", [d]);
+    expect([...state.draftLists.keys()]).toEqual(["us-east-1/7"]);
+    expect(await storage.load("7")).toEqual([d]);
+    state.draftLists.set("us-east-1/8", [{ broken: true }, d]);
+    expect(await storage.load("8")).toEqual([d]);
+    expect(await storage.load("9")).toEqual([]);
+  });
+});
+
+const at = (relativeFileVersion: "BEFORE" | "AFTER", filePath = "a.ts", filePosition = 2) => ({
+  filePath,
+  filePosition,
+  relativeFileVersion,
+  lineText: "",
+});
+
+describe("lineReader", () => {
+  const files = [
+    { beforeBlob: { blobId: "b-old", path: "a.ts" }, afterBlob: { blobId: "b-new", path: "a.ts" } },
+    { afterBlob: { blobId: "c-new", path: "c.ts" } },
+  ];
+
+  it("reads each side's line on the new tip, once per blob", async () => {
+    const readBlob = vi.fn(async (id: string) => `${id} 1\n${id} 2\n`);
+    const before = newDraft("x", { kind: "inline", location: at("BEFORE") }, OLD);
+    const lineAt = await lineReader([inline(), inline(), before, general()], NEW, files, readBlob);
+    expect(readBlob.mock.calls.map((c) => c[0]).toSorted()).toEqual(["b-new", "b-old"]);
+    expect(lineAt(at("AFTER"))).toBe("b-new 2");
+    expect(lineAt(at("BEFORE"))).toBe("b-old 2");
+    expect(lineAt(at("AFTER", "a.ts", 9))).toBeUndefined();
+  });
+
+  it("reads nothing for drafts already on the tip, and a file the PR dropped as gone", async () => {
+    const readBlob = vi.fn(async () => "");
+    const lineAt = await lineReader(
+      [newDraft("x", { kind: "general" }, NEW)],
+      NEW,
+      files,
+      readBlob,
+    );
+    expect(readBlob).not.toHaveBeenCalled();
+    expect(lineAt(at("AFTER", "gone.ts"))).toBeUndefined();
+    expect(lineAt(at("AFTER", "c.ts", 1))).toBeUndefined();
   });
 });

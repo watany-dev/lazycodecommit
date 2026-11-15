@@ -1,6 +1,7 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
 import type {
   CommentThread,
   CommitInfo,
@@ -26,6 +27,7 @@ import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
 import { ConflictDisplay } from "./ConflictDisplay.js";
 import { DiffRow } from "./DiffLine.js";
+import { DraftList, type DraftSubmitState } from "./DraftList.js";
 import { MergeStrategySelector } from "./MergeStrategySelector.js";
 import { ReactionPicker } from "./ReactionPicker.js";
 
@@ -44,6 +46,18 @@ interface CommitViewProps {
   isLoading: boolean;
   onLoad: (commitIndex: number) => void;
   commitsAvailable: boolean;
+}
+
+interface DraftProps {
+  list: readonly CommentDraft[];
+  /** Why drafts.json could not be written: the drafts then last only while the screen is open. */
+  saveError: string | null;
+  add: (content: string, target: DraftTarget) => void;
+  edit: (id: string, content: string) => void;
+  discard: (id: string) => void;
+  postAnyway: (id: string) => void;
+  submit: () => void;
+  state: DraftSubmitState;
 }
 
 interface Props {
@@ -74,6 +88,8 @@ interface Props {
   reaction: AsyncActionState<[commentId: string, reactionValue: string]> & {
     byComment: ReactionsByComment;
   };
+  /** Absent: c / C / R only post immediately and there is no draft list. */
+  drafts?: DraftProps;
 }
 
 function buildCollapsedThreadState(
@@ -115,6 +131,7 @@ export function PullRequestDetail({
   editComment,
   deleteComment,
   reaction,
+  drafts,
 }: Props) {
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isCommenting, setIsCommenting] = useState(false);
@@ -150,6 +167,10 @@ export function PullRequestDetail({
   const [showFileList, setShowFileList] = useState(false);
   const [fileListCursor, setFileListCursor] = useState(0);
   const [pendingBracket, setPendingBracket] = useState<"[" | "]" | null>(null);
+  // Reopened on the outcome of a post that reloaded the PR (new commits).
+  const [showDrafts, setShowDrafts] = useState(() => !!drafts?.state.error);
+  // The commented line as it reads now, so a draft notices when it moves.
+  const [inlineLineText, setInlineLineText] = useState("");
   const diffCacheRef = useRef<Map<string, DisplayLine[]>>(new Map());
 
   useEffect(() => {
@@ -284,7 +305,8 @@ export function PullRequestDetail({
     mergeStep ||
     isClosing ||
     reactionTarget ||
-    showFileList
+    showFileList ||
+    showDrafts
       ? 20
       : 30;
 
@@ -314,7 +336,8 @@ export function PullRequestDetail({
       approvalAction ||
       mergeStep ||
       isClosing ||
-      reactionTarget
+      reactionTarget ||
+      showDrafts
     )
       return;
 
@@ -454,6 +477,7 @@ export function PullRequestDetail({
       const location = getLocationFromLine(currentLine);
       if (!location) return;
       setInlineCommentLocation(location);
+      setInlineLineText(currentLine.text.slice(1));
       return;
     }
     if (input === "o") {
@@ -525,6 +549,10 @@ export function PullRequestDetail({
       setReactionTarget(currentLine.commentId);
       return;
     }
+    if (input === "D" && drafts) {
+      setShowDrafts(true);
+      return;
+    }
     if (input === "]") {
       setPendingBracket("]");
       return;
@@ -565,6 +593,10 @@ export function PullRequestDetail({
             File {filePosition.current}/{filePosition.total}
           </Text>
         )}
+        {drafts && drafts.list.length > 0 && (
+          <Text color="yellow"> Drafts: {drafts.list.length} (D)</Text>
+        )}
+        {drafts?.saveError && <Text color="red"> Drafts not saved: {drafts.saveError}</Text>}
       </Box>
       <Box>
         <Text>
@@ -636,6 +668,13 @@ export function PullRequestDetail({
       {isCommenting && (
         <CommentInput
           onSubmit={comment.execute}
+          onDraft={
+            drafts &&
+            ((content) => {
+              drafts.add(content, { kind: "general" });
+              setIsCommenting(false);
+            })
+          }
           onCancel={() => setIsCommenting(false)}
           isPosting={comment.isProcessing}
           error={comment.error}
@@ -650,6 +689,16 @@ export function PullRequestDetail({
           </Text>
           <CommentInput
             onSubmit={(content) => inlineComment.execute(content, inlineCommentLocation)}
+            onDraft={
+              drafts &&
+              ((content) => {
+                drafts.add(content, {
+                  kind: "inline",
+                  location: { ...inlineCommentLocation, lineText: inlineLineText },
+                });
+                setInlineCommentLocation(null);
+              })
+            }
             onCancel={() => setInlineCommentLocation(null)}
             isPosting={inlineComment.isProcessing}
             error={inlineComment.error}
@@ -665,6 +714,20 @@ export function PullRequestDetail({
           </Text>
           <CommentInput
             onSubmit={(content) => reply.execute(replyTarget.commentId, content)}
+            onDraft={
+              drafts &&
+              ((content) => {
+                drafts.add(content, {
+                  kind: "reply",
+                  inReplyTo: replyTarget.commentId,
+                  replyTo: {
+                    author: replyTarget.author,
+                    excerpt: replyTarget.content.slice(0, 50),
+                  },
+                });
+                setReplyTarget(null);
+              })
+            }
             onCancel={() => {
               setReplyTarget(null);
               reply.clearError();
@@ -810,6 +873,24 @@ export function PullRequestDetail({
           currentReactions={reaction.byComment.get(reactionTarget) ?? []}
         />
       )}
+      {showDrafts && drafts && (
+        <DraftList
+          drafts={drafts.list}
+          submit={drafts.state}
+          onSubmit={drafts.submit}
+          onEdit={drafts.edit}
+          onDiscard={drafts.discard}
+          onPostAnyway={drafts.postAnyway}
+          onJump={(draft) => {
+            const index = findDraftLine(lines, draft);
+            if (index !== -1) {
+              setCursorIndex(index);
+              setShowDrafts(false);
+            }
+          }}
+          onClose={() => setShowDrafts(false)}
+        />
+      )}
       {showFileList && (
         <Box flexDirection="column">
           <Text bold>Files ({fileNames.length}):</Text>
@@ -833,15 +914,16 @@ export function PullRequestDetail({
           mergeStep ||
           isClosing ||
           reactionTarget ||
-          showFileList
+          showFileList ||
+          showDrafts
             ? ""
             : pendingBracket
               ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
               : viewIndex === -1 && (commits.length > 0 || commitsAvailable)
-                ? `Tab view ↑↓ n/N file ]c/[c change f list c comment C inline R reply o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`
+                ? `Tab view ↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`
                 : viewIndex >= 0
                   ? "Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help"
-                  : `↑↓ n/N file ]c/[c change f list c comment C inline R reply o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
+                  : `↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
         </Text>
       </Box>
     </Box>
@@ -916,6 +998,18 @@ function getLocationFromLine(line: DisplayLine): {
   return null;
 }
 /* v8 ignore stop */
+
+/** The diff row an inline draft was written on, or -1 when it is not shown. */
+function findDraftLine(lines: DisplayLine[], draft: CommentDraft): number {
+  if (draft.target.kind !== "inline") return -1;
+  const { filePath, filePosition, relativeFileVersion } = draft.target.location;
+  return lines.findIndex((l) => {
+    if (l.filePath !== filePath) return false;
+    return relativeFileVersion === "BEFORE"
+      ? l.type === "delete" && l.beforeLineNumber === filePosition
+      : (l.type === "add" || l.type === "context") && l.afterLineNumber === filePosition;
+  });
+}
 
 function findNextHeaderIndex(headerIndices: number[], currentIndex: number): number {
   if (headerIndices.length === 0) return -1;
