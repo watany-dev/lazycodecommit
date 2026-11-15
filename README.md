@@ -19,7 +19,8 @@ lazygit. The command is `lazycc`. It is the successor to
 - An inbox across repositories: PRs awaiting your approval and your own open
   PRs, with unread markers (`lazycc`, or `lazycc status` as text)
 - The review screen from review-codecommit: diffs, inline comments, replies,
-  reactions, approval, merge and close
+  reactions, approval, merge and close, plus comment drafts you post together
+  (`Tab` keeps a comment as a draft, `D` lists them, `S` posts them)
 - A branch table: every branch with its PR, ahead/behind counts and approval
   rules; open, create or delete from there
 - Read a repository's files without cloning it (`lazycc browse`), which suits
@@ -90,7 +91,7 @@ is optional, the current branch's open PR is used.
 | `lazycc pr create` | Push the current branch if needed and open a PR (see below) |
 | `lazycc pr list` | List PRs. `--state open\|closed` (default `open`), `-L/--limit` (default 30): the N most recently created PRs, most recently active first, as `gh pr list`. On a terminal with no flags it opens the PR list screen |
 | `lazycc pr view [<id>]` | Show a PR. On a terminal it opens the review screen |
-| `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR. Needs a clone |
+| `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR. Needs a clone. With the config's `ci`, `pr view` and `pr status` add CodeBuild and CodePipeline results ([CI results](docs/configuration.md#ci-results)) |
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it, fast-forwarding an existing local branch. Needs a clone |
 | `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file` (`-F -` for stdin), or the editor on a terminal. Closed PRs can be commented on too |
 | `lazycc pr approve [<id>]` | Approve; `--revoke` takes the approval back |

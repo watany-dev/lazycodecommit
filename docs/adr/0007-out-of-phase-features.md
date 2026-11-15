@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. 「CI 結果の表示」は ADR 0010 が置き換えた。
 
 ## Context
 

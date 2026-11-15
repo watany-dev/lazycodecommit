@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { version } from "../../package.json" with { type: "json" };
+import type { CiApi, CiRun } from "../aws/ci.js";
 import type { CodeCommitApi } from "../aws/codecommit.js";
 import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
@@ -13,6 +14,7 @@ interface Setup {
   onTop?: (request: TopRequest) => Promise<void>;
   git?: Partial<Git>;
   api?: CodeCommitApi;
+  ci?: CiApi;
   config?: Config | Error;
   env?: Record<string, string>;
   state?: FakeState;
@@ -26,6 +28,7 @@ async function cli(args: string[], setup: Setup = {}) {
   const err: string[] = [];
   const confirms: string[] = [];
   const apiOptions: object[] = [];
+  const ciOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
   const tops: TopRequest[] = [];
   const deps: Deps = {
@@ -48,6 +51,10 @@ async function cli(args: string[], setup: Setup = {}) {
       apiOptions.push(o);
       return setup.api ?? fakeApi();
     },
+    createCiApi: async (o) => {
+      ciOptions.push(o);
+      return setup.ci ?? { recentBuilds: async () => [], recentExecutions: async () => [] };
+    },
     loadConfig: async () => {
       if (setup.config instanceof Error) throw setup.config;
       return setup.config ?? {};
@@ -66,6 +73,7 @@ async function cli(args: string[], setup: Setup = {}) {
     err: err.join("\n"),
     confirms,
     apiOptions,
+    ciOptions,
     reviews,
     tops,
   };
@@ -358,6 +366,105 @@ describe("pr view", () => {
     expect((await cli(["pr", "view"], { api })).out).toContain("OPEN · someone wants");
     const root = fakeApi([pullRequest({ id: "3", authorArn: "arn:aws:iam::1:root" })]);
     expect((await cli(["pr", "view"], { api: root })).out).toContain("OPEN · root wants");
+  });
+});
+
+const build = (id: string, status: string, commit: string): CiRun => ({
+  id,
+  status,
+  commits: [commit],
+  startedAt: new Date("2026-11-15T10:00:00Z"),
+  endedAt: status === "IN_PROGRESS" ? undefined : new Date("2026-11-15T10:04:00Z"),
+  url: `https://console/${id}`,
+});
+const ciPrApi = () => fakeApi([pullRequest({ id: "3", sourceCommit: "s1" })]);
+
+describe("CI results in pr view and pr status (ADR 0010)", () => {
+  const ci: CiApi = {
+    recentBuilds: async () => [
+      build("check:2", "FAILED", "s1"),
+      build("check:1", "SUCCEEDED", "s0"),
+    ],
+    recentExecutions: async () => {
+      throw Object.assign(
+        new Error("not authorized to perform: codepipeline:ListPipelineExecutions"),
+        {
+          name: "AccessDeniedException",
+        },
+      );
+    },
+  };
+  const config = { ci: { demo: { codebuild: ["check"], codepipeline: ["release"] } } };
+
+  it("leaves CodeBuild and CodePipeline alone for a repository the config does not list", async () => {
+    const r = await cli(["pr", "view", "--json"], {
+      api: ciPrApi(),
+      config: { ci: { other: { codebuild: ["x"] } } },
+    });
+    expect(json(r.out).checks).toBeNull();
+    expect(r.ciOptions).toEqual([]);
+    expect((await cli(["pr", "view"], { api: ciPrApi() })).out).not.toContain("CI:");
+  });
+
+  it("prints each run on the PR's source commit in pr view", async () => {
+    const r = await cli(["pr", "view"], { api: ciPrApi(), config, ci });
+    expect(r.ciOptions).toEqual([{ region: "ap-northeast-1" }]);
+    expect(r.out.split("\n").slice(3, 6)).toEqual([
+      "CI: ✗ fail",
+      "  ✗  codebuild check       FAILED 2026-11-15T10:00:00Z  https://console/check:2",
+      "  !  codepipeline release                               Access denied: not authorized to perform: codepipeline:ListPipelineExecutions",
+    ]);
+  });
+
+  it("puts checks in pr view JSON", async () => {
+    const r = await cli(["pr", "view", "--json"], { api: ciPrApi(), config, ci });
+    expect(json(r.out).checks).toEqual({
+      state: "fail",
+      commit: "s1",
+      runs: [
+        {
+          provider: "codebuild",
+          name: "check",
+          state: "fail",
+          status: "FAILED",
+          id: "check:2",
+          startedAt: "2026-11-15T10:00:00Z",
+          endedAt: "2026-11-15T10:04:00Z",
+          url: "https://console/check:2",
+        },
+        {
+          provider: "codepipeline",
+          name: "release",
+          state: "error",
+          status: null,
+          id: null,
+          startedAt: null,
+          endedAt: null,
+          url: null,
+          message: "Access denied: not authorized to perform: codepipeline:ListPipelineExecutions",
+        },
+      ],
+    });
+  });
+
+  it("adds a CI line to pr status, and says when no run matched", async () => {
+    const quiet = { ci: { demo: { codebuild: ["check"] } } };
+    const none: CiApi = {
+      recentBuilds: async () => [build("check:1", "SUCCEEDED", "other")],
+      recentExecutions: async () => [],
+    };
+    const r = await cli(["pr", "status"], { api: ciPrApi(), config: quiet, ci: none });
+    expect(r.out).toContain("  CI:             · none\n    ·  codebuild check    no run on s1");
+    const j = json(
+      (await cli(["pr", "status", "--json"], { api: ciPrApi(), config: quiet, ci: none })).out,
+    );
+    expect(j.checks).toMatchObject({ state: "none", runs: [{ state: "none", startedAt: null }] });
+  });
+
+  it("does not look for CI when the branch has no PR", async () => {
+    const r = await cli(["pr", "status", "--json"], { config, ci });
+    expect(json(r.out)).toEqual({ branch: "topic", pullRequest: null });
+    expect(r.ciOptions).toEqual([]);
   });
 });
 

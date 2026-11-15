@@ -13,6 +13,13 @@ export interface Config {
   };
   readonly branch?: { readonly closedPrLookback?: number };
   readonly concurrency?: number;
+  /** Per repository, the CodeBuild projects and pipelines whose runs are a PR's CI results (ADR 0010). */
+  readonly ci?: Readonly<
+    Record<
+      string,
+      { readonly codebuild?: readonly string[]; readonly codepipeline?: readonly string[] }
+    >
+  >;
 }
 
 /** The config file is user-written, so a bad one stops the command (ADR 0003). */
@@ -80,13 +87,12 @@ function validate(path: string, raw: unknown): Config {
   if (!isObject(raw)) return fail("(top level)", "an object");
   str(raw, "profile", "profile");
   str(raw, "region", "region");
-  const repos = raw["repos"];
-  if (
-    repos !== undefined &&
-    !(Array.isArray(repos) && repos.every((r) => typeof r === "string" && r !== ""))
-  ) {
-    fail("repos", "an array of non-empty strings");
-  }
+  const names = (o: Obj, key: string, name: string) => {
+    const v = o[key];
+    if (v !== undefined && !(Array.isArray(v) && v.every((r) => typeof r === "string" && r !== "")))
+      fail(name, "an array of non-empty strings");
+  };
+  names(raw, "repos", "repos");
   posInt(raw, "concurrency", "concurrency");
   const pr = section("pr");
   if (pr) {
@@ -98,6 +104,12 @@ function validate(path: string, raw: unknown): Config {
   }
   const branch = section("branch");
   if (branch) posInt(branch, "closedPrLookback", "branch.closedPrLookback");
+  const ci = section("ci");
+  for (const [repo, entry] of Object.entries(ci ?? {})) {
+    if (!isObject(entry)) fail(`ci.${repo}`, "an object");
+    names(entry as Obj, "codebuild", `ci.${repo}.codebuild`);
+    names(entry as Obj, "codepipeline", `ci.${repo}.codepipeline`);
+  }
   // Unknown keys are left alone so a newer config still loads in an older lazycc.
   return raw as Config;
 }

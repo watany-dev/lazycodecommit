@@ -42,6 +42,9 @@ describe("loadConfig", () => {
       pr: { template: ".codecommit/pull_request_template.md", mergeOption: "squash" },
       branch: { closedPrLookback: 100 },
       concurrency: 8,
+      ci: {
+        "my-service": { codebuild: ["my-service-pr-check"], codepipeline: ["my-service-release"] },
+      },
       future: true,
     };
     await write(JSON.stringify(config));
@@ -80,6 +83,13 @@ describe("loadConfig", () => {
     [
       '{"branch": {"closedPrLookback": -1}}',
       '"branch.closedPrLookback" must be a positive integer',
+    ],
+    ['{"ci": []}', '"ci" must be an object'],
+    ['{"ci": {"a": []}}', '"ci.a" must be an object'],
+    ['{"ci": {"a": {"codebuild": "p"}}}', '"ci.a.codebuild" must be an array of non-empty strings'],
+    [
+      '{"ci": {"a": {"codepipeline": [""]}}}',
+      '"ci.a.codepipeline" must be an array of non-empty strings',
     ],
   ])("rejects %s", async (text, message) => {
     await write(text);
