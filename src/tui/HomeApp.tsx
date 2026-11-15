@@ -1,5 +1,4 @@
 import { Box, Text, useApp, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import { useEffect, useRef, useState } from "react";
 import { rulesSummary } from "../core/branch.js";
 import { CHECK_COLOR, CHECK_MARK } from "../core/checks.js";
@@ -13,6 +12,7 @@ import {
 } from "../core/inbox.js";
 import type { ReviewService } from "../core/review.js";
 import { printable, shortArn } from "../core/text.js";
+import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
 import { HelpScreen, type HelpSection } from "./components/Help.js";
 import { RepoPicker } from "./components/RepoPicker.js";
 import { useKeys } from "./hooks/useKeys.js";
@@ -71,8 +71,8 @@ export function HomeApp({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("awaiting");
   const [cursor, setCursor] = useState(0);
-  const [filter, setFilter] = useState("");
-  const [filtering, setFiltering] = useState(false);
+  const filterBox = useFilter();
+  const { filter } = filterBox;
   const [note, setNote] = useState<string | null>(startNote ?? null);
   const [showHelp, setShowHelp] = useState(false);
   // A refresh for repositories the user has since left must not land.
@@ -139,13 +139,7 @@ export function HomeApp({
         setShowHelp(false);
         return;
       }
-      if (filtering) {
-        if (key.escape) {
-          setFiltering(false);
-          setFilter("");
-        } else if (key.return) setFiltering(false);
-        return;
-      }
+      if (filterBox.handleKey(key)) return;
       if (input === "q" || key.escape) {
         exit();
         return;
@@ -164,7 +158,7 @@ export function HomeApp({
         if (repos && !refreshing) void refresh(repos);
       } else if (input === "r") setView({ kind: "picker" });
       else if (input === "/") {
-        setFiltering(true);
+        filterBox.start();
         setCursor(0);
       } else if (input === "j" || key.downArrow) {
         setCursor(Math.min(index + 1, Math.max(rows.length - 1, 0)));
@@ -249,7 +243,7 @@ export function HomeApp({
 
   const notes = (inbox?.errors.length ?? 0) + (inbox && loadError ? 1 : 0);
   const height = Math.max((stdout.rows || 24) - CHROME_LINES - notes, 3);
-  const top = Math.max(0, Math.min(index - height + 1, rows.length - height));
+  const top = windowStart(index, height, rows.length);
   const visible = rows.slice(top, top + height);
   const repoWidth = Math.min(Math.max(6, ...rows.map((i) => i.pr.repository.length)) + 2, 28);
 
@@ -270,16 +264,7 @@ export function HomeApp({
           {refreshing ? "  refreshing…" : ""}
         </Text>
       </Box>
-      <Box>
-        {filtering ? (
-          <>
-            <Text>/</Text>
-            <TextInput value={filter} onChange={setFilter} />
-          </>
-        ) : (
-          <Text dimColor>{filter ? `filter: ${filter}` : " "}</Text>
-        )}
-      </Box>
+      <FilterLine state={filterBox} />
       {inbox?.errors.map((e) => (
         <Text key={e.repository} color="red" wrap="truncate">
           {e.repository}: {formatErrorMessage(e.error)}

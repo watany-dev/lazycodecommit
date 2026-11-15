@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
+import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
 import { HelpScreen, type HelpSection } from "./components/Help.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { type TopSwitch, topSwitch } from "./top.js";
@@ -45,8 +46,8 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   /** The selected entry's path per folder, so going back up lands on the folder you came from. */
   const [cursors, setCursors] = useState<Record<string, string>>({});
-  const [filter, setFilter] = useState("");
-  const [filtering, setFiltering] = useState(false);
+  const filterBox = useFilter();
+  const { filter } = filterBox;
   const [scroll, setScroll] = useState(0);
   const [picker, setPicker] = useState<RefPicker | null>(null);
   const [pickerCursor, setPickerCursor] = useState(0);
@@ -69,7 +70,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
       if (node.kind === "folder") {
         setFolder(node);
         setFile(null);
-        setFilter("");
+        filterBox.setFilter("");
       } else {
         setFile(node);
         setScroll(0);
@@ -160,13 +161,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         else if (key.upArrow) setPickerCursor(Math.max(pickerCursor - 1, 0));
         return;
       }
-      if (filtering) {
-        if (key.escape) {
-          setFiltering(false);
-          setFilter("");
-        } else if (key.return) setFiltering(false);
-        return;
-      }
+      if (filterBox.handleKey(key)) return;
       if (input === "?") {
         setShowHelp(true);
         return;
@@ -215,7 +210,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         return;
       }
       if (input === "/") {
-        setFiltering(true);
+        filterBox.start();
         setCursor(0);
         return;
       }
@@ -277,9 +272,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
           selected={selected}
           index={index}
           height={height}
-          filter={filter}
-          filtering={filtering}
-          onFilter={setFilter}
+          filterBox={filterBox}
         />
       )}
       <Box marginTop={1}>
@@ -308,25 +301,15 @@ function FolderView(props: {
   selected: FolderEntry | undefined;
   index: number;
   height: number;
-  filter: string;
-  filtering: boolean;
-  onFilter: (s: string) => void;
+  filterBox: ReturnType<typeof useFilter>;
 }) {
-  const { entries, selected, index, filter } = props;
+  const { entries, selected, index } = props;
+  const { filter } = props.filterBox;
   const height = props.height - 1;
-  const top = Math.max(0, Math.min(index - height + 1, entries.length - height));
+  const top = windowStart(index, height, entries.length);
   return (
     <>
-      <Box>
-        {props.filtering ? (
-          <>
-            <Text>/</Text>
-            <TextInput value={filter} onChange={props.onFilter} />
-          </>
-        ) : (
-          <Text dimColor>{filter ? `filter: ${filter}` : " "}</Text>
-        )}
-      </Box>
+      <FilterLine state={props.filterBox} />
       {entries.length === 0 ? (
         <Text dimColor>{filter ? "Nothing matches." : "Empty folder."}</Text>
       ) : (
@@ -384,7 +367,7 @@ function RefPickerView(props: {
 }) {
   const { picker, branches, cursor } = props;
   const height = props.height - 1;
-  const top = Math.max(0, Math.min(cursor - height + 1, branches.length - height));
+  const top = windowStart(cursor, height, branches.length);
   return (
     <>
       <Box>
