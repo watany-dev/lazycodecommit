@@ -478,21 +478,29 @@ export function createReviewApi(client: CodeCommitClient) {
     destinationCommitId: string;
     strategy: MergeStrategy;
   }): Promise<ConflictSummary> {
-    const response = await client.send(
-      new GetMergeConflictsCommand({
-        repositoryName: params.repositoryName,
-        sourceCommitSpecifier: params.sourceCommitId,
-        destinationCommitSpecifier: params.destinationCommitId,
-        mergeOption: MERGE_OPTIONS[params.strategy],
-      }),
-    );
+    // A page holds at most 100 files; a large conflict goes on over nextToken.
+    const conflicts: { filePath?: string | undefined }[] = [];
+    let mergeable = false;
+    let nextToken: string | undefined;
+    do {
+      const response = await client.send(
+        new GetMergeConflictsCommand({
+          repositoryName: params.repositoryName,
+          sourceCommitSpecifier: params.sourceCommitId,
+          destinationCommitSpecifier: params.destinationCommitId,
+          mergeOption: MERGE_OPTIONS[params.strategy],
+          ...(nextToken ? { nextToken } : {}),
+        }),
+      );
+      mergeable = response.mergeable ?? false;
+      conflicts.push(...(response.conflictMetadataList ?? []));
+      nextToken = response.nextToken;
+    } while (nextToken);
 
     return {
-      mergeable: response.mergeable ?? false,
-      conflictCount: response.conflictMetadataList?.length ?? 0,
-      conflictFiles: (response.conflictMetadataList ?? [])
-        .map((c) => c.filePath ?? "(unknown)")
-        .filter(Boolean),
+      mergeable,
+      conflictCount: conflicts.length,
+      conflictFiles: conflicts.map((c) => c.filePath ?? "(unknown)"),
     };
   }
 

@@ -1293,6 +1293,30 @@ describe("getMergeConflicts", () => {
     });
   });
 
+  it("counts the conflicting files on every page", async () => {
+    mockSend
+      .mockResolvedValueOnce({
+        mergeable: false,
+        conflictMetadataList: [{ filePath: "a.ts" }, { filePath: "b.ts" }],
+        nextToken: "t1",
+      })
+      .mockResolvedValueOnce({ mergeable: false, conflictMetadataList: [{ filePath: "c.ts" }] });
+
+    const result = await getMergeConflicts({
+      repositoryName: "my-service",
+      sourceCommitId: "abc123",
+      destinationCommitId: "def456",
+      strategy: "three-way",
+    });
+
+    expect(result).toEqual({
+      mergeable: false,
+      conflictCount: 3,
+      conflictFiles: ["a.ts", "b.ts", "c.ts"],
+    });
+    expect(mockSend.mock.calls[1]![0]!.input.nextToken).toBe("t1");
+  });
+
   it("uses (unknown) for conflict files with missing filePath", async () => {
     mockSend.mockResolvedValueOnce({
       mergeable: false,
