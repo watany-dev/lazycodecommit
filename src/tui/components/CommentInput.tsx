@@ -1,6 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import TextInput from "ink-text-input";
 import React, { useState } from "react";
+import { useKeys } from "../hooks/useKeys.js";
 
 interface Props {
   onSubmit: (content: string) => void;
@@ -32,7 +33,7 @@ export function CommentInput({
 }: Props) {
   const [value, setValue] = useState(initialValue);
 
-  useInput((_input, key) => {
+  useKeys((_input, key) => {
     if (error) {
       onClearError();
       return;

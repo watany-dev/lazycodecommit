@@ -1,7 +1,8 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React, { memo, useMemo, useState } from "react";
 import type { PrActivityEvent } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
+import { useKeys } from "../hooks/useKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 
 /** Match PullRequestDetail's default viewport so j/k cost stays constant. */
@@ -28,7 +29,7 @@ export function ActivityTimeline({
 }: Props) {
   const [cursorIndex, setCursorIndex] = useState(0);
 
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (key.escape || input === "q") {
       onBack();
       return;

@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { useEffect, useRef, useState } from "react";
 import { rulesSummary } from "../core/branch.js";
@@ -14,6 +14,7 @@ import {
 import type { ReviewService } from "../core/review.js";
 import { printable, shortArn } from "../core/text.js";
 import { RepoPicker } from "./components/RepoPicker.js";
+import { useKeys } from "./hooks/useKeys.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
@@ -131,7 +132,7 @@ export function HomeApp({
   const index = Math.max(Math.min(cursor, rows.length - 1), 0);
   const selected = rows[index];
 
-  useInput(
+  useKeys(
     (input, key) => {
       if (showHelp) {
         setShowHelp(false);

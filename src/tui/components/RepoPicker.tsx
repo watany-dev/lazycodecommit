@@ -1,8 +1,9 @@
-import { Box, Text, useInput, useStdout } from "ink";
+import { Box, Text, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import type { HomeActions } from "../../core/home.js";
 import { printable } from "../../core/text.js";
+import { useKeys } from "../hooks/useKeys.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 
 interface Props {
@@ -49,7 +50,7 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
     }
   }
 
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (filtering) {
       if (key.escape) {
         setFiltering(false);

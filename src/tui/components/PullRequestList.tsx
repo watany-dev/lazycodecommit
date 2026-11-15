@@ -1,8 +1,9 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import TextInput from "ink-text-input";
 import React, { useEffect, useMemo, useState } from "react";
 import type { PullRequestDisplayStatus, PullRequestSummary } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
+import { useKeys } from "../hooks/useKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 
 interface PaginationViewState {
@@ -86,7 +87,7 @@ export function PullRequestList({
     setCursor((prev) => Math.min(prev, Math.max(filteredPullRequests.length - 1, 0)));
   }, [filteredPullRequests.length]);
 
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (isSearching) {
       if (key.escape) {
         setIsSearching(false);

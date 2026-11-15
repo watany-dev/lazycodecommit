@@ -1,8 +1,9 @@
 import { PassThrough } from "node:stream";
 import * as fc from "fast-check";
-import { render, Text, useInput } from "ink";
+import { render, Text } from "ink";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { KeysProvider, useKeys } from "./hooks/useKeys.js";
 import { deliveries, keyStream, splitKeys } from "./keyStream.js";
 
 describe("splitKeys", () => {
@@ -44,7 +45,7 @@ function Counter() {
   const [typed, setTyped] = useState("");
   // Updates from this render's values, as the screens do: a key handled by a
   // stale handler is lost.
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (input === "j") setCount(count + 1);
     else if (key.upArrow) setCount(count + 100);
     else setTyped(typed + input);
@@ -71,11 +72,16 @@ describe("keyStream", () => {
   it("gives each key of a burst to the handler of the render before it", async () => {
     const t = terminal();
     const stdin = keyStream(t.source as unknown as NodeJS.ReadStream);
-    const app = render(<Counter />, {
-      stdin,
-      stdout: t.stdout as unknown as NodeJS.WriteStream,
-      debug: true,
-    });
+    const app = render(
+      <KeysProvider>
+        <Counter />
+      </KeysProvider>,
+      {
+        stdin,
+        stdout: t.stdout as unknown as NodeJS.WriteStream,
+        debug: true,
+      },
+    );
     t.source.write("jjjjj\u001b[Ajjxy");
     await vi.waitFor(() => expect(t.frame()).toContain("count=107 typed=xy"), { timeout: 2000 });
     // Input after the queue has drained starts it again.

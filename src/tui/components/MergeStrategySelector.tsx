@@ -1,6 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React, { useState } from "react";
 import type { MergeStrategy } from "../../core/review.js";
+import { useKeys } from "../hooks/useKeys.js";
 
 interface Props {
   sourceRef: string;
@@ -25,7 +26,7 @@ export function MergeStrategySelector({ sourceRef, destRef, initial, onSelect, o
     ),
   );
 
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (input === "j" || key.downArrow) {
       setSelectedIndex((prev) => Math.min(prev + 1, STRATEGIES.length - 1));
       return;

@@ -1,7 +1,8 @@
-import { Text, useInput } from "ink";
+import { Text } from "ink";
 import { render } from "ink-testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReviewService } from "../core/review.js";
+import { useKeys } from "./hooks/useKeys.js";
 
 const exit = vi.fn();
 vi.mock("ink", async (importOriginal) => ({
@@ -13,7 +14,7 @@ vi.mock("ink", async (importOriginal) => ({
 // was opened for and hand control back on q.
 vi.mock("./ReviewApp.js", () => ({
   App: ({ repository, onExit }: { repository: string; onExit: () => void }) => {
-    useInput((input) => {
+    useKeys((input) => {
       if (input === "q") onExit();
     });
     return <Text>PR list of {repository}</Text>;

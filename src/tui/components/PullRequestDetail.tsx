@@ -1,5 +1,5 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CHECK_COLOR, CHECK_MARK, type Checks, noRun } from "../../core/checks.js";
 import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
@@ -13,6 +13,7 @@ import type {
 import { printable, shortArn } from "../../core/text.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { useAsyncDismiss } from "../hooks/useAsyncDismiss.js";
+import { useKeys } from "../hooks/useKeys.js";
 import {
   buildDisplayLines,
   COMMENT_LINE_TYPES,
@@ -314,7 +315,7 @@ export function PullRequestDetail({
       ? 20
       : 30;
 
-  useInput((input, key) => {
+  useKeys((input, key) => {
     // File list mode: handle its own keys before the modal guard
     if (showFileList) {
       if (input === "j" || key.downArrow) {

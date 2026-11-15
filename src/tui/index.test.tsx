@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { fakeGit } from "../testing/fakes.js";
 
 const render = vi.fn((_node: unknown) => ({ waitUntilExit: async () => {}, clear: () => {} }));
+const wrapped = vi.fn((_type: unknown) => {});
 vi.mock("ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("ink")>()),
-  render: (node: unknown) => render(node),
+  // Every screen is rendered inside KeysProvider; the tests look at the screen.
+  render: (node: { type: unknown; props: { children: unknown } }) => {
+    wrapped(node.type);
+    return render(node.props.children);
+  },
 }));
 
 const { openReview, openTop } = await import("./index.js");
@@ -12,6 +17,7 @@ const { BranchesApp } = await import("./BranchesApp.js");
 const { BrowseApp } = await import("./BrowseApp.js");
 const { HomeApp } = await import("./HomeApp.js");
 const { PickScreen } = await import("./PickScreen.js");
+const { KeysProvider } = await import("./hooks/useKeys.js");
 
 describe("openReview", () => {
   it("renders the review app and waits for it to exit", async () => {
@@ -20,6 +26,7 @@ describe("openReview", () => {
     const props = render.mock.calls.map(([node]) => (node as { props: object }).props);
     expect(props[0]).toMatchObject({ repository: "demo", start: { pullRequestId: "4" } });
     expect(props[1]).toMatchObject({ start: null });
+    expect(new Set(wrapped.mock.calls.map(([type]) => type))).toEqual(new Set([KeysProvider]));
   });
 
   it("gives the service the read marker", async () => {

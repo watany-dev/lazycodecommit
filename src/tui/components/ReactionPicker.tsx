@@ -1,6 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React, { useState } from "react";
 import type { ReactionSummary } from "../../core/review.js";
+import { useKeys } from "../hooks/useKeys.js";
 
 const REACTIONS = [
   { emoji: "👍", shortCode: ":thumbsup:" },
@@ -39,7 +40,7 @@ export function ReactionPicker({
     }
   }
 
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (error) {
       onClearError();
       return;

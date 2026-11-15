@@ -1,9 +1,10 @@
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
+import { useKeys } from "./hooks/useKeys.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { screenErrorText } from "./utils/formatError.js";
 
@@ -144,7 +145,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
     void open(ref, `${parentOf(folder.path)}/`);
   }
 
-  useInput(
+  useKeys(
     (input, key) => {
       if (showHelp) {
         setShowHelp(false);
