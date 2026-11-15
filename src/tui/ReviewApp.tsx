@@ -568,10 +568,14 @@ export function App({ service, repository, start, onExit }: AppProps) {
     if (!target?.sourceCommit || !target?.destinationCommit) {
       return { mergeable: true, conflictCount: 0, conflictFiles: [] };
     }
+    // The merge lands on the destination branch's current tip, which may have
+    // moved since the screen opened, so check against the branch, not the
+    // commit read then. GetMergeConflicts takes a branch name as a specifier.
+    const destination = target.destinationReference?.replace(/^refs\/heads\//, "");
     return await service.getMergeConflicts({
       repositoryName: selectedRepo,
       sourceCommitId: target.sourceCommit,
-      destinationCommitId: target.destinationCommit,
+      destinationCommitId: destination || target.destinationCommit,
       strategy,
     });
   }

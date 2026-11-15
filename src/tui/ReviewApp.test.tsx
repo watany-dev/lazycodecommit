@@ -3210,6 +3210,57 @@ describe("App", () => {
     });
   });
 
+  it("checks conflicts against the destination branch's tip, not the commit read at open", async () => {
+    vi.mocked(listPullRequests).mockResolvedValue({
+      pullRequests: [
+        {
+          pullRequestId: "42",
+          title: "fix: login",
+          authorArn: "arn:aws:iam::123456789012:user/watany",
+          creationDate: new Date("2026-02-13T10:00:00Z"),
+          status: "OPEN" as const,
+        },
+      ],
+    });
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: {
+        pullRequestId: "42",
+        title: "fix: login",
+        pullRequestTargets: [
+          {
+            destinationReference: "refs/heads/main",
+            sourceReference: "refs/heads/fix",
+            sourceCommit: "src1",
+            destinationCommit: "stale-dst",
+          },
+        ],
+      },
+      differences: [],
+      commentThreads: [],
+    });
+
+    const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain("fix: login");
+    });
+    stdin.write("\r");
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain("PR #42");
+    });
+    stdin.write("m");
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain("Select merge strategy:");
+    });
+    stdin.write("\r");
+    await vi.waitFor(() => {
+      expect(getMergeConflicts).toHaveBeenCalled();
+    });
+    expect(vi.mocked(getMergeConflicts).mock.calls[0]!.at(-1)).toMatchObject({
+      sourceCommitId: "src1",
+      destinationCommitId: "main",
+    });
+  });
+
   it("skips conflict check when PR target has no commit IDs", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
