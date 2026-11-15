@@ -97,12 +97,13 @@ export function homeActions(deps: HomeDeps): HomeActions {
       return listing;
     },
     async toggleWatch(repository) {
-      const next = watched.includes(repository)
-        ? watched.filter((r) => r !== repository)
-        : [...watched, repository];
-      await saveRepos(deps.env, next);
-      watched = next;
-      return next;
+      // Toggled in the file as it is now: another lazycc may have changed repos.
+      watched = await saveRepos(deps.env, (current) =>
+        current.includes(repository)
+          ? current.filter((r) => r !== repository)
+          : [...current, repository],
+      );
+      return watched;
     },
     consoleUrl: (pr) => consoleUrl(region, pr.repository, pr.id),
   };

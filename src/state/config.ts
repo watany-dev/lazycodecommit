@@ -118,20 +118,26 @@ function validate(path: string, raw: unknown): Config {
  * Sets `repos` in the config file (the repository picker's w), keeping every
  * other key. JSON has no comments to lose; the file is rewritten with two-space
  * indents. A file that does not load is left alone and the error is thrown.
+ * A function is given the file's current repos, under the lock, and returns
+ * the new list; the list saved is returned.
  */
 export async function saveRepos(
   env: Readonly<Record<string, string | undefined>>,
-  repos: readonly string[],
-): Promise<void> {
+  update: readonly string[] | ((current: readonly string[]) => readonly string[]),
+): Promise<readonly string[]> {
   const path = configPath(env);
   await mkdir(dirname(path), { recursive: true });
   // Read under the lock, so a save from another lazycc in between is not undone.
+  let repos: readonly string[] = [];
   await withLock(path, async () => {
-    const current = { ...(await loadConfig(env)) } as Record<string, unknown>;
+    const config = await loadConfig(env);
+    repos = typeof update === "function" ? update(config.repos ?? []) : update;
+    const current = { ...config } as Record<string, unknown>;
     if (repos.length > 0) current["repos"] = repos;
     else delete current["repos"];
     // In place, not write-and-rename: that would replace a symlinked config
     // (dotfiles) with a plain file and drop its mode.
     await writeFile(path, `${JSON.stringify(current, null, 2)}\n`);
   });
+  return repos;
 }
