@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { version } from "../../package.json" with { type: "json" };
 import type { CiApi, CiRun } from "../aws/ci.js";
 import type { CodeCommitApi } from "../aws/codecommit.js";
+import { newDraft } from "../core/commentDrafts.js";
 import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
@@ -1391,6 +1392,32 @@ describe("home", () => {
       expect(top?.home).toMatchObject({ region: "us-west-2", profile: "cfg" });
     },
   );
+
+  it("keeps drafts of PRs opened from home in another region, under that region", async () => {
+    const state = fakeState();
+    const config = { repos: ["a"], region: "us-west-2", profile: "cfg" };
+    const r = await cli(["branch"], { interactive: true, config, state });
+    const draft = newDraft(
+      "later",
+      { kind: "general" },
+      { beforeCommitId: "b", afterCommitId: "a" },
+    );
+    await r.tops[0]?.home?.drafts?.save("111122223333/5", [draft]);
+    expect([...state.draftLists.keys()]).toEqual(["us-west-2/111122223333/5"]);
+  });
+
+  it("fails home's drafts, not the process, when home's region cannot be found", async () => {
+    const api = fakeApi([], {
+      region: async () => {
+        throw new Error("no region");
+      },
+    });
+    const config = { repos: ["a"], profile: "cfg" };
+    const r = await cli(["branch"], { interactive: true, config, api });
+    // Unused, the failure must not be an unhandled rejection.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(r.tops[0]?.home?.drafts?.load("111122223333/5")).rejects.toThrow("no region");
+  });
 
   it("shares the clone's account with home when the config names the same", async () => {
     const config = { repos: ["a"], region: "ap-northeast-1" };

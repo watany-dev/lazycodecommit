@@ -7,7 +7,7 @@ import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { lazyCiClient, pullRequestChecks, repositoryRuns } from "../core/checks.js";
 import { cloneRepository } from "../core/clone.js";
-import { draftStorage } from "../core/commentDrafts.js";
+import { type DraftStorage, draftStorage } from "../core/commentDrafts.js";
 import {
   type AccountContext,
   type ContextInput,
@@ -737,6 +737,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
             checks: (pr: { repository: string; sourceCommit: string }) =>
               pullRequestChecks(config, homeCi, pr),
             markSeen: markSeenFor(state, homeRegion),
+            drafts: draftsIn(state, homeRegion),
           },
         }
       : {}),
@@ -832,6 +833,17 @@ function markSeenFor(state: LocalState, region: string | Promise<string>) {
   return (pr: SeenPr) => {
     // The read mark only feeds home's ● marker; failing to save it is not an error.
     void (async () => markSeenIn(state, await region, pr, new Date()))().catch(() => {});
+  };
+}
+
+/** drafts.json for the PRs of an account whose region is still being resolved. */
+function draftsIn(state: LocalState, region: Promise<string>): DraftStorage {
+  const storage = region.then((r) => draftStorage(state.drafts, r));
+  // The failure shows when a review loads drafts, not as an unhandled rejection.
+  storage.catch(() => {});
+  return {
+    load: async (key) => (await storage).load(key),
+    save: async (key, drafts) => (await storage).save(key, drafts),
   };
 }
 

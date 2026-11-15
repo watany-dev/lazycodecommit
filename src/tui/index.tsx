@@ -64,7 +64,7 @@ export interface TopRequest extends ServiceRequest {
    * The account home reads the config's repositories in, when it is not the
    * clone's (lazycc branch or browse in a clone of another region or profile).
    */
-  readonly home?: Pick<ServiceRequest, "region" | "profile" | "markSeen" | "checks">;
+  readonly home?: Pick<ServiceRequest, "region" | "profile" | "markSeen" | "checks" | "drafts">;
   /** The repository the branch table and browse show; picked with r when unset. */
   readonly repository?: string;
   /** The clone's repository: only its PRs take their diffs from `git`. */
