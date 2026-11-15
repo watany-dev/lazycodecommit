@@ -369,6 +369,17 @@ describe("formatErrorMessage", () => {
       );
     });
 
+    it.each([
+      "getaddrinfo ENOTFOUND codecommit.us-east-1.amazonaws.com",
+      "getaddrinfo EAI_AGAIN codecommit.us-east-1.amazonaws.com",
+      "read ECONNRESET",
+      "connect ENETUNREACH 52.94.0.1:443",
+    ])("returns network error when offline: %s", (message) => {
+      expect(formatErrorMessage(makeError("Error", message))).toBe(
+        "Network error. Check your connection.",
+      );
+    });
+
     it("returns network error for ETIMEDOUT", () => {
       expect(formatErrorMessage(makeError("Error", "ETIMEDOUT"))).toBe(
         "Network error. Check your connection.",
@@ -398,6 +409,19 @@ describe("formatErrorMessage", () => {
     it("sanitizes region names", () => {
       expect(formatErrorMessage(makeError("Error", "Region us-east-1 unavailable"))).toBe(
         "Region [REGION] unavailable",
+      );
+    });
+
+    it("leaves words that only contain a region-like run alone", () => {
+      expect(
+        formatErrorMessage(makeError("Error", "Branch focus-fix-2 not found in us-west-2")),
+      ).toBe("Branch focus-fix-2 not found in [REGION]");
+    });
+
+    it("keeps a 40-character commit ID, which is no secret key", () => {
+      const commit = "0123456789abcdef0123456789abcdef01234567";
+      expect(formatErrorMessage(makeError("Error", `Could not find commit ${commit}.`))).toBe(
+        `Could not find commit ${commit}.`,
       );
     });
 

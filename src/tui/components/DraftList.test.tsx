@@ -113,4 +113,11 @@ describe("DraftList", () => {
     expect(clearError).toHaveBeenCalled();
     expect(t.onClose).not.toHaveBeenCalled();
   });
+
+  it("cuts a long first line between characters, not inside an emoji", () => {
+    const emoji = newDraft(`${"a".repeat(59)}😀 and more`, { kind: "general" }, commits);
+    const t = show([emoji]);
+    expect(t.lastFrame()).toContain("a😀…");
+    expect(t.lastFrame()).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
 });

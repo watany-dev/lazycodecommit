@@ -10,7 +10,7 @@ import type {
   MergeStrategy,
   ReactionsByComment,
 } from "../../core/review.js";
-import { printable, shortArn } from "../../core/text.js";
+import { head, printable, shortArn } from "../../core/text.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { useAsyncDismiss } from "../hooks/useAsyncDismiss.js";
 import { useKeys } from "../hooks/useKeys.js";
@@ -25,11 +25,13 @@ import {
 } from "../utils/displayLines.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 import type { DisplayLine } from "../utils/formatDiff.js";
+import { formatErrorMessage } from "../utils/formatError.js";
 import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
 import { ConflictDisplay } from "./ConflictDisplay.js";
 import { DiffRow } from "./DiffLine.js";
 import { DraftList, type DraftSubmitState } from "./DraftList.js";
+import { windowStart } from "./FilterLine.js";
 import { MergeStrategySelector } from "./MergeStrategySelector.js";
 import { ReactionPicker } from "./ReactionPicker.js";
 
@@ -38,6 +40,9 @@ type InlineLocation = {
   filePosition: number;
   relativeFileVersion: "BEFORE" | "AFTER";
 };
+
+/** Rows of the f file list on screen; a PR of many files scrolls it. */
+const FILE_LIST_ROWS = 10;
 
 const EMPTY_STATUS_MAP = new Map<string, "loading" | "loaded" | "error">();
 
@@ -150,6 +155,8 @@ export function PullRequestDetail({
   const [selectedStrategy, setSelectedStrategy] = useState<MergeStrategy>("fast-forward");
   const [conflictSummary, setConflictSummary] = useState<ConflictSummary | null>(null);
   const [isCheckingConflicts, setIsCheckingConflicts] = useState(false);
+  /** Why the conflict check failed, shown until the next key. */
+  const [conflictCheckError, setConflictCheckError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [viewIndex, setViewIndex] = useState(-1); // -1 = All changes
   const [collapsedThreads, setCollapsedThreads] = useState<Map<string, boolean>>(() =>
@@ -227,7 +234,7 @@ export function PullRequestDetail({
       commitDifferences,
       commitDiffTexts,
       new Map(),
-      new Map(),
+      diffLineLimits,
       [],
       new Map(),
       new Map(),
@@ -287,9 +294,10 @@ export function PullRequestDetail({
       if (summary.mergeable) {
         setMergeStep("confirm");
       }
-    } catch {
+    } catch (err) {
       setIsCheckingConflicts(false);
       setMergeStep(null);
+      setConflictCheckError(formatErrorMessage(err, "merge"));
     }
   }
 
@@ -326,6 +334,7 @@ export function PullRequestDetail({
     }
 
     if (dialogOpen) return;
+    setConflictCheckError(null);
 
     // === 2-key sequence: ]c / [c for change navigation ===
     if (pendingBracket && input === "c") {
@@ -352,6 +361,12 @@ export function PullRequestDetail({
 
     if (key.tab && (commits.length > 0 || commitsAvailable)) {
       if (commits.length === 0) {
+        // Commits that never came (none, or failed to load): Tab goes back.
+        if (viewIndex >= 0 && !isLoadingCommitDiff) {
+          setViewIndex(-1);
+          setCursorIndex(0);
+          return;
+        }
         // Lazy load: trigger first commit load
         setViewIndex(0);
         setCursorIndex(0);
@@ -392,11 +407,10 @@ export function PullRequestDetail({
       return;
     }
     if (input === "t") {
-      if (viewIndex >= 0) return;
       const currentLine = lines[cursorIndex];
       const diffKey = currentLine?.diffKey;
       if (!diffKey) return;
-      const texts = diffTexts.get(diffKey);
+      const texts = (viewIndex >= 0 ? commitDiffTexts : diffTexts).get(diffKey);
       /* v8 ignore next -- diffKey originates from diffTexts entries */
       if (!texts) return;
       const totalLines = countLines(texts.before) + countLines(texts.after);
@@ -474,6 +488,10 @@ export function PullRequestDetail({
       if (!thread) return;
       const threadKey = getThreadKey(thread, currentLine.threadIndex);
       const defaultCollapsed = thread.comments.length >= FOLD_THRESHOLD;
+      const collapsing = defaultCollapsed && !(collapsedThreads.get(threadKey) ?? true);
+      // Folding from a reply removes the cursor's row: stay on the thread's fold line.
+      const root = rootRowOf(lines, cursorIndex);
+      if (collapsing && cursorIndex > root) setCursorIndex(root + 1);
       setCollapsedThreads((prev) => {
         const next = new Map(prev);
         next.set(threadKey, !(prev.get(threadKey) ?? defaultCollapsed));
@@ -555,6 +573,7 @@ export function PullRequestDetail({
     return Math.max(0, Math.min(idealOffset, maxOffset));
   }, [cursorIndex, lines.length, visibleLineCount]);
   const visibleLines = lines.slice(scrollOffset, scrollOffset + visibleLineCount);
+  const fileListTop = windowStart(fileListCursor, FILE_LIST_ROWS, fileNames.length);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -701,8 +720,8 @@ export function PullRequestDetail({
       {replyTarget && (
         <Box flexDirection="column">
           <Text dimColor>
-            Replying to {replyTarget.author}: {replyTarget.content.slice(0, 50)}
-            {replyTarget.content.length > 50 ? "..." : ""}
+            Replying to {replyTarget.author}: {head(replyTarget.content, 50)}
+            {head(replyTarget.content, 50).length < replyTarget.content.length ? "..." : ""}
           </Text>
           <CommentInput
             onSubmit={(content) => reply.execute(replyTarget.commentId, content)}
@@ -714,7 +733,7 @@ export function PullRequestDetail({
                   inReplyTo: replyTarget.commentId,
                   replyTo: {
                     author: replyTarget.author,
-                    excerpt: replyTarget.content.slice(0, 50),
+                    excerpt: head(replyTarget.content, 50),
                   },
                 });
                 setReplyTarget(null);
@@ -887,14 +906,17 @@ export function PullRequestDetail({
       {showFileList && (
         <Box flexDirection="column">
           <Text bold>Files ({fileNames.length}):</Text>
-          {fileNames.map((name, i) => (
+          {fileNames.slice(fileListTop, fileListTop + FILE_LIST_ROWS).map((name, i) => (
             <Text key={name}>
-              {i === fileListCursor ? "> " : "  "}
+              {fileListTop + i === fileListCursor ? "> " : "  "}
               {name}
             </Text>
           ))}
           <Text dimColor>j/k move Enter select Esc close</Text>
         </Box>
+      )}
+      {conflictCheckError && (
+        <Text color="red">Could not check for conflicts: {conflictCheckError}</Text>
       )}
       <Box marginTop={1}>
         <Text dimColor>
@@ -903,12 +925,20 @@ export function PullRequestDetail({
             : pendingBracket
               ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
               : viewIndex >= 0
-                ? "Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help"
+                ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help${hasTruncation ? " t more" : ""}`
                 : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
         </Text>
       </Box>
     </Box>
   );
+}
+
+/** The first row of the thread that row `index` belongs to. */
+function rootRowOf(lines: DisplayLine[], index: number): number {
+  const thread = lines[index]?.threadIndex;
+  let i = index;
+  while (i > 0 && lines[i - 1]!.threadIndex === thread) i--;
+  return i;
 }
 
 function commentIdOf(line: DisplayLine): string | undefined {

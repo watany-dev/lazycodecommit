@@ -11,10 +11,12 @@ export function HelpScreen({
   title,
   note,
   sections,
+  hint = "Press any key to close",
 }: {
   title: string;
   note?: string;
   sections: HelpSection[];
+  hint?: string;
 }) {
   const keyWidth = Math.max(...sections.flatMap((s) => s.keys.map(([k]) => k.length))) + 3;
   return (
@@ -41,7 +43,7 @@ export function HelpScreen({
         </Box>
       ))}
       <Box marginTop={1}>
-        <Text dimColor>Press any key to close</Text>
+        <Text dimColor>{hint}</Text>
       </Box>
     </Box>
   );
@@ -113,5 +115,5 @@ export function Help({ onClose }: { onClose: () => void }) {
       onClose();
     }
   });
-  return <HelpScreen title="Help" sections={REVIEW_HELP} />;
+  return <HelpScreen title="Help" sections={REVIEW_HELP} hint="? / q / Esc / Enter to close" />;
 }

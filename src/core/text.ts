@@ -18,6 +18,11 @@ export function printable(text: string, multiline = false): string {
   });
 }
 
+/** The first `n` characters, never half of a surrogate pair (an emoji). */
+export function head(text: string, n: number): string {
+  return Array.from(text).slice(0, n).join("");
+}
+
 /** "arn:aws:iam::1:user/alice" → "alice"; "arn:aws:sts::1:assumed-role/Dev/bob" → "Dev/bob". */
 export function shortArn(arn: string): string {
   const resource = arn.split(":").slice(5).join(":");

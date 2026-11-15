@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 import { type CommentDraft, canEdit } from "../../core/commentDrafts.js";
-import { printable } from "../../core/text.js";
+import { head, printable } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
 import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
@@ -176,7 +176,8 @@ function where(d: CommentDraft): string {
 
 function firstLine(text: string): string {
   const line = printable(text.split("\n")[0] ?? "");
-  return line.length > 60 ? `${line.slice(0, 60)}…` : line;
+  const cut = head(line, 60);
+  return cut.length < line.length ? `${cut}…` : line;
 }
 
 function problemLabel(d: CommentDraft): string {

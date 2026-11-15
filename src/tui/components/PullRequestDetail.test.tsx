@@ -1746,6 +1746,52 @@ describe("PullRequestDetail", () => {
     expect(lastFrame()).toBe(before);
   });
 
+  it("t shows more of a large diff in a commit view too", async () => {
+    const big = (tag: string) => Array.from({ length: 1000 }, (_, i) => `${tag} ${i}`).join("\n");
+    const commitDifferences = [
+      { beforeBlob: { blobId: "c1", path: "big.ts" }, afterBlob: { blobId: "c2", path: "big.ts" } },
+    ];
+    const screen = render(
+      <PullRequestDetail
+        pullRequest={pullRequest as any}
+        differences={differences as any}
+        commentThreads={[]}
+        diffTexts={diffTexts}
+        onBack={vi.fn()}
+        onHelp={vi.fn()}
+        onShowActivity={vi.fn()}
+        comment={defaultCommentProps}
+        reply={defaultReplyProps}
+        approval={defaultApprovalProps}
+        merge={defaultMergeProps}
+        close={defaultCloseProps}
+        commitView={{
+          ...defaultCommitProps,
+          commits: [
+            {
+              commitId: "abc1234567",
+              shortId: "abc1234",
+              message: "feat: big",
+              authorName: "alice",
+              authorDate: new Date("2026-02-13T10:00:00Z"),
+              parentIds: ["base123"],
+            },
+          ],
+          differences: commitDifferences,
+          diffTexts: new Map([["c1:c2", { before: big("old"), after: big("new") }]]),
+        }}
+        editComment={defaultEditCommentProps}
+        deleteComment={defaultDeleteCommentProps}
+        reaction={defaultReactionProps}
+      />,
+    );
+    await press(screen, "\t", "G", "k");
+    expect(screen.lastFrame()).toContain("[t] show next 300 lines");
+    expect(screen.lastFrame()).toContain("t more");
+    await press(screen, "t", "G");
+    expect(screen.lastFrame()).toContain("... truncated 600/2000 lines");
+  });
+
   it("t key does nothing in commit view", async () => {
     const sampleCommits = [
       {
@@ -4723,6 +4769,41 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  it("says why the merge stopped when the conflict check fails", async () => {
+    const denied = Object.assign(
+      new Error("User is not authorized to perform: codecommit:GetMergeConflicts"),
+      { name: "AccessDeniedException" },
+    );
+    const screen = render(
+      <PullRequestDetail
+        pullRequest={pullRequest as any}
+        differences={differences as any}
+        commentThreads={[]}
+        diffTexts={diffTexts}
+        onBack={vi.fn()}
+        onHelp={vi.fn()}
+        onShowActivity={vi.fn()}
+        comment={defaultCommentProps}
+        reply={defaultReplyProps}
+        approval={defaultApprovalProps}
+        merge={{ ...defaultMergeProps, onCheckConflicts: vi.fn().mockRejectedValue(denied) }}
+        close={defaultCloseProps}
+        commitView={defaultCommitProps}
+        editComment={defaultEditCommentProps}
+        deleteComment={defaultDeleteCommentProps}
+        reaction={defaultReactionProps}
+      />,
+    );
+    await press(screen, "m", "\r");
+    await vi.waitFor(() =>
+      expect(screen.lastFrame()!.replace(/\s+/g, " ")).toContain(
+        "Access denied: your IAM policy does not allow codecommit:GetMergeConflicts.",
+      ),
+    );
+    await press(screen, "j");
+    expect(screen.lastFrame()).not.toContain("Access denied");
+  });
+
   // Coverage: exercise merge cancel callback (onCancel at confirm stage)
   it("cancels merge at confirm stage on n key", async () => {
     const onClearMergeError = vi.fn();
@@ -7297,6 +7378,44 @@ describe("PullRequestDetail", () => {
       });
     });
 
+    it("windows a long file list around its cursor", async () => {
+      const manyDifferences = Array.from({ length: 40 }, (_, i) => ({
+        beforeBlob: { blobId: `b${i}`, path: `dir/file${i + 1}.ts` },
+        afterBlob: { blobId: `a${i}`, path: `dir/file${i + 1}.ts` },
+      }));
+      const manyTexts = new Map(
+        manyDifferences.map((_, i) => [`b${i}:a${i}`, { before: "x", after: "y" }]),
+      );
+      const screen = render(
+        <PullRequestDetail
+          pullRequest={pullRequest as any}
+          differences={manyDifferences as any}
+          commentThreads={[]}
+          diffTexts={manyTexts}
+          onBack={vi.fn()}
+          onHelp={vi.fn()}
+          onShowActivity={vi.fn()}
+          comment={defaultCommentProps}
+          reply={defaultReplyProps}
+          approval={defaultApprovalProps}
+          merge={defaultMergeProps}
+          close={defaultCloseProps}
+          commitView={defaultCommitProps}
+          editComment={defaultEditCommentProps}
+          deleteComment={defaultDeleteCommentProps}
+          reaction={defaultReactionProps}
+        />,
+      );
+      await press(screen, "f");
+      expect(screen.lastFrame()).toContain("Files (40)");
+      expect(screen.lastFrame()).toContain("> dir/file1.ts");
+      expect(screen.lastFrame()).not.toContain("dir/file40.ts");
+      for (let i = 0; i < 39; i++) screen.stdin.write("j");
+      await settle();
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("> dir/file40.ts"));
+      expect(screen.lastFrame()).not.toContain("dir/file20.ts");
+    });
+
     it("navigates file list with j/k and jumps with Enter", async () => {
       const { stdin, lastFrame } = render(
         <PullRequestDetail
@@ -7914,6 +8033,30 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => expect(lastFrame()).toContain("[+4 replies]"));
       await settle();
       expect(lastFrame()).toMatch(/> +\[\+4 replies\]/);
+    });
+
+    it("keeps the cursor on the thread after collapsing it from a middle reply", async () => {
+      const user = "arn:aws:iam::1:user/u";
+      const threads = [
+        {
+          location: null,
+          comments: [
+            { commentId: "root", authorArn: user, content: "root" },
+            { commentId: "r1", authorArn: user, content: "r1", inReplyTo: "root" },
+            { commentId: "r2", authorArn: user, content: "r2", inReplyTo: "root" },
+            { commentId: "r3", authorArn: user, content: "r3", inReplyTo: "root" },
+          ],
+        },
+        { location: null, comments: [{ commentId: "o", authorArn: user, content: "other" }] },
+        { location: null, comments: [{ commentId: "p", authorArn: user, content: "third" }] },
+      ];
+      const screen = renderDetail({ commentThreads: threads });
+      await press(screen, "j", "j", "j", "o");
+      expect(screen.lastFrame()).toContain("u: r3");
+      await press(screen, "j");
+      expect(screen.lastFrame()).toMatch(/> +└ u: r2/);
+      await press(screen, "o");
+      expect(screen.lastFrame()).toMatch(/> +\[\+3 replies\]/);
     });
   });
 });

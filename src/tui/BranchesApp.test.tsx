@@ -195,6 +195,13 @@ describe("BranchesApp", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("feature/login"));
   });
 
+  it("filters ignoring case, like the other list screens", async () => {
+    const { lastFrame, stdin } = await setup();
+    await press(stdin, "/", "L", "O", "G", "\r");
+    expect(lastFrame()).toContain("feature/login");
+    expect(lastFrame()).not.toContain("No branch matches.");
+  });
+
   it("refreshes with a fetch on Ctrl+r, shows the URL on u, and moves with k", async () => {
     const { lastFrame, stdin, a } = await setup();
     await press(stdin, "j", "k", "u");

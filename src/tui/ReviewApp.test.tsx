@@ -1,6 +1,6 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { press, render } from "../testing/keys.js";
+import { press, render, settle } from "../testing/keys.js";
 
 const exit = vi.fn();
 vi.mock("ink", async (importOriginal) => ({
@@ -3521,6 +3521,37 @@ describe("App", () => {
       expect(getCommitsForPR).toHaveBeenCalled();
     });
     expect(lastFrame()).toContain("[All changes]");
+  });
+
+  it("survives Tab after the commits failed to load and Tab returns to All changes", async () => {
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: {
+        pullRequestId: "42",
+        title: "fix: login",
+        pullRequestTargets: [
+          { sourceCommit: "src123", destinationCommit: "dest456", mergeBase: "base789" },
+        ],
+      },
+      differences: [],
+      commentThreads: [],
+    });
+    vi.mocked(getCommitsForPR).mockRejectedValue(new Error("GetCommit failed"));
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const screen = render(
+        <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} />,
+      );
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("[All changes]"));
+      await vi.waitFor(() => expect(getCommitsForPR).toHaveBeenCalled());
+      await press(screen, "\t");
+      await settle();
+      expect(unhandled).not.toHaveBeenCalled();
+      await press(screen, "\t");
+      expect(screen.lastFrame()).toContain("[All changes]");
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
   });
 
   it("does not show commits when mergeBase is missing", async () => {
