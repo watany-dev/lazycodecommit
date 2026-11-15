@@ -21,6 +21,20 @@ describe("MergeStrategySelector", () => {
     expect(output).toContain("  Three-way merge");
   });
 
+  it("starts on the preselected strategy", () => {
+    const { lastFrame } = render(
+      <MergeStrategySelector
+        sourceRef="feature"
+        destRef="main"
+        initial="three-way"
+        onSelect={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(lastFrame()).toContain("> Three-way merge");
+    expect(lastFrame()).toContain("  Fast-forward");
+  });
+
   it("moves cursor down with j key", async () => {
     const { lastFrame, stdin } = render(
       <MergeStrategySelector

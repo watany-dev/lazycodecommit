@@ -64,6 +64,8 @@ interface Props {
   };
   merge: AsyncActionState<[strategy: MergeStrategy]> & {
     onCheckConflicts: (strategy: MergeStrategy) => Promise<ConflictSummary>;
+    /** The strategy the dialog starts on. */
+    preferred?: MergeStrategy | undefined;
   };
   close: AsyncActionState<[]>;
   commitView: CommitViewProps;
@@ -700,6 +702,7 @@ export function PullRequestDetail({
         <MergeStrategySelector
           sourceRef={sourceRef}
           destRef={destRef}
+          initial={merge.preferred}
           onSelect={handleStrategySelect}
           onCancel={() => {
             setMergeStep(null);

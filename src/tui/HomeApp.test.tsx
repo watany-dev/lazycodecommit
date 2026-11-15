@@ -358,3 +358,18 @@ describe("HomeApp", () => {
     await vi.waitFor(() => expect(a.markSeen).toHaveBeenCalledWith("11"));
   });
 });
+
+describe("HomeApp with hostile text", () => {
+  it("shows PR titles with control characters made visible", async () => {
+    const hostile = [
+      awaiting("11", "Add retry\x1b]52;c;aGk=\x07\x1b[2J"),
+      mine("21", "Mine\u009b2J"),
+    ];
+    const { lastFrame, stdin } = await setup(actions({ fetch: vi.fn(async () => inbox(hostile)) }));
+    expect(lastFrame()).toContain("Add retry^[]52;c;aGk=^G^[[2J");
+    expect(lastFrame()).not.toContain("\x1b]52");
+    await press(stdin, "\t");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Mine^[[2J"));
+    expect(lastFrame()).not.toContain("\u009b");
+  });
+});
