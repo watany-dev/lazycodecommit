@@ -11,12 +11,13 @@ const ruleWith = (members: string[]) => ({
   }),
 });
 
-// The oracle: the same wildcard rules through a RegExp built from escaped pieces.
-const asRegExp = (pattern: string) =>
-  new RegExp(
-    `^${[...pattern].map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^${}()|[\]\\/]/g, "\\$&"))).join("")}$`,
-    "s",
-  );
+// The oracle: the wildcard rules as a direct recursive definition, not the
+// implementation's greedy backtracking.
+const matches = (p: string, t: string): boolean => {
+  if (p === "") return t === "";
+  if (p[0] === "*") return matches(p.slice(1), t) || (t !== "" && matches(p, t.slice(1)));
+  return t !== "" && (p[0] === "?" || p[0] === t[0]) && matches(p.slice(1), t.slice(1));
+};
 
 describe("approval pool ARN patterns", () => {
   it("match exactly when * and ? as wildcards would", () => {
@@ -30,7 +31,7 @@ describe("approval pool ARN patterns", () => {
           const me = `arn:${meTail}`;
           const pr = pullRequest({ approvalRules: [ruleWith([pattern])] });
           expect(inApprovalPool(pr, me), JSON.stringify({ pattern, me })).toBe(
-            asRegExp(pattern).test(me),
+            matches(pattern, me),
           );
         },
       ),
