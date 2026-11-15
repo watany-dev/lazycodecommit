@@ -5678,6 +5678,30 @@ describe("CI results on the review screen (ADR 0010)", () => {
     expect(lastFrame()).toContain("! codepipeline locked Access denied: ^[[31mx");
   });
 
+  it("shows a run's name, status and URL as text, not terminal escapes", async () => {
+    const checks = vi.fn(async () => ({
+      state: "pass" as const,
+      commit: "abc1234def",
+      runs: [
+        {
+          provider: "codebuild" as const,
+          name: "a\u001b]52;c;eA==\u0007b",
+          state: "pass" as const,
+          status: "OK\u009b2J",
+          id: "x:1",
+          startedAt: null,
+          endedAt: null,
+          url: "https://console/\u001b[2Jx",
+        },
+      ],
+    }));
+    const { lastFrame } = render(
+      <App service={{ ...svc, checks }} repository="my-service" start={{ pullRequestId: "42" }} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("CI: ✓ pass"));
+    expect(lastFrame()).toContain("codebuild a^[]52;c;eA==^Gb OK^[[2J https://console/^[[2Jx");
+  });
+
   it("leaves the CI line out when nothing is configured or the lookup fails", async () => {
     const none = render(
       <App

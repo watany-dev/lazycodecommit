@@ -223,7 +223,8 @@ export function startMockServer(gitRoot) {
         buildStatus: "SUCCEEDED",
         resolvedSourceVersion: "0123456789abcdef0123456789abcdef01234567",
         source: { type: "CODECOMMIT" },
-        initiator: "events.amazonaws.com",
+        // Started by hand: CodeBuild names the IAM user, which the report must not keep.
+        initiator: "alice",
         startTime: now(),
       })),
     }),
