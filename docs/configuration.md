@@ -88,8 +88,8 @@ Taken from the first of:
 | --- | --- |
 | `AWS_PROFILE`, `AWS_REGION`, `AWS_DEFAULT_REGION` | See above |
 | `VISUAL`, `EDITOR` | The editor for `pr create` and `pr comment` (default `vi`). Run through the shell, so `EDITOR="code --wait"` works |
-| `XDG_CONFIG_HOME` | Where the config file lives |
-| `XDG_STATE_HOME` | Where local state lives |
+| `XDG_CONFIG_HOME` | Where the config file lives (an absolute path; a relative one is ignored) |
+| `XDG_STATE_HOME` | Where local state lives (an absolute path; a relative one is ignored) |
 
 Credentials themselves come from the SDK's default chain, so the usual
 `AWS_ACCESS_KEY_ID` and friends apply.

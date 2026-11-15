@@ -496,6 +496,14 @@ describe("checkoutPullRequest", () => {
     expect(calls).toEqual(["switch feature/x", "ff refs/remotes/origin/feature/x"]);
   });
 
+  it("says the local branch is ahead when origin has none of its newer commits", async () => {
+    const { d } = deps({
+      api: checkoutApi(),
+      git: { resolveCommit: async (ref) => (ref === "HEAD" ? "local" : "remote") },
+    });
+    expect(await checkoutPullRequest("9", d)).toMatchObject({ created: false, ahead: true });
+  });
+
   it("does not switch when already on the branch", async () => {
     const calls: string[] = [];
     const { d } = deps({

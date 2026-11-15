@@ -609,6 +609,14 @@ describe("pr checkout", () => {
     );
   });
 
+  it("does not call a branch with unpushed commits up to date", async () => {
+    const api = fakeApi([pullRequest({ id: "6" })]);
+    const git = { resolveCommit: async (ref: string) => (ref === "HEAD" ? "local" : "remote") };
+    expect((await cli(["pr", "checkout", "6"], { api, git })).err).toBe(
+      "Switched to topic, ahead of origin/topic (#6).",
+    );
+  });
+
   it("needs an id", async () => {
     const r = await cli(["pr", "checkout"]);
     expect(r.code).toBe(2);

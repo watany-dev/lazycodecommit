@@ -472,7 +472,7 @@ async function runCommand(
         io.err(
           result.created
             ? `Switched to a new branch ${result.branch} tracking origin/${result.branch} (#${result.pr.id}).`
-            : `Switched to ${result.branch}, up to date with origin/${result.branch} (#${result.pr.id}).`,
+            : `Switched to ${result.branch}, ${result.ahead ? "ahead of" : "up to date with"} origin/${result.branch} (#${result.pr.id}).`,
         );
       return 0;
     }

@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { xdg } from "./config.js";
 import { withLock } from "./lock.js";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
 /** ~/.local/state/lazycc (XDG_STATE_HOME): seen.json, cache.json, identity.json, drafts.json. */
 export function stateDir(env: Env): string {
-  const base = env["XDG_STATE_HOME"] || join(env["HOME"] || homedir(), ".local", "state");
+  const base = xdg(env["XDG_STATE_HOME"]) ?? join(env["HOME"] || homedir(), ".local", "state");
   return join(base, "lazycc");
 }
 
