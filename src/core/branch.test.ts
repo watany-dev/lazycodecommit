@@ -129,7 +129,7 @@ describe("loadBranchTable outside a clone", () => {
 });
 
 describe("deleteRemoteBranch", () => {
-  const row: BranchRow = { name: "old", isDefault: false, tip: "t", state: "merged" };
+  const row: BranchRow = { name: "old", isDefault: false, tip: "r0ffee", state: "merged" };
 
   it("deletes on CodeCommit and prunes origin in a clone", async () => {
     const deleteBranch = vi.fn(async () => {});
@@ -154,6 +154,33 @@ describe("deleteRemoteBranch", () => {
       deleteRemoteBranch({ ...row, state: "open", pr: { id: "4", title: "t" } }, deps()),
     ).rejects.toThrow("old has an open pull request (#4).");
   });
+
+  // The row can be minutes old. Deleting on it would drop commits pushed since,
+  // or the source of a PR opened since.
+  it("refuses when the branch moved since the row was read", async () => {
+    const deleteBranch = vi.fn(async () => {});
+    const api = fakeApi([], { deleteBranch, branchCommit: async () => "newer" });
+    await expect(deleteRemoteBranch(row, deps({ api }))).rejects.toThrow(
+      "old has moved since it was listed (now newer). Refresh and try again.",
+    );
+    expect(deleteBranch).not.toHaveBeenCalled();
+  });
+
+  it("refuses when a pull request was opened from it since the row was read", async () => {
+    const deleteBranch = vi.fn(async () => {});
+    const api = fakeApi([pullRequest({ id: "9", sourceBranch: "old" })], { deleteBranch });
+    await expect(deleteRemoteBranch(row, deps({ api }))).rejects.toThrow(
+      "old has an open pull request (#9).",
+    );
+    expect(deleteBranch).not.toHaveBeenCalled();
+  });
+
+  it("says so when the branch is already gone", async () => {
+    const api = fakeApi([], { branchCommit: async () => undefined });
+    await expect(deleteRemoteBranch(row, deps({ api }))).rejects.toThrow(
+      "old no longer exists on CodeCommit.",
+    );
+  });
 });
 
 describe("branchActions", () => {
@@ -169,7 +196,7 @@ describe("branchActions", () => {
     await actions.load({ fetch: false });
     await actions.load({ fetch: true });
     await actions.switchBranch?.({ name: "x", isDefault: false, tip: "t", state: "none" });
-    await actions.deleteBranch({ name: "x", isDefault: false, tip: "t", state: "none" });
+    await actions.deleteBranch({ name: "x", isDefault: false, tip: "r0ffee", state: "none" });
     expect(calls).toEqual(["fetch --prune", "switch x true", "fetch --prune"]);
   });
 
