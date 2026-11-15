@@ -74,11 +74,11 @@ function actions(over: Partial<BrowseActions> = {}): BrowseActions {
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
 // The rendered app's frame, for press to wait on.
-let frame: () => string | undefined = () => undefined;
+let currentFrame: () => string | undefined = () => undefined;
 
 async function setup(a = actions(), path = "", ready = "README.md") {
   const r = render(<BrowseApp actions={a} path={path} />);
-  frame = r.lastFrame;
+  currentFrame = r.lastFrame;
   await vi.waitFor(() => expect(r.lastFrame()).toContain(ready));
   return { ...r, a };
 }
@@ -90,9 +90,11 @@ async function setup(a = actions(), path = "", ready = "README.md") {
  */
 async function press(stdin: { write: (s: string) => void }, ...keys: string[]) {
   for (const k of keys) {
-    const before = frame();
+    const before = currentFrame();
     stdin.write(k);
-    await vi.waitFor(() => expect(frame()).not.toBe(before), { timeout: 300 }).catch(() => {});
+    await vi
+      .waitFor(() => expect(currentFrame()).not.toBe(before), { timeout: 300 })
+      .catch(() => {});
     await tick();
   }
 }
