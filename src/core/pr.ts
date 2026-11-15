@@ -165,7 +165,8 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
   if (draft.title.trim() === "") throw new UserError("Aborted: the title is empty.");
 
   const wouldPush = unpushed === null || unpushed > 0;
-  if (wouldPush && !opts.dryRun) await pushIfAllowed(head, unpushed, opts, deps);
+  // A dry run with --no-push fails as the real run would, not plan a push.
+  if (wouldPush) await pushIfAllowed(head, unpushed, opts, deps);
 
   if (opts.dryRun) {
     return {
@@ -235,6 +236,7 @@ async function pushIfAllowed(
       ? `${head} is not on origin`
       : `${head} has ${unpushed} commit(s) not on origin`;
   if (opts.noPush) throw new UserError(`${why}, and --no-push was given.`);
+  if (opts.dryRun) return;
   if (!opts.push) {
     if (!deps.interactive) throw new UserError(`${why}. Pass --push to push it to origin.`);
     if (!(await deps.confirm(`${why}. Push it to origin?`)))

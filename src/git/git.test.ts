@@ -41,6 +41,21 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+/**
+ * A clone made with --depth 1 fetches only the default branch: remote.origin.fetch
+ * does not cover refs/heads/topic, so git itself never maps it to origin/topic.
+ */
+async function singleBranchClone(): Promise<string> {
+  sh(work, "switch", "-q", "-c", "topic");
+  await commit("topic work");
+  sh(work, "push", "-q", "origin", "topic");
+  sh(dir, "clone", "-q", "--depth", "1", `file://${bare}`, "shallow");
+  const clone = join(dir, "shallow");
+  sh(clone, "config", "user.name", "t");
+  sh(clone, "config", "user.email", "t@example.com");
+  return clone;
+}
+
 describe("createGit", () => {
   it("finds the top level, branch and remote", async () => {
     const git = createGit(work);
@@ -154,6 +169,53 @@ describe("createGit", () => {
     expect(sh(work, "rev-parse", "topic")).toBe(sh(work, "rev-parse", "origin/topic"));
 
     await expect(git.switchBranch("nope")).rejects.toBeInstanceOf(GitError);
+  });
+
+  describe("in a single-branch clone (git clone --depth 1 or --single-branch)", () => {
+    it("creates a branch from origin/<branch> that tracks it", async () => {
+      const clone = await singleBranchClone();
+      const git = createGit(clone);
+      await git.fetch(["+refs/heads/topic:refs/remotes/origin/topic"], { quiet: true });
+      for (const quiet of [true, false]) {
+        await git.switchBranch("topic", { track: "refs/remotes/origin/topic", quiet });
+        expect(await git.currentBranch()).toBe("topic");
+        expect(sh(clone, "rev-parse", "topic")).toBe(sh(work, "rev-parse", "topic"));
+        expect(sh(clone, "config", "branch.topic.remote")).toBe("origin");
+        expect(sh(clone, "config", "branch.topic.merge")).toBe("refs/heads/topic");
+        sh(clone, "switch", "-q", "main");
+        sh(clone, "branch", "-q", "-D", "topic");
+      }
+    });
+
+    it("sets the upstream up as --track would under branch.autoSetupRebase", async () => {
+      const clone = await singleBranchClone();
+      const git = createGit(clone);
+      await git.fetch(["+refs/heads/topic:refs/remotes/origin/topic"], { quiet: true });
+      for (const [setting, rebase] of [
+        ["always", "true"],
+        ["remote", "true"],
+        ["local", ""],
+        ["never", ""],
+      ] as const) {
+        sh(clone, "config", "branch.autoSetupRebase", setting);
+        await git.switchBranch("topic", { track: "refs/remotes/origin/topic", quiet: true });
+        expect(sh(clone, "config", "--default", "", "branch.topic.rebase")).toBe(rebase);
+        sh(clone, "switch", "-q", "main");
+        sh(clone, "branch", "-q", "-D", "topic");
+      }
+    });
+
+    it("knows a pushed branch is on origin", async () => {
+      const clone = await singleBranchClone();
+      sh(clone, "switch", "-q", "-c", "mine");
+      await writeFile(join(clone, "g.txt"), "x\n");
+      sh(clone, "add", ".");
+      sh(clone, "commit", "-q", "-m", "mine");
+      const git = createGit(clone);
+      expect(await git.unpushedCount("mine")).toBeNull();
+      await git.push("mine");
+      expect(await git.unpushedCount("mine")).toBe(0);
+    });
   });
 
   it("reads a branch name starting with a dash as a name, not an option", async () => {

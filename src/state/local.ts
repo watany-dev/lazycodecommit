@@ -37,6 +37,8 @@ async function writeObject(path: string, value: Obj): Promise<void> {
   await rename(tmp, path);
 }
 
+const IDENTITY_KEEP = 16;
+
 /** The ARN for a set of credentials, keyed by `cred:` and a hash of them. */
 export interface IdentityStore {
   get(key: string): Promise<string | undefined>;
@@ -151,7 +153,11 @@ export function createLocalState(env: Env): LocalState {
           // Older versions keyed by profile (stale once its role changed) or by
           // the access key ID itself, which this file should not hold.
           for (const k of Object.keys(o)) if (!k.startsWith("cred:")) delete o[k];
+          // Last in the file is the newest. Temporary credentials get a new key at
+          // every refresh, so only the most recent are kept.
+          delete o[key];
           o[key] = arn;
+          for (const k of Object.keys(o).slice(0, -IDENTITY_KEEP)) delete o[k];
         }),
     },
     seen: {

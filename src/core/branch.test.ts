@@ -137,19 +137,22 @@ describe("loadBranchTable outside a clone", () => {
 describe("deleteRemoteBranch", () => {
   const row: BranchRow = { name: "old", isDefault: false, tip: "r0ffee", state: "merged" };
 
-  it("deletes on CodeCommit and prunes origin in a clone", async () => {
+  it("deletes on CodeCommit and drops origin/<branch> in a clone", async () => {
     const deleteBranch = vi.fn(async () => {});
-    const fetch = vi.fn(async () => {});
-    await deleteRemoteBranch(row, deps({ api: fakeApi([], { deleteBranch }), git: { fetch } }));
+    const dropRemoteBranch = vi.fn(async () => {});
+    await deleteRemoteBranch(
+      row,
+      deps({ api: fakeApi([], { deleteBranch }), git: { dropRemoteBranch } }),
+    );
     expect(deleteBranch).toHaveBeenCalledWith("demo", "old");
-    expect(fetch).toHaveBeenCalledWith(["--prune"], { quiet: true });
+    expect(dropRemoteBranch).toHaveBeenCalledWith("old");
   });
 
-  it("ignores a failed prune, and does not prune outside a clone", async () => {
-    const fetch = vi.fn(async () => Promise.reject(new Error("offline")));
-    await deleteRemoteBranch(row, deps({ git: { fetch } }));
-    await deleteRemoteBranch(row, deps({ git: { fetch }, ctx: OUTSIDE }));
-    expect(fetch).toHaveBeenCalledTimes(1);
+  it("ignores a failed drop, and does not drop outside a clone", async () => {
+    const dropRemoteBranch = vi.fn(async () => Promise.reject(new Error("locked")));
+    await deleteRemoteBranch(row, deps({ git: { dropRemoteBranch } }));
+    await deleteRemoteBranch(row, deps({ git: { dropRemoteBranch }, ctx: OUTSIDE }));
+    expect(dropRemoteBranch).toHaveBeenCalledTimes(1);
   });
 
   it("refuses the default branch and a branch with an open PR", async () => {
@@ -181,6 +184,43 @@ describe("deleteRemoteBranch", () => {
     expect(deleteBranch).not.toHaveBeenCalled();
   });
 
+  it("drops origin/<branch> from a single-branch clone, whose fetch never prunes it", async () => {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "lazycc-branch-")));
+    try {
+      const bare = join(dir, "origin.git");
+      sh(dir, "init", "-q", "--bare", "-b", "main", bare);
+      const work = join(dir, "work");
+      sh(dir, "init", "-q", "-b", "main", work);
+      sh(
+        work,
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@e",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "i",
+      );
+      sh(work, "push", "-q", bare, "main", "main:old");
+      sh(dir, "clone", "-q", "--depth", "1", `file://${bare}`, "shallow");
+      const clone = join(dir, "shallow");
+      // Fetched outside remote.origin.fetch, as pr checkout does.
+      sh(clone, "fetch", "-q", "origin", "+refs/heads/old:refs/remotes/origin/old");
+      const tip = sh(clone, "rev-parse", "refs/remotes/origin/old").trim();
+      const git = createGit(clone);
+      const api = fakeApi([], {
+        branchCommit: async () => tip,
+        deleteBranch: async () => void sh(bare, "update-ref", "-d", "refs/heads/old"),
+      });
+      await deleteRemoteBranch({ ...row, tip }, { api, git, ctx: CLONE, config: {} });
+      expect((await git.remoteBranches()).map((b) => b.name)).toEqual(["main"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("says so when the branch is already gone", async () => {
     const api = fakeApi([], { branchCommit: async () => undefined });
     await expect(deleteRemoteBranch(row, deps({ api }))).rejects.toThrow(
@@ -203,7 +243,7 @@ describe("branchActions", () => {
     await actions.load({ fetch: true });
     await actions.switchBranch?.({ name: "x", isDefault: false, tip: "t", state: "none" });
     await actions.deleteBranch({ name: "x", isDefault: false, tip: "r0ffee", state: "none" });
-    expect(calls).toEqual(["fetch --prune", "switch x true", "fetch --prune"]);
+    expect(calls).toEqual(["fetch --prune", "switch x true"]);
   });
 
   it("switches to origin's branch even when another remote has one of the same name", async () => {

@@ -18,6 +18,7 @@ export function fakeGit(overrides: Partial<Git> = {}): Git {
     push: async () => {},
     fetch: async () => {},
     switchBranch: async () => {},
+    dropRemoteBranch: async () => {},
     fastForward: async () => {},
     clone: async () => {},
     mergeBase: async () => "base0",

@@ -64,13 +64,16 @@ export interface Git {
   fetch(refspecs: readonly string[], opts?: { readonly quiet: boolean }): Promise<void>;
   /**
    * `git switch <branch>` (which creates a tracking branch for a branch only on
-   * origin), or `git switch -c <branch> --track <track>`. `quiet` keeps git's
+   * origin), or `git switch -c <branch>` from `track`, the remote-tracking ref
+   * of origin's <branch>, with that branch as upstream. `quiet` keeps git's
    * output off the terminal, for the TUI.
    */
   switchBranch(
     branch: string,
     opts?: { readonly track?: string; readonly quiet?: boolean },
   ): Promise<void>;
+  /** Deletes origin/<branch>, the remote-tracking ref, without asking origin. */
+  dropRemoteBranch(branch: string): Promise<void>;
   /** `git merge --ff-only <ref>` into the checked-out branch. */
   fastForward(ref: string): Promise<void>;
   /** `git clone <url> [args...]` in the working directory. */
@@ -175,9 +178,13 @@ export function createGit(cwd: string): Git {
       return commits;
     },
 
-    // Full refs: a bare name is refused when a tag has the same name.
-    push: (branch) =>
-      streamed(["push", "-u", "origin", `refs/heads/${branch}:refs/heads/${branch}`]),
+    async push(branch) {
+      // Full refs: a bare name is refused when a tag has the same name.
+      await streamed(["push", "-u", "origin", `refs/heads/${branch}:refs/heads/${branch}`]);
+      // git records origin/<branch> only when remote.origin.fetch covers it, which
+      // a single-branch clone's does not: unpushedCount would say it is not on origin.
+      await required(["update-ref", `refs/remotes/origin/${branch}`, `refs/heads/${branch}`]);
+    },
     async fetch(refspecs, opts) {
       const args = ["fetch", "origin", ...refspecs];
       if (opts?.quiet) await required(["-c", "advice.fetchShowForcedUpdates=false", ...args]);
@@ -185,12 +192,25 @@ export function createGit(cwd: string): Git {
     },
     async switchBranch(branch, opts) {
       // Ref names may start with "-": --end-of-options keeps one someone pushed
-      // (say "--orphan=x") from being read as an option.
+      // (say "--orphan=x") from being read as an option. Not --track: it refuses
+      // a start point outside remote.origin.fetch, as in a single-branch clone,
+      // so the upstream is set the way --track would set it.
       const args = opts?.track
-        ? ["switch", "-c", branch, "--track", opts.track]
+        ? ["switch", "-c", branch, "--no-track", opts.track]
         : ["switch", "--end-of-options", branch];
       if (opts?.quiet) await required(args);
       else await streamed(args);
+      if (opts?.track) {
+        await required(["config", `branch.${branch}.remote`, "origin"]);
+        await required(["config", `branch.${branch}.merge`, `refs/heads/${branch}`]);
+        // --track sets rebase for a remote upstream under these two settings.
+        const rebase = await value(["config", "branch.autoSetupRebase"]);
+        if (rebase === "always" || rebase === "remote")
+          await required(["config", `branch.${branch}.rebase`, "true"]);
+      }
+    },
+    async dropRemoteBranch(branch) {
+      await required(["update-ref", "-d", `refs/remotes/origin/${branch}`]);
     },
     fastForward: (ref) => streamed(["merge", "--ff-only", "--end-of-options", ref]),
     clone: (url, args) => streamed(["clone", url, ...args]),
