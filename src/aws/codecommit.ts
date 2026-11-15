@@ -4,6 +4,8 @@ import {
   DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
   GetBranchCommand,
+  GetFileCommand,
+  GetFolderCommand,
   GetMergeConflictsCommand,
   GetPullRequestApprovalStatesCommand,
   GetPullRequestCommand,
@@ -57,6 +59,14 @@ export interface NewPullRequest {
 
 export type MergeStrategy = "fast-forward" | "squash" | "three-way";
 
+export type EntryType = "folder" | "file" | "symlink" | "submodule";
+
+export interface FolderEntry {
+  readonly name: string;
+  readonly path: string;
+  readonly type: EntryType;
+}
+
 export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
@@ -82,6 +92,29 @@ export interface CodeCommitApi {
   /** Refuses when the source branch has moved past `pr.sourceCommit`. */
   merge(pr: PullRequest, strategy: MergeStrategy): Promise<PullRequest>;
   close(pr: PullRequest): Promise<PullRequest>;
+  /** One level of a folder at `ref` ("" is the root), or undefined when there is no such folder. */
+  getFolder(repository: string, ref: string, path: string): Promise<FolderEntry[] | undefined>;
+  /** A file's bytes at `ref`, or undefined when there is no such file. */
+  getFile(repository: string, ref: string, path: string): Promise<Uint8Array | undefined>;
+}
+
+type SdkEntry = { absolutePath?: string | undefined; relativePath?: string | undefined };
+
+function entries(type: EntryType, list: SdkEntry[] | undefined): FolderEntry[] {
+  return (list ?? []).map((e) => ({
+    name: e.relativePath ?? "",
+    path: e.absolutePath ?? "",
+    type,
+  }));
+}
+
+async function unlessMissing<T>(name: string, call: Promise<T>): Promise<T | undefined> {
+  try {
+    return await call;
+  } catch (error) {
+    if ((error as Error).name === name) return undefined;
+    throw error;
+  }
 }
 
 const MERGE_COMMANDS = {
@@ -300,6 +333,36 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
         new UpdatePullRequestStatusCommand({ pullRequestId: pr.id, pullRequestStatus: "CLOSED" }),
       );
       return toPullRequest(out.pullRequest);
+    },
+
+    async getFolder(repository, ref, path) {
+      const out = await unlessMissing(
+        "FolderDoesNotExistException",
+        client.send(
+          new GetFolderCommand({
+            repositoryName: repository,
+            commitSpecifier: ref,
+            folderPath: path || "/",
+          }),
+        ),
+      );
+      if (!out) return undefined;
+      return [
+        ...entries("folder", out.subFolders),
+        ...entries("file", out.files),
+        ...entries("symlink", out.symbolicLinks),
+        ...entries("submodule", out.subModules),
+      ];
+    },
+
+    async getFile(repository, ref, path) {
+      const out = await unlessMissing(
+        "FileDoesNotExistException",
+        client.send(
+          new GetFileCommand({ repositoryName: repository, commitSpecifier: ref, filePath: path }),
+        ),
+      );
+      return out && (out.fileContent ?? new Uint8Array());
     },
   };
 }

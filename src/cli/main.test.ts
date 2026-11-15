@@ -5,7 +5,7 @@ import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
-import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
+import type { BranchesRequest, BrowseRequest, ReviewRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
 interface Setup {
@@ -26,6 +26,7 @@ async function cli(args: string[], setup: Setup = {}) {
   const apiOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
   const branchScreens: BranchesRequest[] = [];
+  const browseScreens: BrowseRequest[] = [];
   const deps: Deps = {
     io: {
       out: (l) => out.push(l),
@@ -54,6 +55,7 @@ async function cli(args: string[], setup: Setup = {}) {
       branchScreens.push(request);
       await setup.onBranches?.(request);
     },
+    openBrowse: async (request) => void browseScreens.push(request),
   };
   const code = await run(args, deps);
   return {
@@ -64,6 +66,7 @@ async function cli(args: string[], setup: Setup = {}) {
     apiOptions,
     reviews,
     branchScreens,
+    browseScreens,
   };
 }
 
@@ -632,6 +635,92 @@ describe("completion", () => {
     const r = await cli(args);
     expect(r.code).toBe(2);
     expect(r.err).toContain("completion needs a shell: bash, zsh, fish");
+  });
+});
+
+const browseApi = () =>
+  fakeApi([], {
+    getFolder: async (_repo, _ref, path) =>
+      path === ""
+        ? [
+            { name: "src", path: "src", type: "folder" },
+            { name: "README.md", path: "README.md", type: "file" },
+            { name: "link", path: "link", type: "symlink" },
+            { name: "vendor", path: "vendor", type: "submodule" },
+          ]
+        : undefined,
+    getFile: async (repo, ref, path) =>
+      path === "README.md"
+        ? Buffer.from(`# ${repo}@${ref}\n`)
+        : path === "logo.png"
+          ? Buffer.from([0])
+          : undefined,
+  });
+
+describe("browse", () => {
+  it("lists the root of the default branch, like ls -F", async () => {
+    const r = await cli(["browse"], { api: browseApi() });
+    expect(r).toMatchObject({ code: 0, out: "src/\nREADME.md\nlink@\nvendor (submodule)" });
+  });
+
+  it("prints a file as it is, from another repository and ref", async () => {
+    const r = await cli(["browse", "other", "--ref", "dev", "--path", "README.md"], {
+      api: browseApi(),
+    });
+    expect(r).toMatchObject({ code: 0, out: "# other@dev" });
+  });
+
+  it("prints JSON for a folder and a file", async () => {
+    const f = json((await cli(["browse", "--json"], { api: browseApi() })).out);
+    expect(f).toMatchObject({ repository: "demo", ref: "main", path: "", type: "folder" });
+    expect(f.entries[0]).toEqual({ name: "src", path: "src", type: "folder" });
+    expect(f.url).toContain("/browse/refs/heads/main/--/?region=ap-northeast-1");
+    const r = await cli(["browse", "--path", "README.md", "--json"], { api: browseApi() });
+    expect(json(r.out)).toMatchObject({
+      type: "file",
+      path: "README.md",
+      size: 12,
+      binary: false,
+      content: "# demo@main\n",
+    });
+  });
+
+  it("refuses to print a binary file, except as JSON metadata", async () => {
+    const r = await cli(["browse", "--path", "logo.png"], { api: browseApi() });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("logo.png is a binary file (1 bytes), not shown.");
+    const j = await cli(["browse", "--path", "logo.png", "--json"], { api: browseApi() });
+    expect(json(j.out)).toMatchObject({ binary: true, content: null });
+  });
+
+  it("points at clone for a file over the API's limit", async () => {
+    const api = fakeApi([], {
+      getFile: async () => {
+        throw Object.assign(new Error("big"), { name: "FileTooLargeException" });
+      },
+    });
+    const r = await cli(["browse", "--path", "big.bin"], { api });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("big.bin is too large for the CodeCommit API. Run `lazycc clone demo`");
+    const j = await cli(["browse", "--path", "big.bin", "--json"], { api });
+    expect(json(j.out)).toMatchObject({ tooLarge: true, content: null });
+  });
+
+  it("opens the browse screen on a terminal at the asked place", async () => {
+    const r = await cli(["browse", "--ref", "dev", "--path", "src/"], {
+      api: browseApi(),
+      interactive: true,
+    });
+    expect(r).toMatchObject({ code: 0, out: "" });
+    expect(r.browseScreens).toHaveLength(1);
+    expect(r.browseScreens[0]?.actions.startRef).toBe("dev");
+    expect(r.browseScreens[0]?.path).toBe("src/");
+  });
+
+  it("rejects --repo next to a repository argument", async () => {
+    const r = await cli(["browse", "a", "-R", "b"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("Pass the repository once");
   });
 });
 

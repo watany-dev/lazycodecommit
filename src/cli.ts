@@ -12,4 +12,5 @@ process.exitCode = await run(process.argv.slice(2), {
   loadConfig,
   openReview: async (request) => (await import("./tui/index.js")).openReview(request),
   openBranches: async (request) => (await import("./tui/index.js")).openBranches(request),
+  openBrowse: async (request) => (await import("./tui/index.js")).openBrowse(request),
 });

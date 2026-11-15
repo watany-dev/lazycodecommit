@@ -1,8 +1,10 @@
 import { render } from "ink";
 import type { BranchActions } from "../core/branch.js";
+import type { BrowseActions } from "../core/browse.js";
 import { openReviewService, type ReviewService } from "../core/review.js";
 import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
+import { BrowseApp } from "./BrowseApp.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
 
 // This module is loaded with a dynamic import, so CLI subcommands never load Ink or React.
@@ -66,4 +68,15 @@ export async function openBranches(request: BranchesRequest): Promise<void> {
     const outcome = await request.createPullRequest(head);
     start = "pullRequestId" in outcome ? { reviewPullRequestId: outcome.pullRequestId } : outcome;
   }
+}
+
+export interface BrowseRequest {
+  readonly actions: BrowseActions;
+  readonly path: string;
+}
+
+/** The remote tree and files through the API only (spec: clone なしブラウズ). */
+export async function openBrowse(request: BrowseRequest): Promise<void> {
+  const app = render(<BrowseApp actions={request.actions} path={request.path} />);
+  await app.waitUntilExit();
 }

@@ -4,6 +4,8 @@ import {
   DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
   GetBranchCommand,
+  GetFileCommand,
+  GetFolderCommand,
   GetMergeConflictsCommand,
   GetPullRequestApprovalStatesCommand,
   GetPullRequestCommand,
@@ -333,5 +335,54 @@ describe("createCodeCommitApi", () => {
       pullRequestId: "7",
       pullRequestStatus: "CLOSED",
     });
+  });
+
+  it("lists a folder's entries by kind, and says when it does not exist", async () => {
+    cc.on(GetFolderCommand).resolves({
+      subFolders: [{ absolutePath: "src/lib", relativePath: "lib" }],
+      files: [{ absolutePath: "src/a.ts", relativePath: "a.ts" }, {}],
+      symbolicLinks: [{ absolutePath: "src/l", relativePath: "l" }],
+      subModules: [{ absolutePath: "src/vendor", relativePath: "vendor" }],
+    });
+    expect(await api.getFolder("demo", "main", "src")).toEqual([
+      { name: "lib", path: "src/lib", type: "folder" },
+      { name: "a.ts", path: "src/a.ts", type: "file" },
+      { name: "", path: "", type: "file" },
+      { name: "l", path: "src/l", type: "symlink" },
+      { name: "vendor", path: "src/vendor", type: "submodule" },
+    ]);
+    expect(cc.commandCalls(GetFolderCommand)[0]?.args[0].input).toEqual({
+      repositoryName: "demo",
+      commitSpecifier: "main",
+      folderPath: "src",
+    });
+    await api.getFolder("demo", "main", "");
+    expect(cc.commandCalls(GetFolderCommand)[1]?.args[0].input.folderPath).toBe("/");
+    cc.on(GetFolderCommand).resolves({});
+    expect(await api.getFolder("demo", "main", "")).toEqual([]);
+    cc.on(GetFolderCommand).rejects(
+      Object.assign(new Error("no"), { name: "FolderDoesNotExistException" }),
+    );
+    expect(await api.getFolder("demo", "main", "x")).toBeUndefined();
+    cc.on(GetFolderCommand).rejects(new Error("boom"));
+    await expect(api.getFolder("demo", "main", "x")).rejects.toThrow("boom");
+  });
+
+  it("reads a file's bytes, and says when it does not exist", async () => {
+    cc.on(GetFileCommand).resolves({ fileContent: new Uint8Array([104, 105]), fileSize: 2 });
+    expect(await api.getFile("demo", "main", "a.txt")).toEqual(new Uint8Array([104, 105]));
+    expect(cc.commandCalls(GetFileCommand)[0]?.args[0].input).toEqual({
+      repositoryName: "demo",
+      commitSpecifier: "main",
+      filePath: "a.txt",
+    });
+    cc.on(GetFileCommand).resolves({});
+    expect(await api.getFile("demo", "main", "a.txt")).toEqual(new Uint8Array());
+    cc.on(GetFileCommand).rejects(
+      Object.assign(new Error("no"), { name: "FileDoesNotExistException" }),
+    );
+    expect(await api.getFile("demo", "main", "a.txt")).toBeUndefined();
+    cc.on(GetFileCommand).rejects(new Error("boom"));
+    await expect(api.getFile("demo", "main", "a.txt")).rejects.toThrow("boom");
   });
 });
