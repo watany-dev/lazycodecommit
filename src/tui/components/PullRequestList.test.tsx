@@ -1,6 +1,6 @@
-import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+import { press, render } from "../../testing/keys.js";
 import { PullRequestList } from "./PullRequestList.js";
 
 describe("PullRequestList", () => {
@@ -442,8 +442,7 @@ describe("PullRequestList", () => {
     const { stdin, lastFrame, rerender } = render(
       <PullRequestList {...defaultProps} pullRequests={[]} onSelect={onSelect} />,
     );
-    stdin.write("j");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await press(stdin, "j");
     rerender(<PullRequestList {...defaultProps} onSelect={onSelect} />);
     await vi.waitFor(() => expect(lastFrame()).toContain("> #42"));
     stdin.write("\r");

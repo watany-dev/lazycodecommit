@@ -1,7 +1,7 @@
-import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { type CommentDraft, newDraft } from "../../core/commentDrafts.js";
+import { press, render } from "../../testing/keys.js";
 import { DraftList, type DraftSubmitState } from "./DraftList.js";
 
 const commits = { beforeCommitId: "d", afterCommitId: "s" };
@@ -24,13 +24,6 @@ function show(drafts: CommentDraft[], submit: DraftSubmitState = IDLE) {
   const app = render(<DraftList drafts={drafts} submit={submit} {...props} />);
   return { ...app, ...props };
 }
-const tick = () => new Promise((r) => setTimeout(r, 20));
-async function keys(t: { stdin: { write: (s: string) => void } }, ...ks: string[]) {
-  for (const k of ks) {
-    t.stdin.write(k);
-    await tick();
-  }
-}
 
 const before = newDraft(
   "on the old side",
@@ -51,7 +44,7 @@ describe("DraftList", () => {
     const t = show([]);
     expect(t.lastFrame()).toContain("No drafts. Press Tab in a comment box");
     expect(t.lastFrame()).not.toContain("S post all");
-    await keys(t, "S", "q");
+    await press(t, "S", "q");
     expect(t.onSubmit).not.toHaveBeenCalled();
     expect(t.onClose).toHaveBeenCalledOnce();
   });
@@ -66,21 +59,21 @@ describe("DraftList", () => {
 
   it("jumps to an inline draft's line with Enter, and not for a reply", async () => {
     const t = show([before, reply]);
-    await keys(t, "\r");
+    await press(t, "\r");
     expect(t.onJump).toHaveBeenCalledWith(before);
-    await keys(t, "j", "\r", "k");
+    await press(t, "j", "\r", "k");
     expect(t.onJump).toHaveBeenCalledOnce();
   });
 
   it("backs out of edit, discard and post without changing anything", async () => {
     const t = show([before]);
-    await keys(t, "e");
+    await press(t, "e");
     expect(t.lastFrame()).toContain("Edit draft:");
-    await keys(t, "\x1b", "d");
+    await press(t, "\x1b", "d");
     expect(t.lastFrame()).toContain("Discard this draft?");
-    await keys(t, "n", "S");
+    await press(t, "n", "S");
     expect(t.lastFrame()).toContain("Post 1 draft, one comment at a time?");
-    await keys(t, "n");
+    await press(t, "n");
     expect(t.onEdit).not.toHaveBeenCalled();
     expect(t.onDiscard).not.toHaveBeenCalled();
     expect(t.onSubmit).not.toHaveBeenCalled();
@@ -101,14 +94,14 @@ describe("DraftList", () => {
     const t = show([moved]);
     expect(t.lastFrame()).toContain("p post anyway");
     expect(t.lastFrame()).not.toContain("S post all");
-    await keys(t, "p");
+    await press(t, "p");
     expect(t.onPostAnyway).toHaveBeenCalledWith(moved.id);
   });
 
   it("shows progress while posting and ignores keys", async () => {
     const t = show([before], { ...IDLE, isProcessing: true, progress: { done: 1, total: 3 } });
     expect(t.lastFrame()).toContain("Posting drafts 2/3...");
-    await keys(t, "q");
+    await press(t, "q");
     expect(t.onClose).not.toHaveBeenCalled();
   });
 
@@ -116,7 +109,7 @@ describe("DraftList", () => {
     const clearError = vi.fn();
     const t = show([before], { ...IDLE, error: "Posted 0.", clearError });
     expect(t.lastFrame()).toContain("Press any key to return");
-    await keys(t, "q");
+    await press(t, "q");
     expect(clearError).toHaveBeenCalled();
     expect(t.onClose).not.toHaveBeenCalled();
   });

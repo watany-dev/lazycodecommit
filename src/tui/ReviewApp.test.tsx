@@ -1,6 +1,6 @@
-import { render } from "ink-testing-library";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { press, render } from "../testing/keys.js";
 
 const exit = vi.fn();
 vi.mock("ink", async (importOriginal) => ({
@@ -5605,9 +5605,7 @@ describe("App", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #1"));
     stdin.write("q");
     await vi.waitFor(() => expect(lastFrame()).toContain("second"));
-    stdin.write("j");
-    await new Promise((r) => setTimeout(r, 30));
-    stdin.write("\r");
+    await press(stdin, "j", "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #2"));
     expect(markSeen.mock.calls.map(([pr]) => pr.id)).toEqual(["1", "1", "2"]);
   });

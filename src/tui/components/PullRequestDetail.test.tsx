@@ -1,7 +1,7 @@
-import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { MergeStrategy } from "../../core/review.js";
+import { press, render, settle } from "../../testing/keys.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { PullRequestDetail } from "./PullRequestDetail.js";
 
@@ -8060,7 +8060,6 @@ describe("PullRequestDetail", () => {
   });
 
   describe("cursor range invariant", () => {
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
     const renderDetail = (extra: Record<string, unknown>) =>
       render(
         <PullRequestDetail
@@ -8087,8 +8086,7 @@ describe("PullRequestDetail", () => {
 
     it("highlights the first line after pressing j on empty content and lines arrive", async () => {
       const { stdin, lastFrame, rerender } = renderDetail({});
-      stdin.write("j");
-      await tick();
+      await press(stdin, "j");
       rerender(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -8144,7 +8142,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => expect(lastFrame()).toMatch(/> +└ u: r4/));
       stdin.write("o");
       await vi.waitFor(() => expect(lastFrame()).toContain("[+4 replies]"));
-      await tick();
+      await settle();
       expect(lastFrame()).toMatch(/> +\[\+4 replies\]/);
     });
   });
