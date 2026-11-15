@@ -5,7 +5,7 @@ description: 実装の変更を README / docs/ / CLAUDE.md に同期する。コ
 
 # update-docs
 
-lazycodecommit の進化するソースコードと陳腐化しがちなドキュメントの差分を
+lazycodecommit（コマンド名 `lazycc`）の進化するソースコードと陳腐化しがちなドキュメントの差分を
 体系的に埋めるスキル。5 フェーズで実施する。
 
 ## Phase 1: コード監査
@@ -17,7 +17,7 @@ lazycodecommit の進化するソースコードと陳腐化しがちなドキ�
 
 ## Phase 2: 設計ドキュメント更新
 
-`docs/` 配下の仕様・ADR を実装と突き合わせる:
+`docs/dev/spec.ja.md` と `docs/adr/` を実装と突き合わせる:
 - 振る舞いの変更を反映する
 - ステータスラベル（設計中 / 未実装 / 実装済み）を実態に合わせる
 - 必要な IAM 権限の表を、実装が呼ぶ CodeCommit / STS の API と揃える
