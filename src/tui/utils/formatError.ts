@@ -1,4 +1,4 @@
-import { isCredentialError } from "../../aws/errors.js";
+import { isCredentialError, refusalText } from "../../aws/errors.js";
 import { printable } from "../../core/text.js";
 
 type ErrorContext =
@@ -16,40 +16,26 @@ const commonErrors: Record<string, string> = {
   PullRequestDoesNotExistException: "Pull request not found.",
   CommentDoesNotExistException: "Comment no longer exists.",
   CommentDeletedException: "Comment has already been deleted.",
-  PullRequestAlreadyClosedException: "Pull request is already closed.",
   EncryptionKeyAccessDeniedException: "Encryption key access denied.",
 };
 
 const contextErrors: Record<string, Record<string, string>> = {
   reply: {
     CommentContentRequiredException: "Reply cannot be empty.",
-    CommentContentSizeLimitExceededException: "Reply exceeds the 10,240 character limit.",
     CommentDoesNotExistException: "The comment you are replying to no longer exists.",
     InvalidCommentIdException: "Invalid comment ID format.",
   },
   edit: {
     CommentNotCreatedByCallerException: "You can only edit your own comments.",
-    CommentContentSizeLimitExceededException: "Comment exceeds the 10,240 character limit.",
   },
   comment: {
     CommentContentRequiredException: "Comment cannot be empty.",
-    CommentContentSizeLimitExceededException: "Comment exceeds the 10,240 character limit.",
   },
   approval: {
     RevisionIdRequiredException:
       "Invalid revision. The PR may have been updated. Go back and reopen.",
     InvalidRevisionIdException:
       "Invalid revision. The PR may have been updated. Go back and reopen.",
-  },
-  merge: {
-    ManualMergeRequiredException:
-      "Conflicts detected. Cannot auto-merge. Resolve conflicts manually.",
-    PullRequestApprovalRulesNotSatisfiedException:
-      "Approval rules not satisfied. Get required approvals first.",
-    TipOfSourceReferenceIsDifferentException:
-      "Source branch has been updated. Go back and reopen the PR.",
-    ConcurrentReferenceUpdateException: "Branch was updated concurrently. Try again.",
-    TipsDivergenceExceededException: "Branches have diverged too much. Merge manually.",
   },
   reaction: {
     ReactionValueRequiredException: "Reaction value is required.",
@@ -86,17 +72,18 @@ export function formatErrorMessage(
       : "Cannot approve your own pull request.";
   }
 
-  const message = (context && contextErrors[context]?.[name]) ?? commonErrors[name];
+  const message =
+    (context && contextErrors[context]?.[name]) ?? refusalText(name) ?? commonErrors[name];
   if (message) return message;
 
-  if (name === "CredentialError" || isCredentialError(err)) {
+  if (isCredentialError(err)) {
     return "AWS credentials are missing or expired. Sign in again, for example `aws sso login`, then retry.";
   }
   if (name === "RepositoryDoesNotExistException") {
     return "Repository not found.";
   }
 
-  if (name === "AccessDeniedException" || name === "UnauthorizedException") {
+  if (name === "AccessDeniedException") {
     // Spec (IAM 権限): name the action the policy is missing.
     const action = /\bcodecommit:[A-Za-z]+/.exec(err.message)?.[0];
     if (action) return `Access denied: your IAM policy does not allow ${action}.`;
@@ -107,7 +94,6 @@ export function formatErrorMessage(
   }
 
   if (
-    name === "NetworkingError" ||
     name === "TimeoutError" ||
     err.message.includes("ECONNREFUSED") ||
     err.message.includes("ETIMEDOUT")

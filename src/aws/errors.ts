@@ -14,7 +14,7 @@ const PULL_REQUEST_ERRORS = new Map(
     PullRequestCannotBeApprovedByAuthorException: "You cannot approve your own pull request.",
     PullRequestAlreadyClosedException: "The pull request is already closed.",
     ManualMergeRequiredException:
-      "The pull request cannot be merged automatically with this strategy (conflicts, or --ff cannot fast-forward). Resolve them, or pick another strategy.",
+      "The pull request cannot be merged automatically with this strategy (conflicts, or it cannot fast-forward). Resolve them, or pick another strategy.",
     TipOfSourceReferenceIsDifferentException:
       "The source branch has moved since the pull request was read. Check the new commits, then retry.",
     PullRequestApprovalRulesNotSatisfiedException:
@@ -26,6 +26,11 @@ const PULL_REQUEST_ERRORS = new Map(
       "The comment is over CodeCommit's 10,240 character limit.",
   }),
 );
+
+/** CodeCommit's refusal of a pull request action, phrased as what to do; the CLI and the TUI share it. */
+export function refusalText(name: string): string | undefined {
+  return PULL_REQUEST_ERRORS.get(name);
+}
 
 const notSent = new WeakSet<object>();
 
@@ -62,7 +67,7 @@ export function explainAwsError(error: unknown, profile: string | undefined): st
       `Sign in again, for example \`aws sso login${flag}\`, then retry.`,
     ].join("\n");
   }
-  const known = PULL_REQUEST_ERRORS.get(name);
+  const known = refusalText(name);
   if (known) return known;
   if (ACCESS_DENIED.has(name)) {
     // The message names the codecommit:<Action> that was refused.
