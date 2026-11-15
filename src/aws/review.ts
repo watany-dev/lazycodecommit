@@ -16,9 +16,6 @@ import {
   GetPullRequestApprovalStatesCommand,
   GetPullRequestCommand,
   ListPullRequestsCommand,
-  MergePullRequestByFastForwardCommand,
-  MergePullRequestBySquashCommand,
-  MergePullRequestByThreeWayCommand,
   PostCommentForPullRequestCommand,
   PostCommentReplyCommand,
   type PullRequest,
@@ -29,6 +26,7 @@ import {
   UpdatePullRequestApprovalStateCommand,
   UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
+import { MERGE_COMMANDS, type MergeStrategy } from "./codecommit.js";
 import { mapLimit } from "./mapLimit.js";
 
 const textDecoder = new TextDecoder();
@@ -361,8 +359,6 @@ export function blobText(content: Uint8Array): string {
   return textDecoder.decode(content);
 }
 
-export type MergeStrategy = "fast-forward" | "squash" | "three-way";
-
 export interface ConflictSummary {
   mergeable: boolean;
   conflictCount: number;
@@ -378,30 +374,12 @@ export async function mergePullRequest(
     strategy: MergeStrategy;
   },
 ): Promise<PullRequest> {
-  let command;
-  switch (params.strategy) {
-    case "fast-forward":
-      command = new MergePullRequestByFastForwardCommand({
-        pullRequestId: params.pullRequestId,
-        repositoryName: params.repositoryName,
-        sourceCommitId: params.sourceCommitId,
-      });
-      break;
-    case "squash":
-      command = new MergePullRequestBySquashCommand({
-        pullRequestId: params.pullRequestId,
-        repositoryName: params.repositoryName,
-        sourceCommitId: params.sourceCommitId,
-      });
-      break;
-    case "three-way":
-      command = new MergePullRequestByThreeWayCommand({
-        pullRequestId: params.pullRequestId,
-        repositoryName: params.repositoryName,
-        sourceCommitId: params.sourceCommitId,
-      });
-      break;
-  }
+  const Command = MERGE_COMMANDS[params.strategy];
+  const command = new Command({
+    pullRequestId: params.pullRequestId,
+    repositoryName: params.repositoryName,
+    sourceCommitId: params.sourceCommitId,
+  });
   const response = await client.send(command);
   if (!response.pullRequest) throw new Error("Empty merge response from CodeCommit API.");
   return response.pullRequest;
@@ -487,7 +465,8 @@ export async function getCommit(
   };
 }
 
-const MAX_COMMITS = 100;
+/** The most commits the review screen lists for one PR. */
+export const MAX_COMMITS = 100;
 
 export async function getCommitsForPR(
   client: CodeCommitClient,

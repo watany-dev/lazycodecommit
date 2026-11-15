@@ -34,8 +34,6 @@ export type ReviewService = { readonly [K in Operation]: WithoutClient<(typeof a
   readonly markSeen?: (pullRequestId: string) => void;
 };
 
-const MAX_COMMITS = 100;
-
 /** The service for the TUI, with its own client: the review screen needs more calls than CodeCommitApi has. */
 export function openReviewService(
   options: { readonly region?: string; readonly profile?: string },
@@ -116,7 +114,7 @@ function createRawService(client: CodeCommitClient, git?: Git): ReviewService {
     getCommitsForPR: (repositoryName, sourceCommit, mergeBase) =>
       orApi(
         async () =>
-          (await git.firstParentLog(mergeBase, sourceCommit, MAX_COMMITS)).map((c) => ({
+          (await git.firstParentLog(mergeBase, sourceCommit, aws.MAX_COMMITS)).map((c) => ({
             commitId: c.id,
             shortId: c.id.slice(0, 7),
             message: c.subject,
@@ -202,11 +200,11 @@ function toDifferences(changes: readonly TreeChange[]): Difference[] {
   }));
 }
 
+export type { MergeStrategy } from "../aws/codecommit.js";
 export type {
   CommentThread,
   CommitInfo,
   ConflictSummary,
-  MergeStrategy,
   PrActivityEvent,
   PullRequestDisplayStatus,
   PullRequestSummary,

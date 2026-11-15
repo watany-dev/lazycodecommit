@@ -21,8 +21,8 @@ import { UsageError, UserError } from "./errors.js";
 
 const DEFAULT_TEMPLATE = ".codecommit/pull_request_template.md";
 const DEFAULT_CONCURRENCY = 8;
-/** How many open PRs to scan when looking one up by branch. */
-const OPEN_SCAN_LIMIT = 1000;
+/** How many open PRs to read per repository. */
+export const OPEN_SCAN_LIMIT = 1000;
 
 export interface PrDeps {
   readonly git: Git;

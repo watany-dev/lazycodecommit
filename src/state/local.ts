@@ -28,9 +28,10 @@ async function readObject(path: string): Promise<Obj> {
 
 /** Write then rename, so a crash mid-write never leaves a half file behind. */
 async function writeObject(path: string, value: Obj): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
+  // User-only: the cache holds PR titles from private repositories.
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${randomUUID()}.tmp`;
-  await writeFile(tmp, `${JSON.stringify(value)}\n`);
+  await writeFile(tmp, `${JSON.stringify(value)}\n`, { mode: 0o600 });
   await rename(tmp, path);
 }
 

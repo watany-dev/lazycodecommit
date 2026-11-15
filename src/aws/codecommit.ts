@@ -130,7 +130,7 @@ async function unlessMissing<T>(name: string, call: Promise<T>): Promise<T | und
   }
 }
 
-const MERGE_COMMANDS = {
+export const MERGE_COMMANDS = {
   "fast-forward": MergePullRequestByFastForwardCommand,
   squash: MergePullRequestBySquashCommand,
   "three-way": MergePullRequestByThreeWayCommand,

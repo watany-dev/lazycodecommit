@@ -11,6 +11,7 @@ import {
   type Section,
 } from "../core/inbox.js";
 import type { ReviewService } from "../core/review.js";
+import { printable } from "../core/text.js";
 import { RepoPicker } from "./components/RepoPicker.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
@@ -295,7 +296,7 @@ export function HomeApp({
       {inbox && loadError ? <Text color="red">Refresh failed: {loadError}</Text> : null}
       <Box marginTop={1}>
         {note ? (
-          <Text>{note}</Text>
+          <Text>{printable(note)}</Text>
         ) : (
           <Text dimColor>
             Tab switch Enter review r repositories{onSwitch ? " 2 branches 3 browse" : ""} / filter
@@ -333,7 +334,7 @@ function InboxLine({
       </Box>
       <Box flexGrow={1} flexShrink={1}>
         <Text bold={item.unread} wrap="truncate">
-          {pr.title}
+          {printable(pr.title)}
         </Text>
       </Box>
       <Box width={22} flexShrink={0} justifyContent="flex-end">
