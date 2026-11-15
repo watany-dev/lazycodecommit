@@ -19,7 +19,13 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  BatchGetBuildsCommand,
+  CodeBuildClient,
+  ListBuildsForProjectCommand,
+} from "@aws-sdk/client-codebuild";
 import * as cc from "@aws-sdk/client-codecommit";
+import { CodePipelineClient, ListPipelineExecutionsCommand } from "@aws-sdk/client-codepipeline";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -32,6 +38,8 @@ const { values: opt } = parseArgs({
     "other-profile": { type: "string" },
     "sso-expired-profile": { type: "string" },
     "limited-profile": { type: "string" },
+    "ci-project": { type: "string" },
+    "ci-pipeline": { type: "string" },
     ssh: { type: "boolean" },
     keep: { type: "boolean" },
     yes: { type: "boolean" },
@@ -52,6 +60,8 @@ if (opt.help) {
   --other-profile <name>        a second identity: comments and approves as another person
   --sso-expired-profile <name>  an SSO profile you have logged out of (aws sso logout)
   --limited-profile <name>      an identity without CodeCommit permissions
+  --ci-project <name>           an existing CodeBuild project to read builds from (read only)
+  --ci-pipeline <name>          an existing CodePipeline pipeline to read executions from (read only)
   --ssh                         also clone over SSH (needs an IAM SSH key and ~/.ssh/config)
   --keep                        do not delete the repository and work directory
   --yes                         do not ask before creating the repository
@@ -1210,6 +1220,150 @@ async function failures() {
   );
 }
 
+// ADR 0010: CI results. Reads an existing project's and pipeline's recent runs
+// (nothing is started or changed there), checks the fields lazycc matches on,
+// then runs pr view with the config's ci pointing at them.
+const SHA = /^[0-9a-f]{40}$/;
+const BUILD_STATUSES = new Set([
+  "SUCCEEDED",
+  "FAILED",
+  "FAULT",
+  "TIMED_OUT",
+  "IN_PROGRESS",
+  "STOPPED",
+]);
+const EXECUTION_STATUSES = new Set([
+  "Succeeded",
+  "Failed",
+  "InProgress",
+  "Stopping",
+  "Stopped",
+  "Cancelled",
+  "Superseded",
+]);
+
+async function ciResults() {
+  const project = opt["ci-project"];
+  const pipeline = opt["ci-pipeline"];
+  if (!project && !pipeline)
+    return record(
+      "ci",
+      "CI results (ADR 0010)",
+      "SKIP",
+      "pass --ci-project and/or --ci-pipeline (existing ones; realcheck only reads them)",
+    );
+  const sdk = { region, ...(opt.profile ? { profile: opt.profile } : {}), maxAttempts: 2 };
+  if (project) {
+    const cb = new CodeBuildClient(sdk);
+    const list = await api(
+      "ListBuildsForProject",
+      new ListBuildsForProjectCommand({ projectName: project, sortOrder: "DESCENDING" }),
+      cb,
+    );
+    const ids = list.ok ? (list.out.ids ?? []).slice(0, 5) : [];
+    if (!list.ok) record("ci.codebuild", `Builds of ${project}`, "FAIL", ok(list));
+    else if (ids.length === 0)
+      record("ci.codebuild", `Builds of ${project}`, "SKIP", "no builds yet");
+    else {
+      const got = await api("BatchGetBuilds", new BatchGetBuildsCommand({ ids }), cb);
+      const builds = got.ok ? (got.out.builds ?? []) : [];
+      const odd = builds.flatMap((b) => {
+        const why = [];
+        if (!BUILD_STATUSES.has(b.buildStatus)) why.push(`buildStatus ${b.buildStatus}`);
+        if (!/^\d{12}$/.test(String(b.arn).split(":")[4] ?? "")) why.push("arn without an account");
+        if (!SHA.test(b.resolvedSourceVersion ?? ""))
+          why.push(`resolvedSourceVersion ${b.resolvedSourceVersion}`);
+        return why.length ? [`${b.id}: ${why.join(", ")}`] : [];
+      });
+      if (!got.ok) record("ci.codebuild", `Builds of ${project}`, "FAIL", ok(got));
+      else
+        record(
+          "ci.codebuild",
+          "Builds carry a known buildStatus, an ARN with the account, and a 40-hex resolvedSourceVersion (aws/ci.ts)",
+          odd.length ? "DIFF" : "PASS",
+          odd.length ? odd.join("; ") : `${builds.length} builds`,
+        );
+      record(
+        "ci.codebuild.source",
+        "Source types and initiators of those builds",
+        "INFO",
+        builds.map((b) => `${b.source?.type}/${b.initiator}`).join(", "),
+      );
+    }
+  }
+  if (pipeline) {
+    const cp = new CodePipelineClient(sdk);
+    const list = await api(
+      "ListPipelineExecutions",
+      new ListPipelineExecutionsCommand({ pipelineName: pipeline, maxResults: 5 }),
+      cp,
+    );
+    const executions = list.ok ? (list.out.pipelineExecutionSummaries ?? []) : [];
+    if (!list.ok) record("ci.codepipeline", `Executions of ${pipeline}`, "FAIL", ok(list));
+    else if (executions.length === 0)
+      record("ci.codepipeline", `Executions of ${pipeline}`, "SKIP", "no executions yet");
+    else {
+      const odd = executions.flatMap((e) => {
+        const why = [];
+        if (!EXECUTION_STATUSES.has(e.status)) why.push(`status ${e.status}`);
+        const revs = (e.sourceRevisions ?? []).map((r) => r.revisionId);
+        if (!revs.some((r) => SHA.test(r ?? "")))
+          why.push(`no 40-hex revisionId in [${revs.join(", ")}]`);
+        return why.length ? [`${e.pipelineExecutionId}: ${why.join(", ")}`] : [];
+      });
+      record(
+        "ci.codepipeline",
+        "Executions carry a known status and a commit ID among sourceRevisions (aws/ci.ts)",
+        odd.length ? "DIFF" : "PASS",
+        odd.length ? odd.join("; ") : `${executions.length} executions`,
+      );
+    }
+  }
+
+  const configFile = join(work, "config", "lazycc", "config.json");
+  const ci = (suffix) => ({
+    ...(project ? { codebuild: [`${project}${suffix}`] } : {}),
+    ...(pipeline ? { codepipeline: [`${pipeline}${suffix}`] } : {}),
+  });
+  mkdirSync(dirname(configFile), { recursive: true });
+  try {
+    writeFileSync(configFile, JSON.stringify({ ci: { [repoName]: ci("") } }));
+    const view = lazy("pr view (ci)", ["pr", "view", state.pr1, "--json"], { cwd: state.seed });
+    const found = view.json?.checks?.runs ?? [];
+    // This repository's commits are new, so no run of an existing project matches them.
+    if (view.exit !== 0 || found.length === 0 || found.some((r) => r.state !== "none"))
+      record(
+        "ci.view",
+        "pr view with ci reads the runs and finds none on the PR's commit",
+        "FAIL",
+        `exit ${view.exit}: ${trim(JSON.stringify(view.json?.checks ?? view.stderr), 400)}`,
+      );
+    else
+      record(
+        "ci.view",
+        "pr view with ci reads the runs and finds none on the PR's commit",
+        "PASS",
+        `${view.ms} ms`,
+      );
+    writeFileSync(configFile, JSON.stringify({ ci: { [repoName]: ci("-absent") } }));
+    const absent = lazy("pr view (ci, absent)", ["pr", "view", state.pr1, "--json"], {
+      cwd: state.seed,
+    });
+    const errors = (absent.json?.checks?.runs ?? []).filter((r) => r.state === "error");
+    record(
+      "ci.absent",
+      "A misspelt project or pipeline is an error line, and pr view still exits 0",
+      absent.exit === 0 && errors.length === found.length && found.length > 0 ? "PASS" : "FAIL",
+      errors.map((r) => `${r.provider}: ${r.message}`).join("; ") || `exit ${absent.exit}`,
+    );
+  } finally {
+    rmSync(configFile, { force: true });
+  }
+  manual.push(
+    "CI results: run `lazycc pr view <id>` on a PR whose source commit a listed project built, and open the build or execution URL it prints; it should land on that run's page.",
+  );
+}
+
 async function close() {
   const r = lazy("pr close", ["pr", "close", state.pr1, "--json"], { cwd: state.seed });
   expectRun("pr.close", "lazycc pr close", r);
@@ -1366,6 +1520,7 @@ try {
   await tui();
   await merges();
   await failures();
+  await ciResults();
   await close();
 } catch (error) {
   failed = true;

@@ -111,6 +111,15 @@ describe("recentExecutions", () => {
 });
 
 describe("console URLs", () => {
+  it("use the partition's console host (GovCloud, China)", () => {
+    expect(executionUrl("us-gov-west-1", "p", "e")).toBe(
+      "https://console.amazonaws-us-gov.com/codesuite/codepipeline/pipelines/p/executions/e/timeline?region=us-gov-west-1",
+    );
+    expect(buildUrl("cn-north-1", "arn:aws-cn:codebuild:cn-north-1:1:build/p:1", "p", "p:1")).toBe(
+      "https://cn-north-1.console.amazonaws.cn/codesuite/codebuild/1/projects/p/build/p%3A1/?region=cn-north-1",
+    );
+  });
+
   it("escapes names and tolerates an ARN without an account", () => {
     expect(buildUrl("us-east-1", "", "a b", "a b:1")).toBe(
       "https://us-east-1.console.aws.amazon.com/codesuite/codebuild//projects/a%20b/build/a%20b%3A1/?region=us-east-1",

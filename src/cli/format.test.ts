@@ -31,6 +31,17 @@ describe("inboxLines", () => {
     expect(lines[0]).toBe("Awaiting your approval (0)");
   });
 
+  it("adds a CI column only when some row has CI", () => {
+    const r = rules({ approved: true, satisfied: ["a"] });
+    const lines = inboxLines([
+      mine({ rules: r, mergeable: true, checks: "fail" }),
+      mine({ rules: r, mergeable: true, pr: pullRequest({ id: "9", title: "Other" }) }),
+    ]);
+    expect(lines.at(-2)).toContain("no conflicts  CI ✗ fail  ");
+    expect(lines.at(-1)).toMatch(/no conflicts {2}\s+2026/);
+    expect(inboxLines([mine({ rules: r, mergeable: true })]).at(-1)).not.toContain("CI");
+  });
+
   it("shows control characters in titles as text", () => {
     const lines = inboxLines([mine({ pr: pullRequest({ title: "a\x1b[2Jb" }) })]);
     expect(lines.at(-1)).toContain("a^[[2Jb");
@@ -51,6 +62,10 @@ describe("inboxJson", () => {
       detailError: "denied",
       approvalRules: null,
       mergeable: null,
+      checks: null,
+    });
+    expect(inboxJson(inbox, [mine({ checks: "pass" })], "us-east-1").mine[0]).toMatchObject({
+      checks: "pass",
     });
   });
 });

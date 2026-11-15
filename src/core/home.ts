@@ -1,6 +1,7 @@
 import type { CodeCommitApi, PullRequest } from "../aws/codecommit.js";
 import { type Config, saveRepos } from "../state/config.js";
 import { type LocalState, markSeen, type SeenPr } from "../state/local.js";
+import { type CiClient, type RepositoryRuns, repositoryRuns } from "./checks.js";
 import {
   fetchInbox,
   fromCache,
@@ -45,6 +46,7 @@ export interface HomeDeps {
   readonly region: string;
   readonly me: string;
   readonly initial: readonly string[] | undefined;
+  readonly ci: CiClient;
 }
 
 export function homeActions(deps: HomeDeps): HomeActions {
@@ -53,6 +55,8 @@ export function homeActions(deps: HomeDeps): HomeActions {
   let watched: readonly string[] = deps.config.repos ?? [];
   // The picker opens often and a region can hold hundreds of repositories.
   let listing: Promise<string[]> | undefined;
+  // CI runs are read once per repository per refresh, then matched to each PR.
+  let runs: RepositoryRuns = repositoryRuns(deps.config, deps.ci);
   return {
     region,
     me,
@@ -64,6 +68,7 @@ export function homeActions(deps: HomeDeps): HomeActions {
       return inbox && withUnread(inbox, region, await state.seen.all());
     },
     async fetch(repositories) {
+      runs = repositoryRuns(deps.config, deps.ci);
       return fetchInbox(repositories, {
         api,
         me,
@@ -72,7 +77,7 @@ export function homeActions(deps: HomeDeps): HomeActions {
         concurrency: limit,
       });
     },
-    details: (item) => loadDetails(item, api),
+    details: (item) => loadDetails(item, api, runs),
     // Only a faster next start depends on the cache.
     save: (inbox) => state.cache.set("home", toCache(inbox, region)).catch(() => {}),
     async unreadMarker() {

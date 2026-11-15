@@ -1,6 +1,6 @@
 import type { PullRequest, RuleEvaluation } from "../aws/codecommit.js";
 import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
-import type { CheckState, Checks } from "../core/checks.js";
+import { CHECK_MARK, type Checks } from "../core/checks.js";
 import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
@@ -126,15 +126,6 @@ export function checksJson(checks: Checks | null) {
   };
 }
 
-const CHECK_MARK: Record<CheckState, string> = {
-  pass: "✓",
-  fail: "✗",
-  pending: "…",
-  cancel: "⊘",
-  none: "·",
-  error: "!",
-};
-
 /** One line per project or pipeline: mark, provider and name, status and start, then the URL or why there is none. */
 function checkRunLines(checks: Checks): string[] {
   return align(
@@ -233,6 +224,10 @@ export function inboxLines(items: readonly InboxItem[]): string[] {
         printable(i.pr.title),
         rulesCell(i.rules),
         conflictCell(i.mergeable),
+        // The column appears only when some row has CI (the config's ci).
+        ...(mine.some((m) => m.checks)
+          ? [i.checks ? `CI ${CHECK_MARK[i.checks]} ${i.checks}` : ""]
+          : []),
         date(i.pr.lastActivityDate),
       ]),
     ),
@@ -245,7 +240,11 @@ export function inboxJson(inbox: Inbox, items: readonly InboxItem[], region: str
     unread: i.unread,
     ...(i.section === "awaiting"
       ? { approvedBy: i.approvedBy ?? null }
-      : { approvalRules: i.rules ?? null, mergeable: i.mergeable ?? null }),
+      : {
+          approvalRules: i.rules ?? null,
+          mergeable: i.mergeable ?? null,
+          checks: i.checks ?? null,
+        }),
     ...(i.detailError ? { detailError: i.detailError } : {}),
   });
   return {

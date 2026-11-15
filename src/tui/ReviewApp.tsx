@@ -2,6 +2,7 @@ import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/cli
 import { Box, Text, useApp, useInput } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
+import type { Checks } from "../core/checks.js";
 import {
   type CommentDraft,
   type DraftTarget,
@@ -107,6 +108,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [approvalEvaluation, setApprovalEvaluation] = useState<Evaluation | null>(null);
+  const [checks, setChecks] = useState<Checks | null>(null);
 
   const approvalAction = useAsyncAction(
     async (state: "APPROVE" | "REVOKE") => {
@@ -560,6 +562,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
       setDiffTexts(new Map());
       setApprovals([]);
       setApprovalEvaluation(null);
+      setChecks(null);
       setReactionsByComment(new Map());
 
       const status = new Map<string, "loading" | "loaded" | "error">();
@@ -632,6 +635,17 @@ export function App({ service, repository, start, onExit }: AppProps) {
           setApprovals(states);
           setApprovalEvaluation(evaluation);
         });
+      }
+
+      // Background: CI. Each lookup's failure is inside the result; a failure
+      // to load the CI clients at all leaves the line out.
+      if (service.checks && sourceCommit) {
+        service.checks({ repository: selectedRepo, sourceCommit }).then(
+          (loaded) => {
+            if (!isDetailLoadStale(loadId)) setChecks(loaded);
+          },
+          () => undefined,
+        );
       }
 
       // Background: reactions
@@ -851,6 +865,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
           inlineComment={postInlineCommentAction}
           reply={postReplyAction}
           approval={{ ...approvalAction, approvals, evaluation: approvalEvaluation }}
+          checks={checks}
           merge={{
             ...mergeAction,
             onCheckConflicts: handleCheckConflicts,

@@ -50,8 +50,11 @@ CodeCommit does not link a pull request to CodeBuild or CodePipeline, so
 lazycc links them by commit: for each project and pipeline listed under the
 repository in `ci`, it reads the 20 newest runs and shows the newest one that
 built the PR's source commit (a build's `resolvedSourceVersion`, an
-execution's source revision). `pr view` and `pr status` print one line per
-project and pipeline, and add `checks` to their `--json` output.
+execution's source revision). `pr view`, `pr status` and the review screen
+show one line per project and pipeline, and `pr view` and `pr status` add
+`checks` to their `--json` output. The home screen's "your PRs" and
+`lazycc status` show the overall state (`CI ✓`, `✗`, `…` running, `⊘`
+stopped, `·` no run, `!` lookup failed).
 
 The runs are read in the same region and with the same credentials as the
 repository, and need `codebuild:ListBuildsForProject`,
@@ -62,6 +65,12 @@ stop the command.
 
 A pipeline that only builds the default branch has no run for an open PR's
 source commit, so its line says `no run`.
+
+The result is for information only: lazycc never uses it to approve or merge.
+A run counts when its commit matches, so anyone who can start a build in a
+listed project (`codebuild:StartBuild`, including with a buildspec override)
+or start a listed pipeline can put any result on a PR's commit. If people rely
+on what lazycc shows, limit those permissions in IAM.
 
 ## Region and profile
 

@@ -7,6 +7,7 @@ import type {
   PullRequestStatus,
   RuleEvaluation,
 } from "../aws/codecommit.js";
+import { consoleHost } from "../aws/console.js";
 import type { Git } from "../git/git.js";
 import type { Config } from "../state/config.js";
 import type { RepoContext } from "./context.js";
@@ -50,11 +51,7 @@ function notInClone(ctx: RepoContext, message: string): UsageError {
 }
 
 export function repositoryConsoleUrl(region: string, repository: string, path: string): string {
-  // GovCloud signs in at one host for both of its regions; ?region= picks one.
-  const host = region.startsWith("us-gov-")
-    ? "console.amazonaws-us-gov.com"
-    : `${region}.${region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com"}`;
-  return `https://${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/${path}?region=${region}`;
+  return `https://${consoleHost(region)}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/${path}?region=${region}`;
 }
 
 export function consoleUrl(region: string, repository: string, id: string): string {

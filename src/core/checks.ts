@@ -117,3 +117,69 @@ export function checksFor(commit: string, targets: readonly TargetRuns[]): Check
   });
   return { state: overallState(runs.map((r) => r.state)), commit, runs };
 }
+
+export const CHECK_MARK: Record<CheckState, string> = {
+  pass: "✓",
+  fail: "✗",
+  pending: "…",
+  cancel: "⊘",
+  none: "·",
+  error: "!",
+};
+
+/** Terminal colors for the TUI. */
+export const CHECK_COLOR: Record<CheckState, string> = {
+  pass: "green",
+  fail: "red",
+  pending: "yellow",
+  cancel: "gray",
+  none: "gray",
+  error: "red",
+};
+
+/** Creates the CodeBuild and CodePipeline clients on first use: a repository without ci never loads them. */
+export type CiClient = () => Promise<CiApi>;
+
+export function lazyCiClient(create: CiClient): CiClient {
+  let client: Promise<CiApi> | undefined;
+  return () => {
+    client ??= create();
+    // A chunk that failed to load is tried again next time.
+    client.catch(() => {
+      client = undefined;
+    });
+    return client;
+  };
+}
+
+/** A PR's checks, or null when the config's ci lists nothing for its repository. */
+export async function pullRequestChecks(
+  config: Config,
+  client: CiClient,
+  pr: { readonly repository: string; readonly sourceCommit: string },
+): Promise<Checks | null> {
+  const targets = ciTargets(config, pr.repository);
+  if (!targets) return null;
+  return checksFor(pr.sourceCommit, await loadTargetRuns(await client(), targets));
+}
+
+/**
+ * Each repository's recent runs, read once and shared by all its PRs (the home
+ * screen); undefined for a repository ci does not list. One instance per refresh.
+ */
+export type RepositoryRuns = (repository: string) => Promise<readonly TargetRuns[] | undefined>;
+
+export function repositoryRuns(config: Config, client: CiClient): RepositoryRuns {
+  const byRepository = new Map<string, Promise<TargetRuns[] | undefined>>();
+  return (repository) => {
+    let runs = byRepository.get(repository);
+    if (!runs) {
+      const targets = ciTargets(config, repository);
+      runs = targets
+        ? client().then((ci) => loadTargetRuns(ci, targets))
+        : Promise.resolve(undefined);
+      byRepository.set(repository, runs);
+    }
+    return runs;
+  };
+}

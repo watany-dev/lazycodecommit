@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PullRequest } from "../aws/codecommit.js";
 import { fakeApi, pullRequest } from "../testing/fakes.js";
 import {
@@ -300,6 +300,29 @@ describe("loadDetails", () => {
     });
   });
 
+  it("adds the CI state for mine when the repository has runs, and not for awaiting", async () => {
+    const runs = vi.fn(async () => [
+      {
+        provider: "codebuild" as const,
+        name: "p",
+        runs: [
+          {
+            id: "p:1",
+            status: "SUCCEEDED",
+            commits: ["s1"],
+            startedAt: undefined,
+            endedAt: undefined,
+            url: "u",
+          },
+        ],
+      },
+    ]);
+    expect(await loadDetails(mine, fakeApi(), runs)).toMatchObject({ checks: "pass" });
+    expect(runs).toHaveBeenCalledWith(mine.pr.repository);
+    expect(await loadDetails(awaiting, fakeApi(), runs)).not.toHaveProperty("checks");
+    expect(await loadDetails(mine, fakeApi(), async () => undefined)).not.toHaveProperty("checks");
+  });
+
   it("keeps the row with the error when a call fails", async () => {
     const api = fakeApi([], {
       approvers: async () => {
@@ -344,6 +367,7 @@ describe("cache", () => {
         unread: false,
         rules: { approved: true, overridden: false, satisfied: ["r"], notSatisfied: [] },
         mergeable: false,
+        checks: "pending",
         detailError: "dropped",
       },
     ],

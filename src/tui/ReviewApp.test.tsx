@@ -5612,3 +5612,98 @@ describe("App", () => {
     expect(markSeen.mock.calls.map(([pr]) => pr.id)).toEqual(["1", "1", "2"]);
   });
 });
+
+describe("CI results on the review screen (ADR 0010)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(getReactionsForComments).mockResolvedValue(new Map());
+    vi.mocked(getCommitsForPR).mockResolvedValue([]);
+    vi.mocked(getApprovalStates).mockResolvedValue([]);
+    vi.mocked(evaluateApprovalRules).mockResolvedValue(null);
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: {
+        pullRequestId: "42",
+        title: "fix: login",
+        revisionId: "rev-1",
+        pullRequestTargets: [{ sourceCommit: "abc1234def", destinationCommit: "d" }],
+      },
+      differences: [],
+      commentThreads: [],
+    } as any);
+  });
+
+  it("shows each project and pipeline under the overall state", async () => {
+    const checks = vi.fn(async () => ({
+      state: "fail" as const,
+      commit: "abc1234def",
+      runs: [
+        {
+          provider: "codebuild" as const,
+          name: "check",
+          state: "fail" as const,
+          status: "FAILED",
+          id: "check:1",
+          startedAt: null,
+          endedAt: null,
+          url: "https://console/check:1",
+        },
+        {
+          provider: "codepipeline" as const,
+          name: "release",
+          state: "none" as const,
+          status: null,
+          id: null,
+          startedAt: null,
+          endedAt: null,
+          url: null,
+        },
+        {
+          provider: "codepipeline" as const,
+          name: "locked",
+          state: "error" as const,
+          status: null,
+          id: null,
+          startedAt: null,
+          endedAt: null,
+          url: null,
+          message: "Access denied: \u001b[31mx",
+        },
+      ],
+    }));
+    const { lastFrame } = render(
+      <App service={{ ...svc, checks }} repository="my-service" start={{ pullRequestId: "42" }} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("CI: ✗ fail"));
+    expect(checks).toHaveBeenCalledWith({ repository: "my-service", sourceCommit: "abc1234def" });
+    expect(lastFrame()).toContain("✗ codebuild check FAILED https://console/check:1");
+    expect(lastFrame()).toContain("· codepipeline release no run on abc1234");
+    expect(lastFrame()).toContain("! codepipeline locked Access denied: ^[[31mx");
+  });
+
+  it("leaves the CI line out when nothing is configured or the lookup fails", async () => {
+    const none = render(
+      <App
+        service={{ ...svc, checks: async () => null }}
+        repository="my-service"
+        start={{ pullRequestId: "42" }}
+      />,
+    );
+    await vi.waitFor(() => expect(none.lastFrame()).toContain("PR #42"));
+    const failed = render(
+      <App
+        service={{
+          ...svc,
+          checks: async () => {
+            throw new Error("chunk");
+          },
+        }}
+        repository="my-service"
+        start={{ pullRequestId: "42" }}
+      />,
+    );
+    await vi.waitFor(() => expect(failed.lastFrame()).toContain("PR #42"));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(none.lastFrame()).not.toContain("CI:");
+    expect(failed.lastFrame()).not.toContain("CI:");
+  });
+});

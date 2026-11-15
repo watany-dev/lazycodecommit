@@ -136,6 +136,24 @@ describe("HomeApp", () => {
     expect(a.fetch).toHaveBeenCalledWith(["demo", "infra"]);
   });
 
+  it("marks my PRs with their CI state when there is one", async () => {
+    const a = actions({
+      details: vi.fn(async (item: InboxItem) =>
+        item.section === "mine"
+          ? {
+              ...item,
+              rules: { approved: true, overridden: false, satisfied: ["a"], notSatisfied: [] },
+              mergeable: true,
+              checks: "fail" as const,
+            }
+          : { ...item, approvedBy: [] },
+      ),
+    });
+    const { lastFrame, stdin } = await setup(a);
+    await press(stdin, "\t");
+    await vi.waitFor(() => expect(lastFrame()).toContain("CI ✗"));
+  });
+
   it("shows my PRs on Tab with rules and conflicts", async () => {
     const { lastFrame, stdin } = await setup();
     await press(stdin, "\t");

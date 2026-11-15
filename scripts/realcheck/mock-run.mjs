@@ -45,6 +45,8 @@ for (const k of Object.keys(env)) if (k.startsWith("AWS_")) delete env[k];
 Object.assign(env, {
   AWS_ENDPOINT_URL_CODECOMMIT: server.url,
   AWS_ENDPOINT_URL_STS: server.url,
+  AWS_ENDPOINT_URL_CODEBUILD: server.url,
+  AWS_ENDPOINT_URL_CODEPIPELINE: server.url,
   AWS_CONFIG_FILE: join(dir, "config"),
   AWS_SHARED_CREDENTIALS_FILE: join(dir, "credentials"),
 });
@@ -61,6 +63,10 @@ const args = [
   "rc-limited",
   "--sso-expired-profile",
   "rc-sso",
+  "--ci-project",
+  "rc-check",
+  "--ci-pipeline",
+  "rc-release",
   "--ssh",
   "--yes",
   "--mock-git-root",

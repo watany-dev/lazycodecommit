@@ -32,6 +32,7 @@ interface ServiceRequest {
   readonly mergeStrategy?: MergeStrategy;
   /** drafts.json: unposted review comments survive leaving the screen. */
   readonly drafts?: DraftStorage;
+  readonly checks?: ReviewService["checks"];
 }
 
 export interface ReviewRequest extends ServiceRequest {
@@ -62,7 +63,7 @@ export interface TopRequest extends ServiceRequest {
    * The account home reads the config's repositories in, when it is not the
    * clone's (lazycc branch or browse in a clone of another region or profile).
    */
-  readonly home?: Pick<ServiceRequest, "region" | "profile" | "markSeen">;
+  readonly home?: Pick<ServiceRequest, "region" | "profile" | "markSeen" | "checks">;
   /** The repository the branch table and browse show; picked with r when unset. */
   readonly repository?: string;
   /** The clone's repository: only its PRs take their diffs from `git`. */
@@ -85,6 +86,7 @@ function service(request: ServiceRequest): ReviewService {
     ...(request.markSeen ? { markSeen: request.markSeen } : {}),
     ...(request.mergeStrategy ? { mergeStrategy: request.mergeStrategy } : {}),
     ...(request.drafts ? { drafts: request.drafts } : {}),
+    ...(request.checks ? { checks: request.checks } : {}),
   };
 }
 

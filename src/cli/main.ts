@@ -5,7 +5,7 @@ import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommi
 import { explainAwsError } from "../aws/errors.js";
 import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
-import { type Checks, checksFor, ciTargets, loadTargetRuns } from "../core/checks.js";
+import { lazyCiClient, pullRequestChecks, repositoryRuns } from "../core/checks.js";
 import { cloneRepository } from "../core/clone.js";
 import { draftStorage } from "../core/commentDrafts.js";
 import {
@@ -392,12 +392,9 @@ async function runCommand(
     note: io.err,
   };
   const print = (value: unknown) => printJson(io, value);
-  const loadChecks = async (pr: PullRequest): Promise<Checks | null> => {
-    const targets = ciTargets(config, pr.repository);
-    if (!targets) return null;
-    const ci = await deps.createCiApi({ region, ...optional("profile", ctx.profile) });
-    return checksFor(pr.sourceCommit, await loadTargetRuns(ci, targets));
-  };
+  const ci = lazyCiClient(() => deps.createCiApi({ region, ...optional("profile", ctx.profile) }));
+  const loadChecks = (pr: { repository: string; sourceCommit: string }) =>
+    pullRequestChecks(config, ci, pr);
   const done = (line: string, pr: PullRequest) => {
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
@@ -415,6 +412,7 @@ async function runCommand(
       region,
       markSeen,
       drafts: draftStorage(local.drafts, region),
+      checks: loadChecks,
       ...optional("mergeStrategy", preferredStrategy(config)),
       ...optional("profile", ctx.profile),
       ...(ctx.clone ? { git } : {}),
@@ -693,6 +691,15 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     : Promise.resolve({ api, region });
   // A failure shows when home opens, not before the branch table or browse.
   homeAccount.catch(() => {});
+  const ci = lazyCiClient(() => deps.createCiApi({ region, ...optional("profile", ctx.profile) }));
+  const homeCi = homeCtx
+    ? lazyCiClient(async () =>
+        deps.createCiApi({
+          region: (await homeAccount).region,
+          ...optional("profile", homeCtx.profile),
+        }),
+      )
+    : ci;
   // Only home and the picker need "me" (one STS call, cached per profile).
   let home: Promise<HomeActions> | undefined;
   const repoContext = (repository: string): RepoContext => ({
@@ -714,6 +721,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
           me,
           // Nothing to watch: the home opens on the repository picker.
           initial: watchedRepositories(top.flagRepo, config, cloneRepo),
+          ci: homeCi,
         });
       })),
     branches(repository) {
@@ -762,6 +770,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
       markSeenIn(state, region, pr, new Date()).catch(() => {});
     },
     drafts: draftStorage(state.drafts, region),
+    checks: (pr) => pullRequestChecks(config, ci, pr),
     ...optional("mergeStrategy", preferredStrategy(config)),
     ...optional("profile", ctx.profile),
     ...(cloneRepo ? { git, cloneRepository: cloneRepo } : {}),
@@ -770,6 +779,8 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
           home: {
             ...optional("region", homeCtx.region),
             ...optional("profile", homeCtx.profile),
+            checks: (pr: { repository: string; sourceCommit: string }) =>
+              pullRequestChecks(config, homeCi, pr),
             markSeen: (pr: SeenPr) => {
               void homeAccount
                 .then(({ region: r }) => markSeenIn(state, r, pr, new Date()))
@@ -818,9 +829,13 @@ async function runStatus(
     seen: await state.seen.all(),
     concurrency: limit,
   });
+  const runs = repositoryRuns(
+    config,
+    lazyCiClient(() => deps.createCiApi({ region, ...optional("profile", ctx.profile) })),
+  );
   const inbox = {
     ...listed,
-    items: await loadAllDetails(listed.items, (i) => loadDetails(i, api), limit),
+    items: await loadAllDetails(listed.items, (i) => loadDetails(i, api, runs), limit),
   };
   const items = inbox.items.filter((i) => isPending(i, me));
   if (json) printJson(io, inboxJson(inbox, items, region));

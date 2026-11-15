@@ -5,6 +5,7 @@ import {
 } from "@aws-sdk/client-codebuild";
 import { CodePipelineClient, ListPipelineExecutionsCommand } from "@aws-sdk/client-codepipeline";
 import { clientConfig } from "./codecommit.js";
+import { consoleHost } from "./console.js";
 
 export type CiProvider = "codebuild" | "codepipeline";
 
@@ -28,7 +29,7 @@ export interface CiApi {
 }
 
 const console = (region: string, path: string) =>
-  `https://${region}.console.aws.amazon.com/codesuite/${path}?region=${region}`;
+  `https://${consoleHost(region)}/codesuite/${path}?region=${region}`;
 
 export function buildUrl(region: string, arn: string, project: string, id: string): string {
   // arn:aws:codebuild:<region>:<account>:build/<project>:<uuid>
