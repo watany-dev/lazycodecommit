@@ -299,8 +299,12 @@ describe("BrowseApp review fixes", () => {
       }),
     });
     const { stdin, lastFrame } = await setup(a);
-    await press(stdin, "j", "\r", "b", "\r");
-    expect(lastFrame()).toContain("throttled");
+    await press(stdin, "j", "\r", "b");
+    // A fixed 30 ms per key let Enter reach a picker that had not drawn yet on
+    // a slow runner; wait for the picker, then for the failure.
+    await vi.waitFor(() => expect(lastFrame()).toContain("ref:"));
+    await press(stdin, "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("throttled"));
     expect(lastFrame()).toContain("@ main : src/");
   });
 
