@@ -446,7 +446,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | 言語 | TypeScript を継続し、Go には移さない | [0002](../adr/0002-language-and-runtime.md) |
 | 設定ファイル形式 | JSON | [0003](../adr/0003-config-format.md) |
 | PR テンプレートの置き場所 | `.codecommit/pull_request_template.md` を既定にし、設定で変更できる | [0004](../adr/0004-pr-template-location.md) |
-| 承認待ちの定義 | 確認中（推奨は、簡易条件に承認プールに自分が入っているかの条件を足す） | [0005](../adr/0005-awaiting-my-approval.md) |
+| 承認待ちの定義 | 簡易条件に、承認プールに自分が入っているかの条件を足す | [0005](../adr/0005-awaiting-my-approval.md) |
 | 未読判定の検証 | フェーズ3の完了条件として実機で確認する | [0006](../adr/0006-unread-detection.md) |
-| CI 結果の表示 | 確認中（推奨はフェーズ1〜4に入れない） | [0007](../adr/0007-out-of-phase-features.md) |
-| コメントの下書き一括投稿 | 確認中（推奨はフェーズ1〜4に入れない） | [0007](../adr/0007-out-of-phase-features.md) |
+| CI 結果の表示 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
+| コメントの下書き一括投稿 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |

@@ -41,8 +41,9 @@ Node.js 22.23、`taskset -c 0` で 1 CPU に固定し、15 回起動した。
   CloudShell の `npx` でインストールする依存をなくすため。
 - 実行は Node.js。Bun を実行時の必須にしない。
 - Ink と React は TUI を開くときだけ動的 import する（仕様書の非機能要件）。
-- Node.js の下限（`engines`）は CloudShell の実際のバージョンを確認して決める。
-  20 なら `>=20`、22 以上なら `>=22`。
+- Node.js の下限（`engines`）は暫定で `>=20` とし、CI は 20、22、24、26 で試験する。
+  CloudShell の実際のバージョンを確認したら、22 以上なら `>=22` に上げ、CI の
+  マトリクスの先頭もそろえる。
 
 ## Consequences
 

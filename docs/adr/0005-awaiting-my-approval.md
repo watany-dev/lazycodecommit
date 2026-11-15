@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed（watany の判断待ち）。
+Accepted.
 
 ## Context
 
@@ -15,7 +15,7 @@ Proposed（watany の判断待ち）。
 `GetPullRequest` の結果には `approvalRules` が含まれ、各ルールの
 `approvalRuleContent` は承認プールのメンバーを ARN のパターンで持つ。
 
-## Decision（推奨案）
+## Decision
 
 承認待ちは、次をすべて満たす PR とする。
 

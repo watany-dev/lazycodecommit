@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed（watany の判断待ち）。
+Accepted.
 
 ## Context
 
@@ -16,7 +16,7 @@ Proposed（watany の判断待ち）。
 権限を新たに要する。CodeCommit にはレビューをまとめて投稿する API がないため、
 一括投稿はクライアント側で下書きを保持し、1 件ずつ投稿することになる。
 
-## Decision（推奨案）
+## Decision
 
 どちらもフェーズ1〜4に入れない。フェーズ4の完了後に、使ってみて必要なら改めて決める。
 
