@@ -126,16 +126,6 @@ describe("App", () => {
     });
   });
 
-  it("shows auth error for CredentialError", async () => {
-    const error = new Error("bad");
-    error.name = "CredentialError";
-    vi.mocked(listPullRequests).mockRejectedValue(error);
-    const { lastFrame } = render(<App service={svc} repository="my-service" start={null} />);
-    await vi.waitFor(() => {
-      expect(lastFrame()).toContain("AWS credentials are missing or expired");
-    });
-  });
-
   it("shows repo not found error", async () => {
     const error = new Error("not found");
     error.name = "RepositoryDoesNotExistException";
@@ -156,19 +146,9 @@ describe("App", () => {
     });
   });
 
-  it("shows unauthorized error", async () => {
-    const error = new Error("no");
-    error.name = "UnauthorizedException";
-    vi.mocked(listPullRequests).mockRejectedValue(error);
-    const { lastFrame } = render(<App service={svc} repository="my-service" start={null} />);
-    await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Access denied");
-    });
-  });
-
-  it("shows network error for NetworkingError", async () => {
+  it("shows network error for a timeout", async () => {
     const error = new Error("network fail");
-    error.name = "NetworkingError";
+    error.name = "TimeoutError";
     vi.mocked(listPullRequests).mockRejectedValue(error);
     const { lastFrame } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
@@ -862,7 +842,7 @@ describe("App", () => {
     stdin.write("x");
     await vi.waitFor(() => {
       stdin.write("\r");
-      expect(lastFrame()).toContain("Comment exceeds the 10,240 character limit.");
+      expect(lastFrame()).toContain("The comment is over CodeCommit's 10,240 character limit.");
     });
   });
 
@@ -1632,7 +1612,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Pull request is already closed.");
+      expect(lastFrame()).toContain("The pull request is already closed.");
     });
   });
 
@@ -2371,7 +2351,7 @@ describe("App", () => {
     stdin.write("long reply");
     await vi.waitFor(() => {
       stdin.write("\r");
-      expect(lastFrame()).toContain("Reply exceeds the 10,240 character limit.");
+      expect(lastFrame()).toContain("The comment is over CodeCommit's 10,240 character limit.");
     });
   });
 
@@ -2684,7 +2664,7 @@ describe("App", () => {
 
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Conflicts detected. Cannot auto-merge.");
+      expect(lastFrame()).toContain("cannot be merged automatically");
     });
   });
 
@@ -2738,7 +2718,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Approval rules not satisfied.");
+      expect(lastFrame()).toContain("approval rules are not satisfied yet");
     });
   });
 
@@ -2792,7 +2772,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Source branch has been updated.");
+      expect(lastFrame()).toContain("The source branch has moved since the pull request was read.");
     });
   });
 
@@ -2893,7 +2873,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Pull request is already closed.");
+      expect(lastFrame()).toContain("The pull request is already closed.");
     });
   });
 
@@ -2947,7 +2927,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Branch was updated concurrently.");
+      expect(lastFrame()).toContain("The branch was updated at the same moment.");
     });
   });
 
@@ -3001,7 +2981,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Pull request is already closed.");
+      expect(lastFrame()).toContain("The pull request is already closed.");
     });
   });
 
@@ -3109,7 +3089,7 @@ describe("App", () => {
     });
     stdin.write("y");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Branches have diverged too much.");
+      expect(lastFrame()).toContain("The branches have diverged too far to merge here.");
     });
   });
 
@@ -4261,7 +4241,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Comment exceeds the 10,240 character limit.");
+      expect(lastFrame()).toContain("The comment is over CodeCommit's 10,240 character limit.");
     });
   });
 

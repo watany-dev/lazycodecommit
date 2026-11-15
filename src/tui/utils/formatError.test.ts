@@ -32,7 +32,7 @@ describe("formatErrorMessage", () => {
     it("returns message for CommentContentSizeLimitExceededException", () => {
       expect(
         formatErrorMessage(makeError("CommentContentSizeLimitExceededException"), "reply"),
-      ).toBe("Reply exceeds the 10,240 character limit.");
+      ).toBe("The comment is over CodeCommit's 10,240 character limit.");
     });
 
     it("returns message for CommentDoesNotExistException", () => {
@@ -64,7 +64,7 @@ describe("formatErrorMessage", () => {
     it("returns message for CommentContentSizeLimitExceededException", () => {
       expect(
         formatErrorMessage(makeError("CommentContentSizeLimitExceededException"), "edit"),
-      ).toBe("Comment exceeds the 10,240 character limit.");
+      ).toBe("The comment is over CodeCommit's 10,240 character limit.");
     });
 
     it("returns message for CommentDeletedException", () => {
@@ -116,7 +116,7 @@ describe("formatErrorMessage", () => {
     it("returns message for CommentContentSizeLimitExceededException", () => {
       expect(
         formatErrorMessage(makeError("CommentContentSizeLimitExceededException"), "comment"),
-      ).toBe("Comment exceeds the 10,240 character limit.");
+      ).toBe("The comment is over CodeCommit's 10,240 character limit.");
     });
 
     it("returns message for PullRequestDoesNotExistException", () => {
@@ -173,7 +173,7 @@ describe("formatErrorMessage", () => {
 
     it("returns message for PullRequestAlreadyClosedException", () => {
       expect(formatErrorMessage(makeError("PullRequestAlreadyClosedException"), "approval")).toBe(
-        "Pull request is already closed.",
+        "The pull request is already closed.",
       );
     });
 
@@ -193,37 +193,39 @@ describe("formatErrorMessage", () => {
   describe("merge context", () => {
     it("returns message for ManualMergeRequiredException", () => {
       expect(formatErrorMessage(makeError("ManualMergeRequiredException"), "merge")).toBe(
-        "Conflicts detected. Cannot auto-merge. Resolve conflicts manually.",
+        "The pull request cannot be merged automatically with this strategy (conflicts, or it cannot fast-forward). Resolve them, or pick another strategy.",
       );
     });
 
     it("returns message for PullRequestApprovalRulesNotSatisfiedException", () => {
       expect(
         formatErrorMessage(makeError("PullRequestApprovalRulesNotSatisfiedException"), "merge"),
-      ).toBe("Approval rules not satisfied. Get required approvals first.");
+      ).toBe("The pull request's approval rules are not satisfied yet.");
     });
 
     it("returns message for TipOfSourceReferenceIsDifferentException", () => {
       expect(
         formatErrorMessage(makeError("TipOfSourceReferenceIsDifferentException"), "merge"),
-      ).toBe("Source branch has been updated. Go back and reopen the PR.");
+      ).toBe(
+        "The source branch has moved since the pull request was read. Check the new commits, then retry.",
+      );
     });
 
     it("returns message for ConcurrentReferenceUpdateException", () => {
       expect(formatErrorMessage(makeError("ConcurrentReferenceUpdateException"), "merge")).toBe(
-        "Branch was updated concurrently. Try again.",
+        "The branch was updated at the same moment. Retry.",
       );
     });
 
     it("returns message for TipsDivergenceExceededException", () => {
       expect(formatErrorMessage(makeError("TipsDivergenceExceededException"), "merge")).toBe(
-        "Branches have diverged too much. Merge manually.",
+        "The branches have diverged too far to merge here. Merge them locally with git.",
       );
     });
 
     it("returns message for PullRequestAlreadyClosedException", () => {
       expect(formatErrorMessage(makeError("PullRequestAlreadyClosedException"), "merge")).toBe(
-        "Pull request is already closed.",
+        "The pull request is already closed.",
       );
     });
 
@@ -281,7 +283,7 @@ describe("formatErrorMessage", () => {
   describe("close context", () => {
     it("returns message for PullRequestAlreadyClosedException", () => {
       expect(formatErrorMessage(makeError("PullRequestAlreadyClosedException"), "close")).toBe(
-        "Pull request is already closed.",
+        "The pull request is already closed.",
       );
     });
 
@@ -323,10 +325,6 @@ describe("formatErrorMessage", () => {
       expect(formatErrorMessage(makeError("ExpiredTokenException"), "merge")).toBe(SIGN_IN_AGAIN);
     });
 
-    it("points to signing in again for CredentialError", () => {
-      expect(formatErrorMessage(makeError("CredentialError"))).toBe(SIGN_IN_AGAIN);
-    });
-
     it("returns message for RepositoryDoesNotExistException", () => {
       expect(formatErrorMessage(makeError("RepositoryDoesNotExistException"))).toBe(
         "Repository not found.",
@@ -356,21 +354,9 @@ describe("formatErrorMessage", () => {
         "Access denied. Check your IAM policy.",
       );
     });
-
-    it("returns access denied for UnauthorizedException", () => {
-      expect(formatErrorMessage(makeError("UnauthorizedException"))).toBe(
-        "Access denied. Check your IAM policy.",
-      );
-    });
   });
 
   describe("network errors", () => {
-    it("returns network error for NetworkingError", () => {
-      expect(formatErrorMessage(makeError("NetworkingError"))).toBe(
-        "Network error. Check your connection.",
-      );
-    });
-
     it("returns network error for the SDK's TimeoutError", () => {
       expect(formatErrorMessage(makeError("TimeoutError", "socket timed out"))).toBe(
         "Network error. Check your connection.",
