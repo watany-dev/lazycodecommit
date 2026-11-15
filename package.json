@@ -1,0 +1,47 @@
+{
+  "name": "lazycodecommit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A daily-driver client for AWS CodeCommit: subcommands like gh, a TUI like lazygit",
+  "type": "module",
+  "bin": {
+    "lazycodecommit": "dist/cli.mjs",
+    "lazycc": "dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "bun@1.4.4",
+  "scripts": {
+    "build": "bun run build.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint -c .oxlintrc.json --tsconfig ./tsconfig.json --import-plugin --deny-warnings .",
+    "format": "biome check --write .",
+    "format:check": "biome check .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.build.json",
+    "dead-code": "knip",
+    "audit": "bun audit",
+    "lint:workflows": "uvx --from actionlint-py==1.7.12.25 actionlint && uvx zizmor@1.24.1 --persona auditor .github/workflows",
+    "smoke": "bash scripts/pack-smoke.sh",
+    "startup": "node scripts/startup.mjs",
+    "ci": "bun run lint && bun run format:check && bun run typecheck && bun run dead-code && bun run audit && bun run test:coverage && bun run build && bun run smoke && bun run startup && bun run lint:workflows"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watany-dev/lazycodecommit.git"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@types/bun": "1.4.4",
+    "@types/node": "20.19.43",
+    "@vitest/coverage-v8": "5.1.0",
+    "knip": "6.44.2",
+    "oxlint": "1.92.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

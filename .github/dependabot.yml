@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    # Matches minimumReleaseAge in bunfig.toml.
+    cooldown:
+      default-days: 7
+    groups:
+      bun-minor-and-patch:
+        update-types: [minor, patch]
