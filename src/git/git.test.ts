@@ -204,6 +204,18 @@ describe("createGit", () => {
         sh(clone, "branch", "-q", "-D", "topic");
       }
     });
+
+    it("knows a pushed branch is on origin", async () => {
+      const clone = await singleBranchClone();
+      sh(clone, "switch", "-q", "-c", "mine");
+      await writeFile(join(clone, "g.txt"), "x\n");
+      sh(clone, "add", ".");
+      sh(clone, "commit", "-q", "-m", "mine");
+      const git = createGit(clone);
+      expect(await git.unpushedCount("mine")).toBeNull();
+      await git.push("mine");
+      expect(await git.unpushedCount("mine")).toBe(0);
+    });
   });
 
   it("reads a branch name starting with a dash as a name, not an option", async () => {

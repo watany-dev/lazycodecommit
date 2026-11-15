@@ -176,9 +176,13 @@ export function createGit(cwd: string): Git {
       return commits;
     },
 
-    // Full refs: a bare name is refused when a tag has the same name.
-    push: (branch) =>
-      streamed(["push", "-u", "origin", `refs/heads/${branch}:refs/heads/${branch}`]),
+    async push(branch) {
+      // Full refs: a bare name is refused when a tag has the same name.
+      await streamed(["push", "-u", "origin", `refs/heads/${branch}:refs/heads/${branch}`]);
+      // git records origin/<branch> only when remote.origin.fetch covers it, which
+      // a single-branch clone's does not: unpushedCount would say it is not on origin.
+      await required(["update-ref", `refs/remotes/origin/${branch}`, `refs/heads/${branch}`]);
+    },
     async fetch(refspecs, opts) {
       const args = ["fetch", "origin", ...refspecs];
       if (opts?.quiet) await required(["-c", "advice.fetchShowForcedUpdates=false", ...args]);
