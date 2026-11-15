@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import type {
   CodeCommitApi,
+  MergeStrategy,
   PullRequest,
   PullRequestStatus,
   RuleEvaluation,
@@ -319,4 +320,66 @@ export async function checkoutPullRequest(
   // Refuses, with git's own message, when the local branch has diverged.
   await git.fastForward(remote);
   return { pr, branch, created: false };
+}
+
+function requireOpen(pr: PullRequest): void {
+  if (pr.status === "CLOSED")
+    throw new UserError(`#${pr.id} is already ${pr.isMerged ? "merged" : "closed"}.`);
+}
+
+export interface CommentResult {
+  readonly pr: PullRequest;
+  readonly commentId: string;
+}
+
+/** Comments on the whole PR. A closed PR still takes comments, as in the console. */
+export async function commentOnPullRequest(
+  id: string | undefined,
+  opts: { readonly body?: string; readonly bodyFile?: string },
+  deps: PrDeps,
+): Promise<CommentResult> {
+  if (opts.body !== undefined && opts.bodyFile !== undefined) {
+    throw new UsageError("--body and --body-file cannot be used together");
+  }
+  if (opts.body === undefined && opts.bodyFile === undefined && !deps.interactive) {
+    throw new UsageError("Not a terminal: pass --body or --body-file");
+  }
+  const pr = await resolvePullRequest(id, deps);
+  const body = (
+    opts.bodyFile !== undefined
+      ? await readBodyFile(opts.bodyFile, deps)
+      : (opts.body ?? (await deps.edit("")))
+  ).trim();
+  if (body === "") throw new UserError("Aborted: the comment is empty.");
+  return { pr, commentId: await deps.api.postComment(pr, body) };
+}
+
+export async function approvePullRequest(
+  id: string | undefined,
+  approve: boolean,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<PullRequest> {
+  const pr = await resolvePullRequest(id, deps);
+  requireOpen(pr);
+  await deps.api.setApproval(pr, approve);
+  return pr;
+}
+
+export async function mergePullRequest(
+  id: string | undefined,
+  strategy: MergeStrategy,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<PullRequest> {
+  const pr = await resolvePullRequest(id, deps);
+  requireOpen(pr);
+  return deps.api.merge(pr, strategy);
+}
+
+export async function closePullRequest(
+  id: string | undefined,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<PullRequest> {
+  const pr = await resolvePullRequest(id, deps);
+  requireOpen(pr);
+  return deps.api.close(pr);
 }

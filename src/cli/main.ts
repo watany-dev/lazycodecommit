@@ -1,15 +1,19 @@
 import { type ParseArgsConfig, parseArgs } from "node:util";
 import { version } from "../../package.json" with { type: "json" };
-import type { CodeCommitApi } from "../aws/codecommit.js";
+import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
 import { cloneRepository } from "../core/clone.js";
 import { type RepoContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
 import {
+  approvePullRequest,
   checkoutPullRequest,
+  closePullRequest,
+  commentOnPullRequest,
   consoleUrl,
   createPullRequest,
   listPullRequests,
+  mergePullRequest,
   type PrDeps,
   pullRequestStatus,
   resolvePullRequest,
@@ -48,6 +52,10 @@ Usage:
   lazycc pr view [<id>]
   lazycc pr status
   lazycc pr checkout <id>
+  lazycc pr comment [<id>] [-b body | -F file]
+  lazycc pr approve [<id>] [--revoke]
+  lazycc pr merge [<id>] --ff | --squash | --three-way
+  lazycc pr close [<id>]
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
   lazycc --version
 
@@ -92,7 +100,40 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
   "pr view": { positionals: 1, options: {} },
   "pr status": { positionals: 0, options: {} },
   "pr checkout": { positionals: 1, options: {} },
+  "pr comment": {
+    positionals: 1,
+    options: {
+      body: { type: "string", short: "b" },
+      "body-file": { type: "string", short: "F" },
+    },
+  },
+  "pr approve": { positionals: 1, options: { revoke: { type: "boolean" } } },
+  "pr merge": {
+    positionals: 1,
+    options: {
+      ff: { type: "boolean" },
+      squash: { type: "boolean" },
+      "three-way": { type: "boolean" },
+    },
+  },
+  "pr close": { positionals: 1, options: {} },
 };
+
+const MERGE_FLAGS: Record<string, MergeStrategy> = {
+  ff: "fast-forward",
+  squash: "squash",
+  "three-way": "three-way",
+};
+
+function mergeStrategy(values: Values): MergeStrategy {
+  const picked = Object.keys(MERGE_FLAGS).filter((flag) => values[flag] === true);
+  if (picked.length !== 1) {
+    throw new UsageError(
+      `Pick ${picked.length === 0 ? "a" : "one"} merge strategy: --ff, --squash or --three-way`,
+    );
+  }
+  return MERGE_FLAGS[picked[0] as string] as MergeStrategy;
+}
 
 for (const spec of Object.values(COMMANDS)) Object.assign(spec.options, REPO);
 // The repository is the positional argument, and `--` passes the rest to git clone.
@@ -173,6 +214,8 @@ export async function run(args: readonly string[], deps: Deps): Promise<number> 
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
     }
+    // Checked before any AWS call, so a typo cannot cost a round trip.
+    if (command === "pr merge") mergeStrategy(values);
     return await runCommand(command, values, positionals, deps, (ctx) => {
       profile = ctx.profile;
     });
@@ -219,6 +262,10 @@ async function runCommand(
     note: io.err,
   };
   const print = (value: unknown) => io.out(JSON.stringify(value, null, 2));
+  const done = (line: string, pr: PullRequest) => {
+    io.out(line);
+    io.out(consoleUrl(region, pr.repository, pr.id));
+  };
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
   const review = (start: ReviewRequest["start"]) =>
     deps.openReview({
@@ -328,6 +375,47 @@ async function runCommand(
       else if (prs.length === 0)
         io.err(`No ${state.toLowerCase()} pull requests in ${ctx.repository}.`);
       else for (const line of listLines(prs)) io.out(line);
+      return 0;
+    }
+    case "pr comment": {
+      const { pr, commentId } = await commentOnPullRequest(
+        positionals[0],
+        {
+          ...optional("body", str(values, "body")),
+          ...optional("bodyFile", str(values, "body-file")),
+        },
+        prDeps,
+      );
+      if (json) print({ commentId, pullRequest: prJson(pr, region) });
+      else done(`Commented on #${pr.id} ${printable(pr.title)}`, pr);
+      return 0;
+    }
+    case "pr approve": {
+      const approve = values["revoke"] !== true;
+      const pr = await approvePullRequest(positionals[0], approve, prDeps);
+      if (json) print({ approved: approve, pullRequest: prJson(pr, region) });
+      else
+        done(
+          `${approve ? "Approved" : "Revoked your approval of"} #${pr.id} ${printable(pr.title)}`,
+          pr,
+        );
+      return 0;
+    }
+    case "pr merge": {
+      const strategy = mergeStrategy(values);
+      const pr = await mergePullRequest(positionals[0], strategy, prDeps);
+      if (json) print(prJson(pr, region));
+      else
+        done(
+          `Merged #${pr.id} ${printable(pr.title)} into ${pr.destinationBranch} (${strategy})`,
+          pr,
+        );
+      return 0;
+    }
+    case "pr close": {
+      const pr = await closePullRequest(positionals[0], prDeps);
+      if (json) print(prJson(pr, region));
+      else done(`Closed #${pr.id} ${printable(pr.title)}`, pr);
       return 0;
     }
     case "pr view": {
