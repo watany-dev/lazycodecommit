@@ -212,13 +212,13 @@ describe("ActivityTimeline", () => {
     expect(onBack).toHaveBeenCalled();
   });
 
-  it("calls onBack when Escape is pressed", () => {
+  it("calls onBack when Escape is pressed", async () => {
     const onBack = vi.fn();
     const { stdin } = render(
       <ActivityTimeline {...defaultProps} events={[makeEvent()]} onBack={onBack} />,
     );
     stdin.write("\u001B"); // Escape
-    expect(onBack).toHaveBeenCalled();
+    await vi.waitFor(() => expect(onBack).toHaveBeenCalled());
   });
 
   it("calls onLoadNextPage when n is pressed and hasNextPage is true", () => {

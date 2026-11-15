@@ -172,11 +172,11 @@ describe("ReactionPicker", () => {
     expect(lastFrame()).toContain("🎉(1)");
   });
 
-  it("calls onCancel on escape key", () => {
+  it("calls onCancel on escape key", async () => {
     const onCancel = vi.fn();
     const { stdin } = render(<ReactionPicker {...defaultProps} onCancel={onCancel} />);
     stdin.write("\u001B");
-    expect(onCancel).toHaveBeenCalled();
+    await vi.waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 
   it("does nothing on unrelated key", () => {

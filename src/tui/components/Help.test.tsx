@@ -75,11 +75,11 @@ describe("Help", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("calls onClose on escape key", () => {
+  it("calls onClose on escape key", async () => {
     const onClose = vi.fn();
     const { stdin } = render(<Help onClose={onClose} />);
     stdin.write("\u001B");
-    expect(onClose).toHaveBeenCalled();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it("does not call onClose on unrelated key", () => {

@@ -120,7 +120,7 @@ describe("MergeStrategySelector", () => {
     expect(onSelect).toHaveBeenCalledWith("squash");
   });
 
-  it("calls onCancel on Esc key", () => {
+  it("calls onCancel on Esc key", async () => {
     const onCancel = vi.fn();
     const { stdin } = render(
       <MergeStrategySelector
@@ -131,7 +131,7 @@ describe("MergeStrategySelector", () => {
       />,
     );
     stdin.write("\u001B");
-    expect(onCancel).toHaveBeenCalled();
+    await vi.waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 
   it("calls onCancel on q key", () => {
