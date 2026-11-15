@@ -617,6 +617,24 @@ describe("writes to a PR that is no longer open", () => {
   });
 });
 
+describe("completion", () => {
+  it("prints a script for each shell without touching config or AWS", async () => {
+    for (const shell of ["bash", "zsh", "fish"]) {
+      const r = await cli(["completion", shell], { config: new Error("not read") });
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("lazycc");
+      expect(r.apiOptions).toEqual([]);
+    }
+    expect((await cli(["completion", "bash"])).out).toContain('"pr merge") flags="');
+  });
+
+  it.each([[["completion"]], [["completion", "tcsh"]]])("exits 2 for %j", async (args) => {
+    const r = await cli(args);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("completion needs a shell: bash, zsh, fish");
+  });
+});
+
 describe("clone", () => {
   it("clones by repository name, passing a directory and git flags through", async () => {
     const cloned: unknown[] = [];
