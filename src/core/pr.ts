@@ -318,6 +318,8 @@ export interface CheckoutResult {
   readonly branch: string;
   /** A local branch was created to track origin. */
   readonly created: boolean;
+  /** The local branch holds commits origin does not have yet. */
+  readonly ahead: boolean;
 }
 
 /** Fetches the PR's source branch and switches to it, like `gh pr checkout`. */
@@ -340,12 +342,14 @@ export async function checkoutPullRequest(
   if ((await git.resolveCommit(`refs/heads/${branch}`)) === null) {
     // The full ref: "origin/<branch>" would pick a local branch of that name.
     await git.switchBranch(branch, { track: remote });
-    return { pr, branch, created: true };
+    return { pr, branch, created: true, ahead: false };
   }
   if ((await git.currentBranch()) !== branch) await git.switchBranch(branch);
   // Refuses, with git's own message, when the local branch has diverged.
   await git.fastForward(remote);
-  return { pr, branch, created: false };
+  // --ff-only succeeds on a branch that is ahead, so compare the tips.
+  const ahead = (await git.resolveCommit("HEAD")) !== (await git.resolveCommit(remote));
+  return { pr, branch, created: false, ahead };
 }
 
 function requireOpen(pr: PullRequest): void {

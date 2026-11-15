@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { withLock } from "./lock.js";
 
 export interface Config {
@@ -33,8 +33,13 @@ export class ConfigError extends Error {
   }
 }
 
+/** An XDG base directory, or undefined when unset or relative, which the spec says to ignore. */
+export function xdg(dir: string | undefined): string | undefined {
+  return dir && isAbsolute(dir) ? dir : undefined;
+}
+
 export function configPath(env: Readonly<Record<string, string | undefined>>): string {
-  const base = env["XDG_CONFIG_HOME"] || join(env["HOME"] || homedir(), ".config");
+  const base = xdg(env["XDG_CONFIG_HOME"]) ?? join(env["HOME"] || homedir(), ".config");
   return join(base, "lazycc", "config.json");
 }
 

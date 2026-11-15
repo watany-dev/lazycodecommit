@@ -22,6 +22,7 @@ describe("stateDir", () => {
   it("follows XDG_STATE_HOME, then HOME", () => {
     expect(stateDir({ XDG_STATE_HOME: "/x", HOME: "/h" })).toBe("/x/lazycc");
     expect(stateDir({ HOME: "/h" })).toBe("/h/.local/state/lazycc");
+    expect(stateDir({ XDG_STATE_HOME: "rel", HOME: "/h" })).toBe("/h/.local/state/lazycc");
     expect(stateDir({})).toMatch(/\.local\/state\/lazycc$/);
   });
 });
