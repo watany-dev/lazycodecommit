@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { version } from "../../package.json" with { type: "json" };
 import type { CiApi, CiRun } from "../aws/ci.js";
 import type { CodeCommitApi } from "../aws/codecommit.js";
+import { newDraft } from "../core/commentDrafts.js";
 import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
@@ -118,6 +119,14 @@ describe("top level", () => {
     [["pr", "view", "1", "2"], "Unexpected argument: 2"],
     [["pr", "list", "--state", "merged"], "--state must be open or closed"],
     [["pr", "list", "-L", "0"], "--limit must be a positive integer: 0"],
+    [["pr", "list", "-L", "0x10"], "--limit must be a positive integer: 0x10"],
+    [["pr", "list", "-L", "1e1"], "--limit must be a positive integer: 1e1"],
+    [["pr", "list", "-L", " 2"], "--limit must be a positive integer:  2"],
+    [["pr", "list", "-L", "2.0"], "--limit must be a positive integer: 2.0"],
+    [["pr", "view", "1", "-R", ""], "--repo needs a repository name"],
+    [["browse", ""], "--repo needs a repository name"],
+    [["clone", ""], "clone needs a repository name"],
+    [["status", "--repo="], "--repo needs a repository name"],
   ])("exits 2 for %j", async (args, message) => {
     const r = await cli(args);
     expect(r.code).toBe(2);
@@ -597,6 +606,14 @@ describe("pr checkout", () => {
     });
     expect((await cli(["pr", "checkout", "6"], { api })).err).toBe(
       "Switched to topic, up to date with origin/topic (#6).",
+    );
+  });
+
+  it("does not call a branch with unpushed commits up to date", async () => {
+    const api = fakeApi([pullRequest({ id: "6" })]);
+    const git = { resolveCommit: async (ref: string) => (ref === "HEAD" ? "local" : "remote") };
+    expect((await cli(["pr", "checkout", "6"], { api, git })).err).toBe(
+      "Switched to topic, ahead of origin/topic (#6).",
     );
   });
 
@@ -1208,6 +1225,19 @@ describe("status", () => {
     expect(out.errors).toEqual([]);
   });
 
+  it("lists each PR once when the config names a repository twice", async () => {
+    const r = await cli(["status", "--json"], {
+      api: api(),
+      config: { repos: ["demo", "demo"] },
+      git: { topLevel: async () => null },
+    });
+    expect(r.code).toBe(0);
+    const out = json(r.out);
+    expect(out.repositories).toEqual(["demo"]);
+    expect(out.awaiting.map((p: { id: string }) => p.id)).toEqual(["1"]);
+    expect(out.mine.map((p: { id: string }) => p.id)).toEqual(["2"]);
+  });
+
   it("asks for repositories outside a clone without config", async () => {
     const r = await cli(["status"], {
       git: { topLevel: async () => null },
@@ -1371,6 +1401,32 @@ describe("home", () => {
     },
   );
 
+  it("keeps drafts of PRs opened from home in another region, under that region", async () => {
+    const state = fakeState();
+    const config = { repos: ["a"], region: "us-west-2", profile: "cfg" };
+    const r = await cli(["branch"], { interactive: true, config, state });
+    const draft = newDraft(
+      "later",
+      { kind: "general" },
+      { beforeCommitId: "b", afterCommitId: "a" },
+    );
+    await r.tops[0]?.home?.drafts?.save("111122223333/5", [draft]);
+    expect([...state.draftLists.keys()]).toEqual(["us-west-2/111122223333/5"]);
+  });
+
+  it("fails home's drafts, not the process, when home's region cannot be found", async () => {
+    const api = fakeApi([], {
+      region: async () => {
+        throw new Error("no region");
+      },
+    });
+    const config = { repos: ["a"], profile: "cfg" };
+    const r = await cli(["branch"], { interactive: true, config, api });
+    // Unused, the failure must not be an unhandled rejection.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(r.tops[0]?.home?.drafts?.load("111122223333/5")).rejects.toThrow("no region");
+  });
+
   it("shares the clone's account with home when the config names the same", async () => {
     const config = { repos: ["a"], region: "ap-northeast-1" };
     const r = await cli(["branch"], { interactive: true, config, env: {} });
@@ -1404,6 +1460,22 @@ describe("home", () => {
     const r = await cli(["--json"], { api: fakeApi([]) });
     expect(r.code).toBe(0);
     expect(json(r.out)).toMatchObject({ awaiting: [], mine: [] });
+  });
+
+  it("prints the status JSON for bare lazycc --json on a terminal too, opening no TUI", async () => {
+    const r = await cli(["--json"], { api: fakeApi([]), interactive: true });
+    expect(r.code).toBe(0);
+    expect(r.tops).toEqual([]);
+    expect(json(r.out)).toMatchObject({ awaiting: [], mine: [] });
+  });
+
+  it("prints the same whole usage for a bare lazycc's --help with or without a terminal", async () => {
+    for (const interactive of [true, false]) {
+      expect(await cli(["-R", "x", "--help"], { interactive })).toMatchObject({
+        code: 0,
+        out: USAGE,
+      });
+    }
   });
 
   it("hands pr.mergeOption to every review screen as the preselected strategy", async () => {

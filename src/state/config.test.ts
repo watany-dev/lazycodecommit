@@ -23,6 +23,10 @@ describe("configPath", () => {
   });
   it("falls back to ~/.config", () => {
     expect(configPath({ HOME: "/home/u" })).toBe("/home/u/.config/lazycc/config.json");
+    // The XDG spec: a relative path is invalid and must be ignored.
+    expect(configPath({ XDG_CONFIG_HOME: "rel", HOME: "/home/u" })).toBe(
+      "/home/u/.config/lazycc/config.json",
+    );
   });
   it("uses the OS home when HOME is unset", () => {
     expect(configPath({})).toMatch(/\.config\/lazycc\/config\.json$/);

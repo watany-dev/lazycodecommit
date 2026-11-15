@@ -4,10 +4,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const answers: string[] = [];
-vi.mock("node:readline/promises", () => ({
-  createInterface: () => ({ question: async () => answers.shift() ?? "", close: () => {} }),
-}));
+// null is Ctrl-D: readline closes and the question never settles, as in Node.
+const answers: (string | null)[] = [];
+vi.mock("node:readline/promises", async () => {
+  const { EventEmitter: Emitter } = await import("node:events");
+  return {
+    createInterface: () => {
+      const rl = Object.assign(new Emitter(), {
+        question: (): Promise<string> => {
+          const answer = answers.shift();
+          if (answer !== null) return Promise.resolve(answer ?? "");
+          setImmediate(() => rl.emit("close"));
+          return new Promise(() => {});
+        },
+        close: () => {},
+      });
+      return rl;
+    },
+  };
+});
 
 const { exitOnClosedPipe, processIo } = await import("./io.js");
 
@@ -67,6 +82,11 @@ describe("processIo", () => {
   ])("confirm reads %j as %s", async (answer, want) => {
     answers.push(answer);
     expect(await processIo().confirm("Push?")).toBe(want);
+  });
+
+  it("takes Ctrl-D at the prompt as no, instead of waiting forever", async () => {
+    answers.push(null);
+    expect(await processIo().confirm("Push?")).toBe(false);
   });
 
   it("writes lines to stdout and stderr", () => {

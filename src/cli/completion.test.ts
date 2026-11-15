@@ -5,6 +5,8 @@ import { completionScript } from "./completion.js";
 const commands = {
   "pr list": { state: { type: "string", short: "s" }, json: { type: "boolean" } },
   "pr comment": { "body-file": { type: "string", short: "F" } },
+  // Bare lazycc takes status's flags.
+  status: { repo: { type: "string", short: "R" }, json: { type: "boolean" } },
   clone: { protocol: { type: "string" } },
   completion: {},
 } as const;
@@ -22,9 +24,16 @@ _lazycc; printf '%s\\n' "\${COMPREPLY[@]}"`;
 
 describe("bash completion", () => {
   it("offers nouns, then pr verbs", () => {
-    expect(bash("lazycc ")).toEqual(["pr", "clone", "completion", "--help", "--version"]);
+    expect(bash("lazycc ")).toEqual(["pr", "status", "clone", "completion", "--help", "--version"]);
     expect(bash("lazycc c")).toEqual(["clone", "completion"]);
     expect(bash("lazycc pr ")).toEqual(["list", "comment"]);
+  });
+
+  it("offers bare lazycc's flags, which are status's", () => {
+    expect(bash("lazycc --")).toEqual(["--help", "--version", "--repo", "--json"]);
+    expect(bash("lazycc -")).toEqual(["--help", "-h", "--version", "-v", "--repo", "-R", "--json"]);
+    expect(bash("lazycc --json --r")).toEqual(["--repo"]);
+    expect(bash("lazycc -R ")).toEqual([]);
   });
 
   it("offers a command's flags, long and short", () => {
@@ -52,8 +61,10 @@ describe("other shells", () => {
   it("describes every command, flag and value to fish", () => {
     const fish = completionScript("fish", commands);
     expect(fish).toContain(
-      "complete -c lazycc -n '__fish_use_subcommand' -a 'pr clone completion'",
+      "complete -c lazycc -n '__fish_use_subcommand' -a 'pr status clone completion'",
     );
+    for (const flag of ["-l help -s h", "-l version -s v", "-l repo -s R -x", "-l json"])
+      expect(fish).toContain(`complete -c lazycc -n '__fish_use_subcommand' ${flag}\n`);
     expect(fish).toContain(
       "complete -c lazycc -n '__fish_seen_subcommand_from pr; and not __fish_seen_subcommand_from list comment' -a 'list comment'",
     );

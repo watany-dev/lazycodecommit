@@ -49,6 +49,24 @@ describe("withLock", () => {
     expect(work).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ["an hour ago", -3_600_000],
+    // A clock set back after a crash, or a lock from a machine whose clock runs ahead.
+    ["an hour from now", 3_600_000],
+  ])(
+    "takes over a lock left %s",
+    async (_, offset) => {
+      const path = join(dir, "x.json");
+      await fs.writeFile(`${path}.lock`, "");
+      const when = new Date(Date.now() + offset);
+      await fs.utimes(`${path}.lock`, when, when);
+      const work = vi.fn(async () => {});
+      await withLock(path, work);
+      expect(work).toHaveBeenCalledOnce();
+    },
+    2_000,
+  );
+
   it("passes on an error other than a held lock", async () => {
     await expect(withLock(join(dir, "x".repeat(300)), async () => {})).rejects.toThrow(
       /ENAMETOOLONG/,

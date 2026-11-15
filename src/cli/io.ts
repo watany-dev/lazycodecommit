@@ -18,8 +18,13 @@ export function processIo(): Io {
 
     async confirm(question) {
       const rl = createInterface({ input: process.stdin, output: process.stderr });
+      // Ctrl-D closes the input and the question never settles; the process
+      // would end on an unsettled await (exit 13). No answer is a no.
+      const closed = new Promise<null>((resolve) => rl.once("close", () => resolve(null)));
       try {
-        const answer = (await rl.question(`${question} [Y/n] `)).trim().toLowerCase();
+        const reply = await Promise.race([rl.question(`${question} [Y/n] `), closed]);
+        if (reply === null) return false;
+        const answer = reply.trim().toLowerCase();
         return answer === "" || answer === "y" || answer === "yes";
       } finally {
         rl.close();
