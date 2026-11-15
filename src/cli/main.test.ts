@@ -18,6 +18,7 @@ interface Setup {
   state?: FakeState;
   edit?: (text: string) => Promise<string>;
   files?: Record<string, string>;
+  stdin?: string;
 }
 
 async function cli(args: string[], setup: Setup = {}) {
@@ -40,6 +41,7 @@ async function cli(args: string[], setup: Setup = {}) {
       },
       edit: setup.edit ?? (async (t) => t),
       readFile: async (path) => setup.files?.[path] ?? null,
+      readStdin: async () => setup.stdin ?? "",
     },
     createGit: () => fakeGit(setup.git),
     createApi: async (o) => {
@@ -478,6 +480,13 @@ describe("pr comment", () => {
     });
     expect(a.writes).toEqual(["comment 6 Looks good."]);
     expect(json(r.out)).toMatchObject({ commentId: "c1", pullRequest: { id: "6" } });
+  });
+
+  it("reads -F - from stdin, like gh", async () => {
+    const a = commentApi();
+    const r = await cli(["pr", "comment", "6", "-F", "-"], { api: a, stdin: "Piped.\n" });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual(["comment 6 Piped."]);
   });
 
   it("opens the editor on a terminal, and gives up on an empty comment", async () => {
