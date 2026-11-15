@@ -1,7 +1,7 @@
-import { render } from "ink-testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type BrowseActions, type BrowseNode, NotFoundError } from "../core/browse.js";
 import { UserError } from "../core/errors.js";
+import { press, render, settle } from "../testing/keys.js";
 
 const exit = vi.fn();
 vi.mock("ink", async (importOriginal) => ({
@@ -71,32 +71,10 @@ function actions(over: Partial<BrowseActions> = {}): BrowseActions {
   };
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 30));
-
-// The rendered app's frame, for press to wait on.
-let currentFrame: () => string | undefined = () => undefined;
-
 async function setup(a = actions(), path = "", ready = "README.md") {
   const r = render(<BrowseApp actions={a} path={path} />);
-  currentFrame = r.lastFrame;
   await vi.waitFor(() => expect(r.lastFrame()).toContain(ready));
   return { ...r, a };
-}
-
-/**
- * Sends each key once the last one has redrawn the screen (or a key that
- * changes nothing has had its moment): a key sent before the app re-renders
- * reaches the previous render's handler, which a slow runner makes likely.
- */
-async function press(stdin: { write: (s: string) => void }, ...keys: string[]) {
-  for (const k of keys) {
-    const before = currentFrame();
-    stdin.write(k);
-    await vi
-      .waitFor(() => expect(currentFrame()).not.toBe(before), { timeout: 300 })
-      .catch(() => {});
-    await tick();
-  }
 }
 
 beforeEach(() => {
@@ -157,7 +135,7 @@ describe("BrowseApp folders", () => {
     await press(stdin, "/", "z", "z", "\r");
     expect(lastFrame()).toContain("Nothing matches.");
     await press(stdin, "/", "\u001B");
-    await tick();
+    await settle();
     expect(lastFrame()).toContain("docs/");
   });
 
@@ -236,7 +214,7 @@ describe("BrowseApp files", () => {
   it("opened straight on a file, goes back to its folder", async () => {
     const { stdin, lastFrame } = await setup(actions(), "README.md", "# demo");
     await press(stdin, "\u001B");
-    await tick();
+    await settle();
     expect(lastFrame()).toMatch(/> README.md/);
   });
 
@@ -293,7 +271,7 @@ describe("BrowseApp refs", () => {
   it("cancels with Esc, and reports a failed branch list", async () => {
     const { stdin, lastFrame } = await setup();
     await press(stdin, "b", "\u001B");
-    await tick();
+    await settle();
     expect(lastFrame()).not.toContain("ref:");
     const a = actions({
       branches: vi.fn(async () => {
@@ -353,7 +331,7 @@ describe("BrowseApp review fixes", () => {
     await press(stdin, "\u0012", "q");
     expect(exit).not.toHaveBeenCalled();
     release();
-    await tick();
+    await settle();
     expect(lastFrame()).toContain("# demo");
   });
 });

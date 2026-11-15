@@ -1,14 +1,6 @@
-import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
+import { press, render } from "../../testing/keys.js";
 import { RepoPicker } from "./RepoPicker.js";
-
-const tick = () => new Promise((r) => setTimeout(r, 30));
-async function press(stdin: { write: (s: string) => void }, ...keys: string[]) {
-  for (const k of keys) {
-    stdin.write(k);
-    await tick();
-  }
-}
 
 function setup(over: Partial<Parameters<typeof RepoPicker>[0]["actions"]> = {}) {
   let watched: readonly string[] = ["infra"];

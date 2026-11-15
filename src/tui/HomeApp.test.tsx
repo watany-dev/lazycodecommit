@@ -1,9 +1,9 @@
-import { render } from "ink-testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomeActions } from "../core/home.js";
 import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { ReviewService } from "../core/review.js";
 import { pullRequest } from "../testing/fakes.js";
+import { press, render, settle } from "../testing/keys.js";
 
 const exit = vi.fn();
 vi.mock("ink", async (importOriginal) => ({
@@ -80,14 +80,6 @@ const service = {
   getReactionsForComments: vi.fn(async () => new Map()),
   listPullRequests: vi.fn(async () => ({ pullRequests: [] })),
 } as unknown as ReviewService;
-
-const tick = () => new Promise((r) => setTimeout(r, 30));
-async function press(stdin: { write: (s: string) => void }, ...keys: string[]) {
-  for (const k of keys) {
-    stdin.write(k);
-    await tick();
-  }
-}
 
 async function setup(a = actions()) {
   const reviewService = vi.fn(() => service);
@@ -362,7 +354,7 @@ describe("HomeApp", () => {
     await press(r.stdin, "j", "j", "\r");
     await vi.waitFor(() => expect(r.lastFrame()).toContain("Sandbox PR"));
     finishOld(inbox(FRESH));
-    await tick();
+    await settle();
     expect(r.lastFrame()).toContain("Sandbox PR");
     expect(r.lastFrame()).not.toContain("Add retry");
   });

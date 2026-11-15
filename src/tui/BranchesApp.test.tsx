@@ -1,7 +1,7 @@
-import { render } from "ink-testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BranchActions, BranchRow, BranchTable } from "../core/branch.js";
 import type { ReviewService } from "../core/review.js";
+import { press, render } from "../testing/keys.js";
 
 const exit = vi.fn();
 vi.mock("ink", async (importOriginal) => ({
@@ -49,33 +49,11 @@ const service = {
   getReactionsForComments: vi.fn(async () => new Map()),
 } as unknown as ReviewService;
 
-const tick = () => new Promise((r) => setTimeout(r, 30));
-
 async function setup(a = actions(), start: Parameters<typeof BranchesApp>[0]["start"] = null) {
   const onCreate = vi.fn();
   const r = render(<BranchesApp actions={a} service={service} start={start} onCreate={onCreate} />);
-  currentFrame = r.lastFrame;
   await vi.waitFor(() => expect(r.lastFrame()).toContain("wip"));
   return { ...r, onCreate, a };
-}
-
-// The rendered app's frame, for press to wait on.
-let currentFrame: () => string | undefined = () => undefined;
-
-/**
- * Sends each key once the last one has redrawn the screen (or a key that
- * changes nothing has had its moment): a key sent before the app re-renders
- * reaches the previous render's handler, which a slow runner makes likely.
- */
-async function press(stdin: { write: (s: string) => void }, ...keys: string[]) {
-  for (const k of keys) {
-    const before = currentFrame();
-    stdin.write(k);
-    await vi
-      .waitFor(() => expect(currentFrame()).not.toBe(before), { timeout: 300 })
-      .catch(() => {});
-    await tick();
-  }
 }
 
 beforeEach(() => {
