@@ -387,6 +387,18 @@ describe("cache", () => {
     });
   });
 
+  it("is found again for a config that names a repository twice", async () => {
+    const fetched = await fetchInbox(["a", "a"], {
+      api: fakeApi([pullRequest({ repository: "a", authorArn: ALICE })]),
+      me: ME,
+      region: "r",
+      seen: new Map(),
+      concurrency: 1,
+    });
+    const back = fromCache(JSON.parse(JSON.stringify(toCache(fetched, "r"))), ME, "r", ["a", "a"]);
+    expect(back?.items.map((i) => i.pr.id)).toEqual(["1"]);
+  });
+
   it.each([
     ["another region", ME, "eu-west-1", ["a", "b"]],
     ["another account", ALICE, "us-east-1", ["a", "b"]],

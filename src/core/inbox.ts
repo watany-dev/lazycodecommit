@@ -195,7 +195,9 @@ function asError(e: unknown): Error {
  * reported in `errors`; if every one fails, the first error is thrown, since
  * that is almost always credentials or the region.
  */
-export async function fetchInbox(repositories: readonly string[], deps: InboxDeps): Promise<Inbox> {
+export async function fetchInbox(watched: readonly string[], deps: InboxDeps): Promise<Inbox> {
+  // A repository named twice in the config is still read once.
+  const repositories = [...new Set(watched)];
   const errors: RepoError[] = [];
   const failed = new Set<string>();
   const fail = (repository: string, e: unknown) => {
@@ -288,7 +290,7 @@ export function loadAllDetails(
 
 /** The inbox is only reused for the same account, region and repositories. */
 function cacheKey(me: string, region: string, repositories: readonly string[]): string {
-  return JSON.stringify([me, region, repositories.toSorted()]);
+  return JSON.stringify([me, region, [...new Set(repositories)].toSorted()]);
 }
 
 export function toCache(inbox: Inbox, region: string): unknown {
