@@ -313,7 +313,9 @@ See [docs/dev/ci.md](docs/dev/ci.md) for the pipeline and release process,
 and [docs/dev/spec.ja.md](docs/dev/spec.ja.md) for the specification
 (Japanese). [docs/dev/real-aws-check.md](docs/dev/real-aws-check.md) runs
 everything against a throwaway CodeCommit repository on real AWS and writes
-one report.
+one report. [docs/dev/emulator.md](docs/dev/emulator.md) points lazycc and
+realcheck at AWS Emulator, for trying it without an AWS account (not a
+substitute for the real-AWS check).
 
 ## License
 
