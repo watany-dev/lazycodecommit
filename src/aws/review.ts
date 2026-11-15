@@ -27,6 +27,7 @@ import {
   UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
 import { clientConfig, MERGE_COMMANDS, type MergeStrategy } from "./codecommit.js";
+import { markNotSent } from "./errors.js";
 import { mapLimit } from "./mapLimit.js";
 
 const textDecoder = new TextDecoder();
@@ -238,6 +239,26 @@ export async function getComments(
   return commentThreads;
 }
 
+/**
+ * Where a post is seen reaching the HTTP handler. An error raised before it
+ * (no region, no credentials, a bad endpoint) is marked as not sent, so a
+ * draft is not locked as possibly posted (core/commentDrafts.ts).
+ */
+const REACHED_HANDLER = {
+  step: "deserialize",
+  priority: "low",
+  name: "lazyccReachedHandler",
+} as const;
+
+async function markIfNotSent<T>(reached: () => boolean, sending: Promise<T>): Promise<T> {
+  try {
+    return await sending;
+  } catch (error) {
+    if (!reached()) markNotSent(error);
+    throw error;
+  }
+}
+
 export async function postComment(
   client: CodeCommitClient,
   params: {
@@ -270,7 +291,15 @@ export async function postComment(
       : undefined,
     clientRequestToken: params.clientRequestToken,
   });
-  const response = await client.send(command);
+  let reached = false;
+  command.middlewareStack.add(
+    (next) => (args) => {
+      reached = true;
+      return next(args);
+    },
+    REACHED_HANDLER,
+  );
+  const response = await markIfNotSent(() => reached, client.send(command));
   if (!response.comment) throw new Error("Empty comment response from CodeCommit API.");
   return response.comment;
 }
@@ -288,7 +317,15 @@ export async function postCommentReply(
     content: params.content,
     clientRequestToken: params.clientRequestToken,
   });
-  const response = await client.send(command);
+  let reached = false;
+  command.middlewareStack.add(
+    (next) => (args) => {
+      reached = true;
+      return next(args);
+    },
+    REACHED_HANDLER,
+  );
+  const response = await markIfNotSent(() => reached, client.send(command));
   if (!response.comment) throw new Error("Empty reply response from CodeCommit API.");
   return response.comment;
 }

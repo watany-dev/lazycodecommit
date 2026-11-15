@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { withLock } from "./lock.js";
 
 export interface Config {
   readonly profile?: string;
@@ -111,11 +112,14 @@ export async function saveRepos(
   repos: readonly string[],
 ): Promise<void> {
   const path = configPath(env);
-  const current = { ...(await loadConfig(env)) } as Record<string, unknown>;
-  if (repos.length > 0) current["repos"] = repos;
-  else delete current["repos"];
   await mkdir(dirname(path), { recursive: true });
-  // In place, not write-and-rename: that would replace a symlinked config
-  // (dotfiles) with a plain file and drop its mode.
-  await writeFile(path, `${JSON.stringify(current, null, 2)}\n`);
+  // Read under the lock, so a save from another lazycc in between is not undone.
+  await withLock(path, async () => {
+    const current = { ...(await loadConfig(env)) } as Record<string, unknown>;
+    if (repos.length > 0) current["repos"] = repos;
+    else delete current["repos"];
+    // In place, not write-and-rename: that would replace a symlinked config
+    // (dotfiles) with a plain file and drop its mode.
+    await writeFile(path, `${JSON.stringify(current, null, 2)}\n`);
+  });
 }

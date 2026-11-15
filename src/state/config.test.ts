@@ -110,6 +110,15 @@ describe("saveRepos", () => {
     expect(await readFile(join(dir, "lazycc", "config.json"), "utf8")).toBe("{oops");
   });
 
+  it("saves from two lazycc at once one after the other, and leaves no lock", async () => {
+    const { readdir } = await import("node:fs/promises");
+    await write('{"region":"us-east-1"}');
+    await Promise.all([saveRepos(env(), ["a"]), saveRepos(env(), ["b"])]);
+    expect([["a"], ["b"]]).toContainEqual((await read())["repos"]);
+    expect(await read()).toMatchObject({ region: "us-east-1" });
+    expect(await readdir(join(dir, "lazycc"))).toEqual(["config.json"]);
+  });
+
   it("writes through a symlinked config", async () => {
     const { symlink, lstat } = await import("node:fs/promises");
     await writeFile(join(dir, "real.json"), "{}");

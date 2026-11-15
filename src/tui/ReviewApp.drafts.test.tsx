@@ -37,6 +37,7 @@ function setup(stored: CommentDraft[] = [], threads: unknown[] = []) {
     load: vi.fn(async () => stored),
     save: vi.fn(async (_id, list) => {
       saved.push(list);
+      return [...list];
     }),
   };
   const service = {

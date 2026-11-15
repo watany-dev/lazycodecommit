@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { withLock } from "./lock.js";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -60,7 +61,11 @@ interface CacheStore {
  */
 interface DraftStore {
   get(key: string): Promise<unknown>;
-  set(key: string, drafts: readonly unknown[]): Promise<void>;
+  /**
+   * Replaces the key's list with what `change` makes of the list on disk,
+   * read and written under the lock, and returns what was written.
+   */
+  update(key: string, change: (current: unknown) => readonly unknown[]): Promise<unknown[]>;
 }
 
 export interface LocalState {
@@ -118,16 +123,18 @@ export function markSeen(
 export function createLocalState(env: Env): LocalState {
   const dir = stateDir(env);
   const path = (name: string) => join(dir, name);
-  // Each save re-reads the file, so another lazycc (or another screen's
-  // section) written in between is kept; the last writer wins per key.
+  // Each save re-reads the file under a lock, so what another lazycc (or
+  // another screen's section) wrote is kept; the last writer wins per key.
   // Saves from this process run one at a time so none reads a stale file.
   let queue: Promise<unknown> = Promise.resolve();
   const update = (name: string, change: (o: Obj) => void): Promise<void> => {
-    const run = queue.then(async () => {
-      const o = await readObject(path(name));
-      change(o);
-      await writeObject(path(name), o);
-    });
+    const run = queue.then(() =>
+      withLock(path(name), async () => {
+        const o = await readObject(path(name));
+        change(o);
+        await writeObject(path(name), o);
+      }),
+    );
     queue = run.catch(() => {});
     return run;
   };
@@ -170,11 +177,15 @@ export function createLocalState(env: Env): LocalState {
         await queue;
         return (await readObject(path("drafts.json")))[key];
       },
-      set: (key, drafts) =>
-        update("drafts.json", (o) => {
-          if (drafts.length === 0) delete o[key];
-          else o[key] = drafts;
-        }),
+      async update(key, change) {
+        let next: readonly unknown[] = [];
+        await update("drafts.json", (o) => {
+          next = change(o[key]);
+          if (next.length === 0) delete o[key];
+          else o[key] = next;
+        });
+        return [...next];
+      },
     },
     cache: {
       get: async (section) => (await readObject(path("cache.json")))[section],
