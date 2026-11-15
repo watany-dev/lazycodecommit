@@ -40,6 +40,20 @@ describe("identity", () => {
     expect(await s.identity.get("cred:x")).toBeUndefined();
   });
 
+  // Temporary credentials (SSO, roles, CloudShell) get a new access key ID each
+  // time they are refreshed, so every refresh brings a new key.
+  it("keeps the most recently set ARNs only, not one per credentials ever used", async () => {
+    const s = state();
+    for (let i = 0; i < 100; i++) await s.identity.set(`cred:${i}`, `arn:aws:iam::1:role/r${i}`);
+    await s.identity.set("cred:50", "arn:aws:iam::1:role/r50");
+    const kept = Object.keys(JSON.parse(await readFile(join(dir, "identity.json"), "utf8")));
+    expect(kept.length).toBeLessThanOrEqual(16);
+    expect(kept.at(-1)).toBe("cred:50");
+    expect(await s.identity.get("cred:99")).toBe("arn:aws:iam::1:role/r99");
+    expect(await s.identity.get("cred:50")).toBe("arn:aws:iam::1:role/r50");
+    expect(await s.identity.get("cred:0")).toBeUndefined();
+  });
+
   it("drops entries older versions keyed by profile or by a raw access key ID", async () => {
     const s = state();
     await put(
