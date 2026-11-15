@@ -8142,5 +8142,43 @@ describe("PullRequestDetail", () => {
       await press(screen, "R");
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("Replying to taro: first: line"));
     });
+
+    it("lands on the fold line after folding from a reply under a multi-line comment", async () => {
+      const user = "arn:aws:iam::1:user/u";
+      const screen = renderDetail({
+        commentThreads: [
+          {
+            location: null,
+            comments: [
+              { commentId: "root", authorArn: user, content: "root one\nroot two" },
+              { commentId: "r1", authorArn: user, content: "r1", inReplyTo: "root" },
+              { commentId: "r2", authorArn: user, content: "r2", inReplyTo: "root" },
+              { commentId: "r3", authorArn: user, content: "r3", inReplyTo: "root" },
+            ],
+          },
+        ],
+      });
+      // Rows: separator, "Comments (4):", the root's two lines, then the fold line.
+      await press(screen, "j", "j", "j", "j", "o");
+      expect(screen.lastFrame()).toContain("u: r3");
+      await press(screen, "j");
+      expect(screen.lastFrame()).toMatch(/> +└ u: r2/);
+      await press(screen, "o");
+      expect(screen.lastFrame()).toMatch(/> +\[\+3 replies\]/);
+    });
+
+    it("fits the screen in a short terminal with the file list open", async () => {
+      const differences = Array.from({ length: 30 }, (_, i) => ({
+        afterBlob: { blobId: `x${i}`, path: `file${i}.txt` },
+      }));
+      const screen = renderDetail({
+        differences,
+        diffTexts: new Map(differences.map((_, i) => [`:x${i}`, { before: "", after: "x\n" }])),
+      });
+      Object.defineProperty(screen.stdout, "rows", { value: 30, configurable: true });
+      await press(screen, "j", "f");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("Files (30):"));
+      expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(30);
+    });
   });
 });

@@ -509,8 +509,11 @@ export function PullRequestDetail({
       const defaultCollapsed = thread.comments.length >= FOLD_THRESHOLD;
       const collapsing = defaultCollapsed && !(collapsedThreads.get(threadKey) ?? true);
       // Folding from a reply removes the cursor's row: stay on the thread's fold line.
+      // The fold line follows the root comment's rows, one per line of it.
       const root = rootRowOf(lines, cursorIndex);
-      if (collapsing && cursorIndex > root) setCursorIndex(root + 1);
+      let foldRow = root + 1;
+      while (lines[foldRow]?.commentId === lines[root]!.commentId) foldRow++;
+      if (collapsing && cursorIndex >= foldRow) setCursorIndex(foldRow);
       setCollapsedThreads((prev) => {
         const next = new Map(prev);
         next.set(threadKey, !(prev.get(threadKey) ?? defaultCollapsed));
