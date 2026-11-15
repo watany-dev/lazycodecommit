@@ -495,3 +495,11 @@ describe("formatErrorMessage (property-based)", () => {
     );
   });
 });
+
+describe("formatErrorMessage control characters", () => {
+  it("makes control characters in an unrecognized message visible", () => {
+    expect(formatErrorMessage(unknownError("bad \x1b]52;c;aGk=\x07 \u009b2J"))).toBe(
+      "bad ^[]52;c;aGk=^G ^[[2J",
+    );
+  });
+});

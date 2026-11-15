@@ -318,3 +318,13 @@ describe("BrowseApp review fixes", () => {
     expect(lastFrame()).toContain("# demo");
   });
 });
+
+describe("BrowseApp with hostile text", () => {
+  it("shows error messages with control characters made visible", async () => {
+    const refusal = Object.assign(new Error("no path a\x1b]52;c;aGk=\x07"), { name: "UserError" });
+    const a = actions({ open: vi.fn(async () => Promise.reject(refusal)) });
+    const { lastFrame } = await setup(a, "", "Error:");
+    expect(lastFrame()).toContain("no path a^[]52;c;aGk=^G");
+    expect(lastFrame()).not.toContain("\x1b]52");
+  });
+});

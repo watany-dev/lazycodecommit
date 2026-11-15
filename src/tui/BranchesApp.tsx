@@ -9,6 +9,7 @@ import {
   STATE_LABEL,
 } from "../core/branch.js";
 import type { ReviewService } from "../core/review.js";
+import { printable } from "../core/text.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
 import { formatErrorMessage } from "./utils/formatError.js";
@@ -204,7 +205,7 @@ export function BranchesApp({ actions, service, start, onCreate }: Props) {
       {loading && !table ? (
         <Text color="cyan">Loading...</Text>
       ) : loadError ? (
-        <Text color="red">Error: {loadError}</Text>
+        <Text color="red">Error: {printable(loadError)}</Text>
       ) : rows.length === 0 ? (
         <Text dimColor>{filter ? "No branch matches." : "No branches."}</Text>
       ) : (
@@ -214,11 +215,13 @@ export function BranchesApp({ actions, service, start, onCreate }: Props) {
       )}
       <Box marginTop={1}>
         {confirmDelete ? (
-          <Text color="yellow">Delete origin/{confirmDelete.name} on CodeCommit? (y/n)</Text>
+          <Text color="yellow">
+            Delete origin/{printable(confirmDelete.name)} on CodeCommit? (y/n)
+          </Text>
         ) : busy || (loading && table) ? (
           <Text color="cyan">Working...</Text>
         ) : note ? (
-          <Text {...(note.error ? { color: "red" } : {})}>{note.text}</Text>
+          <Text {...(note.error ? { color: "red" } : {})}>{printable(note.text)}</Text>
         ) : (
           <Text dimColor>
             Enter review n new PR d delete{actions.switchBranch ? " Space switch" : ""} / filter
@@ -239,7 +242,7 @@ function BranchLine({
   selected: boolean;
   nameWidth: number;
 }) {
-  const name = `${row.isDefault ? "* " : "  "}${row.name}`;
+  const name = `${row.isDefault ? "* " : "  "}${printable(row.name)}`;
   return (
     <Box>
       <Text color="cyan">{selected ? "> " : "  "}</Text>
@@ -259,12 +262,12 @@ function BranchLine({
       <Box width={18} flexShrink={0}>
         <Text dimColor wrap="truncate">
           {row.lastCommit
-            ? `${formatRelativeDate(row.lastCommit.date)} ${row.lastCommit.author}`
+            ? `${formatRelativeDate(row.lastCommit.date)} ${printable(row.lastCommit.author)}`
             : ""}
         </Text>
       </Box>
       <Text wrap="truncate">
-        {row.pr ? `#${row.pr.id} ${row.pr.title}` : ""}
+        {row.pr ? `#${row.pr.id} ${printable(row.pr.title)}` : ""}
         {row.rules ? (
           <Text color={row.rules.approved ? "green" : "yellow"}> {rulesSummary(row.rules)}</Text>
         ) : null}

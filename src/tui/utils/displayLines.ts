@@ -1,6 +1,7 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
 import { blobKey } from "../../core/blobTexts.js";
 import type { CommentThread, ReactionSummary, ReactionsByComment } from "../../core/review.js";
+import { printable } from "../../core/text.js";
 import { extractAuthorName } from "./formatDate.js";
 import { computeSimpleDiff, type DisplayLine } from "./formatDiff.js";
 
@@ -210,7 +211,7 @@ export function buildDisplayLines(
 
   for (const diff of differences) {
     const filePath = diff.afterBlob?.path ?? diff.beforeBlob?.path ?? "(unknown file)";
-    lines.push({ type: "header", text: filePath });
+    lines.push({ type: "header", text: printable(filePath) });
     lines.push({ type: "separator", text: SEPARATOR_TEXT });
 
     const key = blobKey(diff);

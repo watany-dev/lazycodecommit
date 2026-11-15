@@ -8,6 +8,7 @@ import type {
   MergeStrategy,
   ReactionsByComment,
 } from "../../core/review.js";
+import { printable } from "../../core/text.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { useAsyncDismiss } from "../hooks/useAsyncDismiss.js";
 import {
@@ -178,8 +179,8 @@ export function PullRequestDetail({
   const author = extractAuthorName(pullRequest.authorArn ?? "unknown");
   const status = pullRequest.pullRequestStatus ?? "OPEN";
   const creationDate = pullRequest.creationDate ? formatRelativeDate(pullRequest.creationDate) : "";
-  const destRef = target?.destinationReference?.replace("refs/heads/", "") ?? "";
-  const sourceRef = target?.sourceReference?.replace("refs/heads/", "") ?? "";
+  const destRef = printable(target?.destinationReference?.replace("refs/heads/", "") ?? "");
+  const sourceRef = printable(target?.sourceReference?.replace("refs/heads/", "") ?? "");
 
   const approvedUsers = useMemo(
     () => approval.approvals.filter((a) => a.approvalState === "APPROVE"),
@@ -642,7 +643,8 @@ export function PullRequestDetail({
       {inlineCommentLocation && (
         <Box flexDirection="column">
           <Text dimColor>
-            Inline comment on {inlineCommentLocation.filePath}:{inlineCommentLocation.filePosition}
+            Inline comment on {printable(inlineCommentLocation.filePath)}:
+            {inlineCommentLocation.filePosition}
           </Text>
           <CommentInput
             onSubmit={(content) => inlineComment.execute(content, inlineCommentLocation)}
