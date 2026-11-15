@@ -1188,6 +1188,29 @@ describe("home", () => {
     expect(await initial(["-R", "x"])).toEqual(["x"]);
   });
 
+  it.each([["branch"], ["browse"]])(
+    "reads the config's repos in the config's region from lazycc %s in a clone",
+    async (command) => {
+      const config = { repos: ["a"], region: "us-west-2", profile: "cfg" };
+      const r = await cli([command], { interactive: true, config });
+      const top = r.tops[0];
+      // The branch table and browse stay on the clone's region...
+      expect(top).toMatchObject({ region: "ap-northeast-1", cloneRepository: "demo" });
+      // ...while home, as from bare lazycc, uses the config's.
+      const home = await top?.views.home();
+      expect(home).toMatchObject({ region: "us-west-2", initial: ["a"] });
+      expect(r.apiOptions).toContainEqual({ region: "us-west-2", profile: "cfg" });
+      expect(top?.home).toMatchObject({ region: "us-west-2", profile: "cfg" });
+    },
+  );
+
+  it("shares the clone's account with home when the config names the same", async () => {
+    const config = { repos: ["a"], region: "ap-northeast-1" };
+    const r = await cli(["branch"], { interactive: true, config, env: {} });
+    expect(r.tops[0]).not.toHaveProperty("home");
+    expect((await r.tops[0]?.views.home())?.region).toBe("ap-northeast-1");
+  });
+
   it("rejects an unknown flag, and home as a command", async () => {
     expect((await cli(["--nope"], { interactive: true })).code).toBe(2);
     expect((await cli(["--nope"])).code).toBe(2);

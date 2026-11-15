@@ -7,6 +7,7 @@ import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { cloneRepository } from "../core/clone.js";
 import {
   type AccountContext,
+  type ContextInput,
   type RepoContext,
   resolveAccountContext,
   resolveContext,
@@ -359,6 +360,7 @@ async function runCommand(
         git,
         ...optional("ref", str(values, "ref")),
         ...optional("path", str(values, "path")),
+        ...optional("homeCtx", await homeContext(input)),
       },
       deps,
     );
@@ -410,7 +412,15 @@ async function runCommand(
       const branchDeps = { api, git, ctx, config };
       if (tui) {
         return runTop(
-          { start: "branches", flagRepo: str(values, "repo"), ctx, config, git, api },
+          {
+            start: "branches",
+            flagRepo: str(values, "repo"),
+            ctx,
+            config,
+            git,
+            api,
+            ...optional("homeCtx", await homeContext(input)),
+          },
           deps,
         );
       }
@@ -620,6 +630,17 @@ interface TopStart {
   /** browse: --ref and --path, for the repository it starts on. */
   readonly ref?: string;
   readonly path?: string;
+  /** Where home reads the config's repos, when that is not `ctx` (spec: ホーム). */
+  readonly homeCtx?: AccountContext;
+}
+
+/**
+ * The account bare lazycc reads the config's repos in: the config's region and
+ * profile, not the clone's. Undefined when home has nothing from the config.
+ */
+async function homeContext(input: ContextInput): Promise<AccountContext | undefined> {
+  if (input.repo || !input.config.repos?.length) return undefined;
+  return resolveAccountContext({ ...input, outsideClone: true });
 }
 
 /**
@@ -639,6 +660,23 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     }));
   const region = ctx.region ?? (await api.region());
   const state = deps.createState(io.env);
+  // Home reads the config's repos in the config's account, which a clone of
+  // another region or profile does not share.
+  const homeCtx =
+    top.homeCtx && (top.homeCtx.region !== ctx.region || top.homeCtx.profile !== ctx.profile)
+      ? top.homeCtx
+      : undefined;
+  const homeAccount = homeCtx
+    ? (async () => {
+        const homeApi = await deps.createApi({
+          ...optional("region", homeCtx.region),
+          ...optional("profile", homeCtx.profile),
+        });
+        return { api: homeApi, region: homeCtx.region ?? (await homeApi.region()) };
+      })()
+    : Promise.resolve({ api, region });
+  // A failure shows when home opens, not before the branch table or browse.
+  homeAccount.catch(() => {});
   // Only home and the picker need "me" (one STS call, cached per profile).
   let home: Promise<HomeActions> | undefined;
   const repoContext = (repository: string): RepoContext => ({
@@ -649,18 +687,20 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
   });
   const views: TopViews = {
     home: () =>
-      (home ??= resolveMe(api, state.identity, ctx.profile, io.env).then((me) =>
-        homeActions({
-          api,
+      (home ??= homeAccount.then(async (account) => {
+        const profile = homeCtx ? homeCtx.profile : ctx.profile;
+        const me = await resolveMe(account.api, state.identity, profile, io.env);
+        return homeActions({
+          api: account.api,
           state,
           config,
           env: io.env,
-          region,
+          region: account.region,
           me,
           // Nothing to watch: the home opens on the repository picker.
           initial: watchedRepositories(top.flagRepo, config, cloneRepo),
-        }),
-      )),
+        });
+      })),
     branches(repository) {
       const repoCtx = repoContext(repository);
       return {
@@ -709,6 +749,19 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     ...optional("mergeStrategy", preferredStrategy(config)),
     ...optional("profile", ctx.profile),
     ...(cloneRepo ? { git, cloneRepository: cloneRepo } : {}),
+    ...(homeCtx
+      ? {
+          home: {
+            ...optional("region", homeCtx.region),
+            ...optional("profile", homeCtx.profile),
+            markSeen: (id: string) => {
+              void homeAccount
+                .then(({ region: r }) => state.seen.mark(seenKey(r, id), new Date()))
+                .catch(() => {});
+            },
+          },
+        }
+      : {}),
   });
   // The PR read last (left on quitting) must be saved before the process ends.
   await state.flush();
