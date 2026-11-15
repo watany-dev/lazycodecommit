@@ -369,6 +369,17 @@ describe("formatErrorMessage", () => {
       );
     });
 
+    it.each([
+      "getaddrinfo ENOTFOUND codecommit.us-east-1.amazonaws.com",
+      "getaddrinfo EAI_AGAIN codecommit.us-east-1.amazonaws.com",
+      "read ECONNRESET",
+      "connect ENETUNREACH 52.94.0.1:443",
+    ])("returns network error when offline: %s", (message) => {
+      expect(formatErrorMessage(makeError("Error", message))).toBe(
+        "Network error. Check your connection.",
+      );
+    });
+
     it("returns network error for ETIMEDOUT", () => {
       expect(formatErrorMessage(makeError("Error", "ETIMEDOUT"))).toBe(
         "Network error. Check your connection.",

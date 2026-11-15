@@ -1,6 +1,7 @@
 import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+import { settle } from "../../testing/keys.js";
 import { COMMENT_MAX_LENGTH, CommentInput } from "./CommentInput.js";
 
 describe("CommentInput", () => {
@@ -233,5 +234,26 @@ describe("CommentInput", () => {
       stdin.write("\r");
       expect(onSubmit).toHaveBeenCalledWith("old updated");
     });
+  });
+
+  it("neither keeps a draft nor cancels while the comment is being posted", async () => {
+    const onDraft = vi.fn();
+    const onCancel = vi.fn();
+    const { stdin } = render(
+      <CommentInput
+        onSubmit={vi.fn()}
+        onCancel={onCancel}
+        onDraft={onDraft}
+        isPosting={true}
+        error={null}
+        onClearError={vi.fn()}
+        initialValue="LGTM"
+      />,
+    );
+    stdin.write("\t");
+    stdin.write("\u001B");
+    await settle();
+    expect(onDraft).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
   });
 });

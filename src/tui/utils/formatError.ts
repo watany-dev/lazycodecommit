@@ -43,6 +43,9 @@ const contextErrors: Record<string, Record<string, string>> = {
   },
 };
 
+/** Node's codes for a connection that failed or a host that did not resolve (offline). */
+const NETWORK_CODES = /\b(?:ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNRESET|ENETUNREACH)\b/;
+
 function sanitizeMessage(message: string): string {
   return (
     message
@@ -98,11 +101,7 @@ export function formatErrorMessage(
     return "Access denied. Check your IAM policy.";
   }
 
-  if (
-    name === "TimeoutError" ||
-    err.message.includes("ECONNREFUSED") ||
-    err.message.includes("ETIMEDOUT")
-  ) {
+  if (name === "TimeoutError" || NETWORK_CODES.test(err.message)) {
     return "Network error. Check your connection.";
   }
 
