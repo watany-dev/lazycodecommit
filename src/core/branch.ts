@@ -130,7 +130,20 @@ export async function deleteRemoteBranch(row: BranchRow, deps: BranchDeps): Prom
   if (row.state === "open") {
     throw new UserError(`${row.name} has an open pull request (#${row.pr?.id}).`);
   }
-  await deps.api.deleteBranch(deps.ctx.repository, row.name);
+  // The row can be minutes old: re-read the branch so the delete never drops
+  // commits pushed since, or the source of a PR opened since.
+  const { api, ctx } = deps;
+  const tip = await api.branchCommit(ctx.repository, row.name);
+  if (tip === undefined) throw new UserError(`${row.name} no longer exists on CodeCommit.`);
+  if (tip !== row.tip) {
+    throw new UserError(
+      `${row.name} has moved since it was listed (now ${tip.slice(0, 7)}). Refresh and try again.`,
+    );
+  }
+  const open = await listPullRequests({ state: "OPEN", limit: OPEN_SCAN_LIMIT }, deps);
+  const pr = open.find((p) => p.sourceBranch === row.name);
+  if (pr) throw new UserError(`${row.name} has an open pull request (#${pr.id}).`);
+  await api.deleteBranch(ctx.repository, row.name);
   if (deps.ctx.clone) {
     // Drop origin/<branch> too, or the table keeps showing it. Best effort: the
     // branch is already gone, and the next fetch would prune it anyway.

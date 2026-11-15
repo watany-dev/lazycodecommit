@@ -228,3 +228,36 @@ describe("BranchesApp", () => {
     expect(e.lastFrame()).toContain("No branches.");
   });
 });
+
+describe("BranchesApp with hostile text", () => {
+  // Commit author names and PR titles hold any byte; branch names can hold C1 controls.
+  // oxlint-disable-next-line no-control-regex -- finding them is the point
+  const RAW = /\x1b\]52|\x1b\[2J|\u009b/;
+
+  it("shows names, authors, titles and messages with control characters made visible", async () => {
+    const row: BranchRow = {
+      name: "x\u009b2J",
+      isDefault: false,
+      tip: "h",
+      state: "open",
+      pr: { id: "9", title: "t\x1b[2J" },
+      lastCommit: { date: new Date(), author: "a\x1b]52;c;aGk=\x07" },
+    };
+    const gitError = Object.assign(new Error("fatal: \x1b]52;c;aGk=\x07"), { name: "GitError" });
+    const a = actions({
+      load: vi.fn(async () => ({ repository: "demo", rows: [...ROWS, row] })),
+      switchBranch: vi.fn(async (r: BranchRow) => {
+        if (r === row) throw gitError;
+      }),
+    });
+    const { lastFrame, stdin } = await setup(a);
+    const frame = lastFrame() ?? "";
+    expect(frame).not.toMatch(RAW);
+    expect(frame).toContain("x^[[2J");
+    expect(frame).toContain("#9 t^[[2J");
+    expect(frame).toContain("a^[]52;c");
+    await press(stdin, "/", "x", "\r", " ");
+    await vi.waitFor(() => expect(lastFrame()).toContain("fatal: ^[]52;c;aGk=^G"));
+    expect(lastFrame()).not.toMatch(RAW);
+  });
+});
