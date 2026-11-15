@@ -10,9 +10,14 @@ import { printable, shortArn } from "../core/text.js";
 const WIDE =
   /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{3fffd}]/u;
 
+// Emoji shown as emoji (🚀, ✅, ✨) take two cells too; combining marks,
+// variation selectors and zero-width joiners take none.
+const EMOJI = /\p{Emoji_Presentation}/u;
+const ZERO = /\p{Mn}|\p{Me}|\u200b|\u200c|\u200d|\u2060/u;
+
 function cells(s: string): number {
   let n = 0;
-  for (const ch of s) n += WIDE.test(ch) ? 2 : 1;
+  for (const ch of s) n += ZERO.test(ch) ? 0 : WIDE.test(ch) || EMOJI.test(ch) ? 2 : 1;
   return n;
 }
 

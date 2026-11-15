@@ -118,6 +118,14 @@ describe("top level", () => {
     [["pr", "view", "1", "2"], "Unexpected argument: 2"],
     [["pr", "list", "--state", "merged"], "--state must be open or closed"],
     [["pr", "list", "-L", "0"], "--limit must be a positive integer: 0"],
+    [["pr", "list", "-L", "0x10"], "--limit must be a positive integer: 0x10"],
+    [["pr", "list", "-L", "1e1"], "--limit must be a positive integer: 1e1"],
+    [["pr", "list", "-L", " 2"], "--limit must be a positive integer:  2"],
+    [["pr", "list", "-L", "2.0"], "--limit must be a positive integer: 2.0"],
+    [["pr", "view", "1", "-R", ""], "--repo needs a repository name"],
+    [["browse", ""], "--repo needs a repository name"],
+    [["clone", ""], "clone needs a repository name"],
+    [["status", "--repo="], "--repo needs a repository name"],
   ])("exits 2 for %j", async (args, message) => {
     const r = await cli(args);
     expect(r.code).toBe(2);
@@ -1208,6 +1216,19 @@ describe("status", () => {
     expect(out.errors).toEqual([]);
   });
 
+  it("lists each PR once when the config names a repository twice", async () => {
+    const r = await cli(["status", "--json"], {
+      api: api(),
+      config: { repos: ["demo", "demo"] },
+      git: { topLevel: async () => null },
+    });
+    expect(r.code).toBe(0);
+    const out = json(r.out);
+    expect(out.repositories).toEqual(["demo"]);
+    expect(out.awaiting.map((p: { id: string }) => p.id)).toEqual(["1"]);
+    expect(out.mine.map((p: { id: string }) => p.id)).toEqual(["2"]);
+  });
+
   it("asks for repositories outside a clone without config", async () => {
     const r = await cli(["status"], {
       git: { topLevel: async () => null },
@@ -1404,6 +1425,22 @@ describe("home", () => {
     const r = await cli(["--json"], { api: fakeApi([]) });
     expect(r.code).toBe(0);
     expect(json(r.out)).toMatchObject({ awaiting: [], mine: [] });
+  });
+
+  it("prints the status JSON for bare lazycc --json on a terminal too, opening no TUI", async () => {
+    const r = await cli(["--json"], { api: fakeApi([]), interactive: true });
+    expect(r.code).toBe(0);
+    expect(r.tops).toEqual([]);
+    expect(json(r.out)).toMatchObject({ awaiting: [], mine: [] });
+  });
+
+  it("prints the same whole usage for a bare lazycc's --help with or without a terminal", async () => {
+    for (const interactive of [true, false]) {
+      expect(await cli(["-R", "x", "--help"], { interactive })).toMatchObject({
+        code: 0,
+        out: USAGE,
+      });
+    }
   });
 
   it("hands pr.mergeOption to every review screen as the preselected strategy", async () => {

@@ -23,7 +23,8 @@ export async function withLock(path: string, work: () => Promise<void>): Promise
         (s) => Date.now() - s.mtimeMs,
         () => 0,
       );
-      if (age > STALE_LOCK_MS) await rm(lock, { force: true });
+      // A lock from the future (the clock was set back) would otherwise never age.
+      if (Math.abs(age) > STALE_LOCK_MS) await rm(lock, { force: true });
       else await sleep(5 + Math.random() * 10);
     }
   }
