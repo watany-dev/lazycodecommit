@@ -200,11 +200,11 @@ function toDifferences(changes: readonly TreeChange[]): Difference[] {
   }));
 }
 
+export type { MergeStrategy } from "../aws/codecommit.js";
 export type {
   CommentThread,
   CommitInfo,
   ConflictSummary,
-  MergeStrategy,
   PrActivityEvent,
   PullRequestDisplayStatus,
   PullRequestSummary,
