@@ -72,6 +72,8 @@ export interface Git {
     branch: string,
     opts?: { readonly track?: string; readonly quiet?: boolean },
   ): Promise<void>;
+  /** Deletes origin/<branch>, the remote-tracking ref, without asking origin. */
+  dropRemoteBranch(branch: string): Promise<void>;
   /** `git merge --ff-only <ref>` into the checked-out branch. */
   fastForward(ref: string): Promise<void>;
   /** `git clone <url> [args...]` in the working directory. */
@@ -206,6 +208,9 @@ export function createGit(cwd: string): Git {
         if (rebase === "always" || rebase === "remote")
           await required(["config", `branch.${branch}.rebase`, "true"]);
       }
+    },
+    async dropRemoteBranch(branch) {
+      await required(["update-ref", "-d", `refs/remotes/origin/${branch}`]);
     },
     fastForward: (ref) => streamed(["merge", "--ff-only", "--end-of-options", ref]),
     clone: (url, args) => streamed(["clone", url, ...args]),

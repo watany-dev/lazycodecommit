@@ -148,9 +148,10 @@ export async function deleteRemoteBranch(row: BranchRow, deps: BranchDeps): Prom
   if (pr) throw new UserError(`${row.name} has an open pull request (#${pr.id}).`);
   await api.deleteBranch(ctx.repository, row.name);
   if (deps.ctx.clone) {
-    // Drop origin/<branch> too, or the table keeps showing it. Best effort: the
-    // branch is already gone, and the next fetch would prune it anyway.
-    await deps.git.fetch(["--prune"], { quiet: true }).catch(() => undefined);
+    // Drop origin/<branch> too, or the table keeps showing it: a single-branch
+    // clone's fetch --prune never touches a ref pr checkout fetched outside its
+    // refspec. Best effort: the branch is already gone.
+    await deps.git.dropRemoteBranch(row.name).catch(() => undefined);
   }
 }
 
