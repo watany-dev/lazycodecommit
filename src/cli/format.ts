@@ -1,5 +1,6 @@
 import type { PullRequest, RuleEvaluation } from "../aws/codecommit.js";
 import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
+import type { CheckState, Checks } from "../core/checks.js";
 import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
@@ -98,12 +99,13 @@ export function branchJson(table: BranchTable) {
   };
 }
 
-export function viewLines(pr: PullRequest, region: string): string[] {
+export function viewLines(pr: PullRequest, region: string, checks: Checks | null = null): string[] {
   const state = pr.isMerged ? "MERGED" : pr.status;
   return [
     `${printable(pr.title)} #${pr.id}`,
     `${state} · ${shortArn(pr.authorArn)} wants to merge ${pr.sourceBranch} into ${pr.destinationBranch}`,
     `created ${date(pr.creationDate)} · updated ${date(pr.lastActivityDate)}`,
+    ...(checks ? checksLines(checks) : []),
     "",
     printable(pr.description.trim(), true) || "(no description)",
     "",
@@ -111,7 +113,55 @@ export function viewLines(pr: PullRequest, region: string): string[] {
   ];
 }
 
-export function statusLines(s: PrStatus, region: string): string[] {
+/** ADR 0010: `checks` in pr view and pr status JSON; null when the config's ci lists nothing for the repository. */
+export function checksJson(checks: Checks | null) {
+  if (!checks) return null;
+  return {
+    ...checks,
+    runs: checks.runs.map((r) => ({
+      ...r,
+      startedAt: r.startedAt && date(r.startedAt),
+      endedAt: r.endedAt && date(r.endedAt),
+    })),
+  };
+}
+
+const CHECK_MARK: Record<CheckState, string> = {
+  pass: "✓",
+  fail: "✗",
+  pending: "…",
+  cancel: "⊘",
+  none: "·",
+  error: "!",
+};
+
+/** One line per project or pipeline: mark, provider and name, status and start, then the URL or why there is none. */
+function checkRunLines(checks: Checks): string[] {
+  return align(
+    checks.runs.map((r) => {
+      const name = `${r.provider} ${r.name}`;
+      if (r.state === "error") return [CHECK_MARK.error, name, "", printable(r.message ?? "")];
+      if (r.state === "none")
+        return [
+          CHECK_MARK.none,
+          name,
+          "",
+          `no run on ${checks.commit.slice(0, 7) || "(no commit)"}`,
+        ];
+      const when = r.startedAt ? ` ${date(r.startedAt)}` : "";
+      return [CHECK_MARK[r.state], name, `${r.status}${when}`, r.url ?? ""];
+    }),
+  );
+}
+
+function checksLines(checks: Checks): string[] {
+  return [
+    `CI: ${CHECK_MARK[checks.state]} ${checks.state}`,
+    ...checkRunLines(checks).map((l) => `  ${l}`),
+  ];
+}
+
+export function statusLines(s: PrStatus, region: string, checks: Checks | null = null): string[] {
   const { pr, rules } = s;
   if (!pr) return [`No open pull request from ${s.branch}.`];
   let ruleLine: string;
@@ -130,6 +180,12 @@ export function statusLines(s: PrStatus, region: string): string[] {
     `  approval rules: ${ruleLine}`,
     `  approved by:    ${approvers}`,
     `  conflicts:      ${s.mergeable ? "none" : "yes, cannot merge cleanly"}`,
+    ...(checks
+      ? [
+          `  CI:             ${CHECK_MARK[checks.state]} ${checks.state}`,
+          ...checkRunLines(checks).map((l) => `    ${l}`),
+        ]
+      : []),
     `  ${consoleUrl(region, pr.repository, pr.id)}`,
   ];
 }
