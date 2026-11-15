@@ -170,6 +170,11 @@ Each screen lists its keys with `?`. Everywhere, `j`/`k` or the arrow keys
 move, `q`/`Esc` goes back (and quits at the top), and `Ctrl+c` quits at once.
 The full list is in [docs/keybindings.md](docs/keybindings.md).
 
+Home, the branch screen and the browse screen are one TUI: `1`, `2` and `3`
+switch between them, and `r` on the branch and browse screens picks the
+repository they show. Outside a clone, `lazycc browse` without a repository
+opens on that picker.
+
 - **Home** (`lazycc`): `Tab` switches between "awaiting your approval" and
   "your PRs", `Enter` opens the review screen (and marks the PR read), `r`
   opens the repository picker, `/` filters, `Ctrl+r` refreshes, `u` shows the

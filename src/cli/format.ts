@@ -3,7 +3,7 @@ import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
 import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
-import { printable } from "../core/text.js";
+import { printable, shortArn } from "../core/text.js";
 
 // East Asian wide and fullwidth ranges: these take two terminal cells.
 const WIDE =
@@ -13,14 +13,6 @@ function cells(s: string): number {
   let n = 0;
   for (const ch of s) n += WIDE.test(ch) ? 2 : 1;
   return n;
-}
-
-/** "arn:aws:iam::1:user/alice" → "alice"; "arn:aws:sts::1:assumed-role/Dev/bob" → "Dev/bob". */
-function shortArn(arn: string): string {
-  const resource = arn.split(":").slice(5).join(":");
-  if (!resource) return arn;
-  const slash = resource.indexOf("/");
-  return slash === -1 ? resource : resource.slice(slash + 1);
 }
 
 function date(d: Date): string {

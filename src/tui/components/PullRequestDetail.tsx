@@ -8,7 +8,7 @@ import type {
   MergeStrategy,
   ReactionsByComment,
 } from "../../core/review.js";
-import { printable } from "../../core/text.js";
+import { printable, shortArn } from "../../core/text.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { useAsyncDismiss } from "../hooks/useAsyncDismiss.js";
 import {
@@ -20,7 +20,7 @@ import {
   getThreadKey,
   LARGE_DIFF_THRESHOLD,
 } from "../utils/displayLines.js";
-import { extractAuthorName, formatRelativeDate } from "../utils/formatDate.js";
+import { formatRelativeDate } from "../utils/formatDate.js";
 import type { DisplayLine } from "../utils/formatDiff.js";
 import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
@@ -178,7 +178,7 @@ export function PullRequestDetail({
   const target = pullRequest.pullRequestTargets?.[0];
   const title = pullRequest.title ?? "(no title)";
   const prId = pullRequest.pullRequestId ?? "";
-  const author = extractAuthorName(pullRequest.authorArn ?? "unknown");
+  const author = shortArn(pullRequest.authorArn ?? "unknown");
   const status = pullRequest.pullRequestStatus ?? "OPEN";
   const creationDate = pullRequest.creationDate ? formatRelativeDate(pullRequest.creationDate) : "";
   const destRef = printable(target?.destinationReference?.replace("refs/heads/", "") ?? "");
@@ -570,7 +570,7 @@ export function PullRequestDetail({
         <Text>
           Approvals:{" "}
           {approvedUsers.length > 0
-            ? `${approvedUsers.map((a) => extractAuthorName(a.userArn ?? "")).join(", ")} ✓`
+            ? `${approvedUsers.map((a) => shortArn(a.userArn ?? "")).join(", ")} ✓`
             : "(none)"}
         </Text>
       </Box>

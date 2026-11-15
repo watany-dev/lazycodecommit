@@ -11,8 +11,9 @@ import {
 import type { ReviewService } from "../core/review.js";
 import { printable } from "../core/text.js";
 import { App as ReviewApp } from "./ReviewApp.js";
+import { type TopSwitch, topSwitch } from "./top.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
-import { formatErrorMessage } from "./utils/formatError.js";
+import { formatErrorMessage, screenErrorText } from "./utils/formatError.js";
 
 /** How the screen opens: on the table, on a PR just created, or with a note from a failed create. */
 export type BranchesStart =
@@ -26,13 +27,15 @@ interface Props {
   start: BranchesStart;
   /** Leaves the TUI so the caller can create a PR from `head` in the plain terminal. */
   onCreate: (head: string) => void;
+  /** 1 / 3 / r: leave for home, browse, or the repository picker. */
+  onSwitch?: (s: TopSwitch) => void;
 }
 
 type Note = { readonly text: string; readonly error?: boolean };
 
 const CHROME_LINES = 7;
 
-export function BranchesApp({ actions, service, start, onCreate }: Props) {
+export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [table, setTable] = useState<BranchTable | null>(null);
@@ -70,7 +73,7 @@ export function BranchesApp({ actions, service, start, onCreate }: Props) {
       setNote({ text: done });
       await load(false);
     } catch (err) {
-      setNote({ text: errorText(err), error: true });
+      setNote({ text: screenErrorText(err), error: true });
     } finally {
       setBusy(false);
     }
@@ -111,6 +114,12 @@ export function BranchesApp({ actions, service, start, onCreate }: Props) {
       }
       if (input === "?") {
         setShowHelp(true);
+        return;
+      }
+      const top = onSwitch && topSwitch(input, key, "branches");
+      if (top) {
+        onSwitch?.(top);
+        exit();
         return;
       }
       // Rows are stale until the reload lands, and a second load could finish first.
@@ -225,7 +234,7 @@ export function BranchesApp({ actions, service, start, onCreate }: Props) {
         ) : (
           <Text dimColor>
             Enter review n new PR d delete{actions.switchBranch ? " Space switch" : ""} / filter
-            Ctrl+r refresh u URL q quit ? help
+            Ctrl+r refresh u URL{onSwitch ? " r repositories 1 home 3 browse" : ""} q quit ? help
           </Text>
         )}
       </Box>
@@ -281,14 +290,6 @@ const STATE_COLOR: Record<BranchRow["state"], string> = {
   merged: "magenta",
   none: "white",
 };
-
-function errorText(err: unknown): string {
-  // Our own refusals (default branch, open PR) and git's messages are already for the user.
-  if (err instanceof Error && (err.name === "UserError" || err.name === "GitError")) {
-    return err.message;
-  }
-  return formatErrorMessage(err);
-}
 
 function BranchHelp() {
   const keys: [string, string][] = [

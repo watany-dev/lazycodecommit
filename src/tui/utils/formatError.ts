@@ -116,3 +116,11 @@ export function formatErrorMessage(
 
   return printable(sanitizeMessage(err.message));
 }
+
+/** Our own refusals and git's messages are already written for the user; anything else is explained. */
+export function screenErrorText(err: unknown): string {
+  if (err instanceof Error && ["UserError", "UsageError", "GitError"].includes(err.name)) {
+    return err.message;
+  }
+  return formatErrorMessage(err);
+}

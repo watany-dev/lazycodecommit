@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
-import { formatErrorMessage } from "./utils/formatError.js";
+import { type TopSwitch, topSwitch } from "./top.js";
+import { screenErrorText } from "./utils/formatError.js";
 
 interface Props {
   actions: BrowseActions;
   /** Where to open: a folder ("" is the root, "src/" a folder only) or a file. */
   path: string;
+  /** 1 / 2 / r: leave for home, the branch table, or the repository picker. */
+  onSwitch?: (s: TopSwitch) => void;
 }
 
 type Note = { readonly text: string; readonly error?: boolean };
@@ -30,7 +33,7 @@ function parentOf(path: string): string {
   return slash === -1 ? "" : path.slice(0, slash);
 }
 
-export function BrowseApp({ actions, path: startPath }: Props) {
+export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [ref, setRef] = useState(actions.startRef);
@@ -79,7 +82,7 @@ export function BrowseApp({ actions, path: startPath }: Props) {
       }
       return null;
     } catch (err) {
-      const message = errorText(err);
+      const message = screenErrorText(err);
       if (folder || file) setNote({ text: message, error: true });
       else setLoadError(message);
       return err;
@@ -120,7 +123,7 @@ export function BrowseApp({ actions, path: startPath }: Props) {
       setPicker((p) => p && { ...p, branches });
     } catch (err) {
       setPicker(null);
-      setNote({ text: errorText(err), error: true });
+      setNote({ text: screenErrorText(err), error: true });
     }
   }
 
@@ -164,6 +167,12 @@ export function BrowseApp({ actions, path: startPath }: Props) {
       }
       if (input === "?") {
         setShowHelp(true);
+        return;
+      }
+      const top = onSwitch && topSwitch(input, key, "browse");
+      if (top) {
+        onSwitch?.(top);
+        exit();
         return;
       }
       if (loading) {
@@ -282,7 +291,10 @@ export function BrowseApp({ actions, path: startPath }: Props) {
         ) : file ? (
           <Text dimColor>j/k scroll Ctrl+d/u half page g/G top/end h back b ref u URL ? help</Text>
         ) : (
-          <Text dimColor>Enter open h up / filter b ref u URL Ctrl+r refresh q quit ? help</Text>
+          <Text dimColor>
+            Enter open h up / filter b ref u URL Ctrl+r refresh
+            {onSwitch ? " r repositories 1 home 2 branches" : ""} q quit ? help
+          </Text>
         )}
       </Box>
     </Box>
@@ -391,14 +403,6 @@ function RefPickerView(props: {
       )}
     </>
   );
-}
-
-function errorText(err: unknown): string {
-  // Our own refusals (no such path or ref) are already for the user.
-  if (err instanceof Error && (err.name === "UserError" || err.name === "UsageError")) {
-    return err.message;
-  }
-  return formatErrorMessage(err);
 }
 
 function BrowseHelp() {

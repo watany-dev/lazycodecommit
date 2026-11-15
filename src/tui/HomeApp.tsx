@@ -11,16 +11,23 @@ import {
   type Section,
 } from "../core/inbox.js";
 import type { ReviewService } from "../core/review.js";
-import { printable } from "../core/text.js";
+import { printable, shortArn } from "../core/text.js";
 import { RepoPicker } from "./components/RepoPicker.js";
 import { App as ReviewApp } from "./ReviewApp.js";
-import { extractAuthorName, formatRelativeDate } from "./utils/formatDate.js";
+import { type TopSwitch, topSwitch } from "./top.js";
+import { formatRelativeDate } from "./utils/formatDate.js";
 import { formatErrorMessage } from "./utils/formatError.js";
 
 interface Props {
   actions: HomeActions;
   /** The review service for a repository (git diffs only for the clone's own). */
   reviewService: (repository: string) => ReviewService;
+  /** A message to start with (a view that could not open). */
+  note?: string | null;
+  /** 2 / 3: leave for the branch table or browse. */
+  onSwitch?: (s: TopSwitch) => void;
+  /** A repository picked with Enter, for the branch table and browse too. */
+  onRepository?: (repository: string) => void;
 }
 
 type View =
@@ -38,7 +45,13 @@ const same = (a: readonly string[] | undefined, b: readonly string[]) =>
   a !== undefined && a.length === b.length && a.every((r, i) => r === b[i]);
 
 /** spec: ホーム. The inbox across the watched repositories, cache first, then refreshed. */
-export function HomeApp({ actions, reviewService }: Props) {
+export function HomeApp({
+  actions,
+  reviewService,
+  note: startNote,
+  onSwitch,
+  onRepository,
+}: Props) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [repos, setRepos] = useState(actions.initial);
@@ -52,7 +65,7 @@ export function HomeApp({ actions, reviewService }: Props) {
   const [cursor, setCursor] = useState(0);
   const [filter, setFilter] = useState("");
   const [filtering, setFiltering] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(startNote ?? null);
   const [showHelp, setShowHelp] = useState(false);
   // A refresh for repositories the user has since left must not land.
   const generation = useRef(0);
@@ -130,7 +143,12 @@ export function HomeApp({ actions, reviewService }: Props) {
         return;
       }
       setNote(null);
-      if (input === "?") setShowHelp(true);
+      const top = onSwitch && topSwitch(input, key, "home");
+      // r stays the home's own picker, which also chooses what it lists.
+      if (top && "view" in top) {
+        onSwitch?.(top);
+        exit();
+      } else if (input === "?") setShowHelp(true);
       else if (key.tab) {
         setSection(section === "awaiting" ? "mine" : "awaiting");
         setCursor(0);
@@ -185,6 +203,7 @@ export function HomeApp({ actions, reviewService }: Props) {
         actions={actions}
         current={repos}
         onSelect={(repository) => {
+          onRepository?.(repository);
           setFollowsConfig(false);
           setRepos([repository]);
           setView({ kind: "home" });
@@ -280,7 +299,8 @@ export function HomeApp({ actions, reviewService }: Props) {
           <Text>{printable(note)}</Text>
         ) : (
           <Text dimColor>
-            Tab switch Enter review r repositories / filter Ctrl+r refresh u URL q quit ? help
+            Tab switch Enter review r repositories{onSwitch ? " 2 branches 3 browse" : ""} / filter
+            Ctrl+r refresh u URL q quit ? help
           </Text>
         )}
       </Box>
@@ -329,7 +349,7 @@ function InboxLine({
 
 function Detail({ item }: { item: InboxItem }) {
   if (item.section === "awaiting") {
-    return <Text wrap="truncate">{extractAuthorName(item.pr.authorArn)}</Text>;
+    return <Text wrap="truncate">{shortArn(item.pr.authorArn)}</Text>;
   }
   if (item.detailError) return <Text color="red">details failed</Text>;
   if (!item.rules) return <Text dimColor>…</Text>;
@@ -349,6 +369,7 @@ function HomeHelp() {
     ["Tab", "Switch between awaiting your approval and your PRs"],
     ["Enter", "Review the PR (marks it read)"],
     ["r", "Pick repositories (w watches, p lists PRs)"],
+    ["2 / 3", "Branch table / browse, for the clone or the repository picked"],
     ["/", "Filter by title or repository"],
     ["Ctrl+r", "Refresh"],
     ["u", "Show the PR's console URL"],

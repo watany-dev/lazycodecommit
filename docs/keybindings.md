@@ -11,6 +11,15 @@ Every screen lists its keys with `?`. This page collects them.
 | `Ctrl+c` | Quit at once |
 | `?` | Toggle help |
 
+## Home, branch and browse screens
+
+| Key | Action |
+| --- | --- |
+| `1` / `2` / `3` | Switch to home / the branch screen / the browse screen |
+| `r` | On the branch and browse screens: pick the repository they show |
+
+Outside a clone, `lazycc browse` without a repository opens on the picker.
+
 While filtering with `/`, type to narrow the list, `Enter` keeps the filter
 and `Esc` clears it.
 
@@ -25,11 +34,11 @@ and `Esc` clears it.
 | `Ctrl+r` | Refresh |
 | `u` | Show the PR's console URL |
 
-## Repository picker (`r` on the home screen)
+## Repository picker (`r`)
 
 | Key | Action |
 | --- | --- |
-| `Enter` | Show only this repository on the home screen |
+| `Enter` | Show only this repository (on the home screen; on the branch and browse screens, switch to it) |
 | `w` | Add to or remove from the watch list (the config's `repos`) |
 | `p` | Open the repository's PR list |
 | `/` | Filter |

@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { extractAuthorName, formatRelativeDate } from "./formatDate.js";
+import { formatRelativeDate } from "./formatDate.js";
 
 describe("formatRelativeDate", () => {
   const now = new Date("2026-02-13T12:00:00Z");
@@ -29,22 +29,6 @@ describe("formatRelativeDate", () => {
     const date = new Date("2025-12-01T12:00:00Z");
     const result = formatRelativeDate(date, now);
     expect(result).not.toContain("ago");
-  });
-});
-
-describe("extractAuthorName", () => {
-  it("extracts username from ARN", () => {
-    expect(extractAuthorName("arn:aws:iam::123456789012:user/watany")).toBe("watany");
-  });
-
-  it("extracts assumed role name", () => {
-    expect(extractAuthorName("arn:aws:sts::123456789012:assumed-role/admin/session")).toBe(
-      "session",
-    );
-  });
-
-  it("returns original if no slash", () => {
-    expect(extractAuthorName("unknown")).toBe("unknown");
   });
 });
 
@@ -117,76 +101,6 @@ describe("formatRelativeDate (property-based)", () => {
           expect(result).toMatch(validPattern);
         }
       }),
-    );
-  });
-});
-
-describe("extractAuthorName (property-based)", () => {
-  it("result equals the last segment after splitting by /", () => {
-    fc.assert(
-      fc.property(
-        fc.string({
-          unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789:/-_"),
-          minLength: 1,
-        }),
-        (arn) => {
-          const result = extractAuthorName(arn);
-          const parts = arn.split("/");
-          expect(result).toBe(parts[parts.length - 1]);
-        },
-      ),
-    );
-  });
-
-  it("result is always a substring of the input", () => {
-    fc.assert(
-      fc.property(
-        fc.string({
-          unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789:/-_"),
-          minLength: 1,
-        }),
-        (arn) => {
-          const result = extractAuthorName(arn);
-          expect(arn).toContain(result);
-        },
-      ),
-    );
-  });
-
-  it("is idempotent when result has no slash", () => {
-    fc.assert(
-      fc.property(
-        fc.string({
-          unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789:/-_"),
-          minLength: 1,
-        }),
-        (arn) => {
-          const first = extractAuthorName(arn);
-          if (!first.includes("/")) {
-            expect(extractAuthorName(first)).toBe(first);
-          }
-        },
-      ),
-    );
-  });
-
-  it("returns the part after the last slash", () => {
-    fc.assert(
-      fc.property(
-        fc.array(
-          fc.string({
-            unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789"),
-            minLength: 1,
-            maxLength: 10,
-          }),
-          { minLength: 2, maxLength: 5 },
-        ),
-        (parts) => {
-          const arn = parts.join("/");
-          const result = extractAuthorName(arn);
-          expect(result).toBe(parts[parts.length - 1]);
-        },
-      ),
     );
   });
 });
