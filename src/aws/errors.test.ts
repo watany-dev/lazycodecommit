@@ -38,3 +38,12 @@ describe("explainAwsError", () => {
     expect(explainAwsError("string", undefined)).toBeUndefined();
   });
 });
+
+describe("explainAwsError for pull request refusals", () => {
+  it("phrases a known refusal as what to do, and ignores inherited names", () => {
+    expect(
+      explainAwsError(err("PullRequestCannotBeApprovedByAuthorException", "x"), undefined),
+    ).toBe("You cannot approve your own pull request.");
+    expect(explainAwsError(err("constructor", "x"), undefined)).toBeUndefined();
+  });
+});

@@ -8,6 +8,25 @@ const CREDENTIAL_ERRORS = new Set([
   "InvalidSignatureException",
 ]);
 
+/** CodeCommit refusals the user can act on, phrased as what to do about them. */
+const PULL_REQUEST_ERRORS = new Map(
+  Object.entries({
+    PullRequestCannotBeApprovedByAuthorException: "You cannot approve your own pull request.",
+    PullRequestAlreadyClosedException: "The pull request is already closed.",
+    ManualMergeRequiredException:
+      "The pull request cannot be merged automatically with this strategy (conflicts, or --ff cannot fast-forward). Resolve them, or pick another strategy.",
+    TipOfSourceReferenceIsDifferentException:
+      "The source branch has moved since the pull request was read. Check the new commits, then retry.",
+    PullRequestApprovalRulesNotSatisfiedException:
+      "The pull request's approval rules are not satisfied yet.",
+    TipsDivergenceExceededException:
+      "The branches have diverged too far to merge here. Merge them locally with git.",
+    ConcurrentReferenceUpdateException: "The branch was updated at the same moment. Retry.",
+    CommentContentSizeLimitExceededException:
+      "The comment is over CodeCommit's 10,240 character limit.",
+  }),
+);
+
 const ACCESS_DENIED = new Set(["AccessDeniedException", "AccessDenied"]);
 
 /**
@@ -24,6 +43,8 @@ export function explainAwsError(error: unknown, profile: string | undefined): st
       `Sign in again, for example \`aws sso login${flag}\`, then retry.`,
     ].join("\n");
   }
+  const known = PULL_REQUEST_ERRORS.get(name);
+  if (known) return known;
   if (ACCESS_DENIED.has(name)) {
     // The message names the codecommit:<Action> that was refused.
     return `Access denied: ${error.message}`;

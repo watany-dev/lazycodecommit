@@ -15,6 +15,8 @@ interface Setup {
   api?: CodeCommitApi;
   config?: Config | Error;
   env?: Record<string, string>;
+  edit?: (text: string) => Promise<string>;
+  files?: Record<string, string>;
 }
 
 async function cli(args: string[], setup: Setup = {}) {
@@ -31,8 +33,8 @@ async function cli(args: string[], setup: Setup = {}) {
       cwd: "/work",
       interactive: setup.interactive ?? false,
       confirm: async () => true,
-      edit: async (t) => t,
-      readFile: async () => null,
+      edit: setup.edit ?? (async (t) => t),
+      readFile: async (path) => setup.files?.[path] ?? null,
     },
     createGit: () => fakeGit(setup.git),
     createApi: async (o) => {
@@ -427,6 +429,179 @@ describe("pr checkout", () => {
     const r = await cli(["pr", "checkout"]);
     expect(r.code).toBe(2);
     expect(r.err).toContain("pr checkout needs a pull request id");
+  });
+});
+
+const commentApi = () => fakeApi([pullRequest({ id: "6", title: "Add \x1b[2Jthing" })]);
+
+describe("pr comment", () => {
+  it("posts --body and prints where", async () => {
+    const a = commentApi();
+    const r = await cli(["pr", "comment", "6", "-b", "LGTM"], { api: a });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual(["comment 6 LGTM"]);
+    expect(r.out.split("\n")).toEqual([
+      "Commented on #6 Add ^[[2Jthing",
+      "https://ap-northeast-1.console.aws.amazon.com/codesuite/codecommit/repositories/demo/pull-requests/6/details?region=ap-northeast-1",
+    ]);
+  });
+
+  it("reads --body-file, and prints JSON", async () => {
+    const a = commentApi();
+    const r = await cli(["pr", "comment", "6", "-F", "note.md", "--json"], {
+      api: a,
+      files: { "note.md": "\nLooks good.\n" },
+    });
+    expect(a.writes).toEqual(["comment 6 Looks good."]);
+    expect(json(r.out)).toMatchObject({ commentId: "c1", pullRequest: { id: "6" } });
+  });
+
+  it("opens the editor on a terminal, and gives up on an empty comment", async () => {
+    const a = commentApi();
+    await cli(["pr", "comment", "6"], { api: a, interactive: true, edit: async () => "Hi\n" });
+    expect(a.writes).toEqual(["comment 6 Hi"]);
+    const r = await cli(["pr", "comment", "6"], { api: a, interactive: true });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: Aborted: the comment is empty." });
+    expect(a.writes).toHaveLength(1);
+  });
+
+  it("defaults to the current branch's PR inside a clone", async () => {
+    const a = fakeApi([pullRequest({ id: "3" })]);
+    await cli(["pr", "comment", "-b", "x"], { api: a });
+    expect(a.writes).toEqual(["comment 3 x"]);
+  });
+
+  it.each([
+    [["pr", "comment", "6"], "Not a terminal: pass --body or --body-file"],
+    [
+      ["pr", "comment", "6", "-b", "a", "-F", "f"],
+      "--body and --body-file cannot be used together",
+    ],
+    [["pr", "comment", "x", "-b", "a"], "Not a pull request id: x"],
+  ])("exits 2 for %j", async (args, message) => {
+    const r = await cli(args, { api: commentApi() });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(message);
+  });
+
+  it("exits 1 for a missing body file", async () => {
+    const r = await cli(["pr", "comment", "6", "-F", "nope.md"], { api: commentApi() });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: --body-file: nope.md does not exist" });
+  });
+});
+
+describe("pr approve", () => {
+  it("approves, and revokes with --revoke", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "approve", "6"], { api: a });
+    expect(r).toMatchObject({ code: 0 });
+    expect(r.out.split("\n")[0]).toBe("Approved #6 A pull request");
+    const v = await cli(["pr", "approve", "6", "--revoke", "--json"], { api: a });
+    expect(json(v.out)).toMatchObject({ approved: false, pullRequest: { id: "6" } });
+    expect(a.writes).toEqual(["approve 6", "revoke 6"]);
+  });
+
+  it("says so when you approve your own PR", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })], {
+      setApproval: async () => {
+        throw Object.assign(new Error("author"), {
+          name: "PullRequestCannotBeApprovedByAuthorException",
+        });
+      },
+    });
+    const r = await cli(["pr", "approve", "6"], { api: a });
+    expect(r).toMatchObject({ code: 1 });
+    expect(r.err).toContain("You cannot approve your own pull request");
+  });
+});
+
+describe("pr merge", () => {
+  it.each([
+    ["--ff", "fast-forward"],
+    ["--squash", "squash"],
+    ["--three-way", "three-way"],
+  ])("merges with %s", async (flag, strategy) => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6", flag], { api: a });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual([`merge 6 ${strategy}`]);
+    expect(r.out.split("\n")[0]).toBe(`Merged #6 A pull request into main (${strategy})`);
+  });
+
+  it("prints the merged PR as JSON", async () => {
+    const r = await cli(["pr", "merge", "6", "--squash", "--json"], {
+      api: fakeApi([pullRequest({ id: "6" })]),
+    });
+    expect(json(r.out)).toMatchObject({ id: "6", status: "MERGED" });
+  });
+
+  it.each([
+    [[], "Pick a merge strategy: --ff, --squash or --three-way"],
+    [["--ff", "--squash"], "Pick one merge strategy: --ff, --squash or --three-way"],
+  ])("exits 2 for %j", async (flags, message) => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6", ...flags], { api: a });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(message);
+    expect(a.writes).toEqual([]);
+  });
+
+  it("accepts exactly one strategy flag, over every combination", async () => {
+    const flags = ["--ff", "--squash", "--three-way"];
+    for (let mask = 0; mask < 8; mask++) {
+      const picked = flags.filter((_, i) => mask & (1 << i));
+      const r = await cli(["pr", "merge", "6", ...picked], {
+        api: fakeApi([pullRequest({ id: "6" })]),
+      });
+      expect(r.code).toBe(picked.length === 1 ? 0 : 2);
+    }
+  });
+
+  it("explains a merge that needs a person", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })], {
+      merge: async () => {
+        throw Object.assign(new Error("conflicts"), { name: "ManualMergeRequiredException" });
+      },
+    });
+    const r = await cli(["pr", "merge", "6", "--ff"], { api: a });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("cannot be merged automatically");
+  });
+});
+
+describe("pr close", () => {
+  it("closes without merging", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "close", "6"], { api: a });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")[0]).toBe("Closed #6 A pull request");
+    expect(a.writes).toEqual(["close 6"]);
+    const j = await cli(["pr", "close", "6", "--json"], { api: a });
+    expect(json(j.out)).toMatchObject({ id: "6", status: "CLOSED" });
+  });
+});
+
+describe("writes to a PR that is no longer open", () => {
+  it.each([[["pr", "approve", "6"]], [["pr", "merge", "6", "--ff"]], [["pr", "close", "6"]]])(
+    "%j refuses a merged PR without calling AWS",
+    async (args) => {
+      const a = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
+      const r = await cli(args, { api: a });
+      expect(r).toMatchObject({ code: 1, err: "lazycc: #6 is already merged." });
+      expect(a.writes).toEqual([]);
+    },
+  );
+
+  it("names a closed PR as closed", async () => {
+    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED" })]);
+    const r = await cli(["pr", "close", "6"], { api: a });
+    expect(r.err).toBe("lazycc: #6 is already closed.");
+  });
+
+  it("still takes a comment, as the console does", async () => {
+    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
+    expect((await cli(["pr", "comment", "6", "-b", "x"], { api: a })).code).toBe(0);
+    expect(a.writes).toEqual(["comment 6 x"]);
   });
 });
 
