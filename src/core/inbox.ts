@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CodeCommitApi, PullRequest, RuleEvaluation } from "../aws/codecommit.js";
 import { mapLimit } from "../aws/mapLimit.js";
 import type { Config } from "../state/config.js";
@@ -50,17 +51,18 @@ export function watchedRepositories(
 }
 
 /**
- * The caller's ARN, cached per credentials (spec: 認証). An access key in the
- * environment overrides any profile, so it gets its own key.
+ * The caller's ARN, cached per set of credentials (spec: 認証): a profile whose
+ * role or account changes gets new credentials, so it is asked again. The key
+ * is a hash, so the state file never holds an access key ID.
  */
 export async function resolveMe(
-  api: Pick<CodeCommitApi, "callerArn">,
+  api: Pick<CodeCommitApi, "callerArn" | "credentialId">,
   store: IdentityStore,
-  profile: string | undefined,
-  env: Readonly<Record<string, string | undefined>>,
 ): Promise<string> {
-  const accessKey = env["AWS_ACCESS_KEY_ID"];
-  const key = accessKey ? `key:${accessKey}` : `profile:${profile ?? "default"}`;
+  const id = await api.credentialId().catch(() => undefined);
+  // Without credentials STS fails too, with the error worth showing.
+  if (id === undefined) return api.callerArn();
+  const key = `cred:${createHash("sha256").update(id).digest("hex").slice(0, 32)}`;
   const cached = await store.get(key);
   if (cached) return cached;
   const arn = await api.callerArn();

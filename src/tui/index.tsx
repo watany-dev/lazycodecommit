@@ -9,6 +9,7 @@ import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
 import { HomeApp } from "./HomeApp.js";
+import { keyStream } from "./keyStream.js";
 import { PickScreen } from "./PickScreen.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
 import type { TopSwitch, TopView } from "./top.js";
@@ -52,6 +53,11 @@ export interface TopViews {
 /** spec: 画面遷移. The three top-level views and the repository they show. */
 export interface TopRequest extends ServiceRequest {
   readonly start: TopView;
+  /**
+   * The account home reads the config's repositories in, when it is not the
+   * clone's (lazycc branch or browse in a clone of another region or profile).
+   */
+  readonly home?: Pick<ServiceRequest, "region" | "profile" | "markSeen">;
   /** The repository the branch table and browse show; picked with r when unset. */
   readonly repository?: string;
   /** The clone's repository: only its PRs take their diffs from `git`. */
@@ -80,6 +86,7 @@ function service(request: ServiceRequest): ReviewService {
 export async function openReview(request: ReviewRequest): Promise<void> {
   const app = render(
     <App service={service(request)} repository={request.repository} start={request.start} />,
+    { stdin: keyStream(process.stdin) },
   );
   await app.waitUntilExit();
 }
@@ -91,12 +98,16 @@ export async function openReview(request: ReviewRequest): Promise<void> {
  * starts again from its cache.
  */
 export async function openTop(request: TopRequest): Promise<void> {
-  const { git, cloneRepository, views, ...rest } = request;
+  const { git, cloneRepository, views, home, ...rest } = request;
   const base = { ...rest };
   const withGit = git ? service({ ...base, git }) : undefined;
   const withoutGit = service(base);
   const reviewService = (repository: string) =>
     withGit && repository === cloneRepository ? withGit : withoutGit;
+  const homeService =
+    home &&
+    service({ ...(rest.mergeStrategy ? { mergeStrategy: rest.mergeStrategy } : {}), ...home });
+  const homeReviewService = homeService ? () => homeService : reviewService;
 
   let view = request.start;
   let repository = request.repository;
@@ -107,7 +118,7 @@ export async function openTop(request: TopRequest): Promise<void> {
   let previous: TopView | null = null;
   let screen: Instance | undefined;
   const run = async (node: ReactNode) => {
-    screen = render(node);
+    screen = render(node, { stdin: keyStream(process.stdin) });
     await screen.waitUntilExit();
   };
   // Ink leaves a view's last frame on exit; the next view replaces it instead.
@@ -125,7 +136,7 @@ export async function openTop(request: TopRequest): Promise<void> {
       await run(
         <HomeApp
           actions={actions}
-          reviewService={reviewService}
+          reviewService={homeReviewService}
           note={note}
           onSwitch={onSwitch}
           onRepository={(r) => {
@@ -183,7 +194,7 @@ export async function openTop(request: TopRequest): Promise<void> {
       <PickScreen
         actions={await views.home()}
         current={repository}
-        reviewService={reviewService}
+        reviewService={homeReviewService}
         onDone={(r) => {
           picked = r;
           clearScreen();

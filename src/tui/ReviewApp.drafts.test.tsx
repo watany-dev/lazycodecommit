@@ -12,6 +12,7 @@ function detail(tip = OLD_TIP, after = "x\ny\n") {
     pullRequest: {
       pullRequestId: "42",
       title: "fix: login",
+      authorArn: "arn:aws:iam::111122223333:user/alice",
       revisionId: "rev",
       pullRequestTargets: [
         { ...tip, destinationReference: "refs/heads/main", sourceReference: "refs/heads/fix" },
@@ -91,6 +92,17 @@ async function draftOnAddedLine(t: ReturnType<typeof setup>, text: string) {
 describe("comment drafts on the review screen", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("keys drafts by the PR's account too: PR ids repeat across accounts", async () => {
+    const t = setup();
+    await see(t, "PR #42");
+    await vi.waitFor(() => expect(t.storage.load).toHaveBeenCalledWith("111122223333/42"));
+    await type(t, "c");
+    await see(t, "Tab save as draft");
+    await type(t, "later", "\t");
+    await see(t, "Drafts: 1 (D)");
+    expect(t.storage.save).toHaveBeenLastCalledWith("111122223333/42", expect.any(Array));
+  });
+
   it("keeps a general comment as a draft with Tab instead of posting it", async () => {
     const t = setup();
     await see(t, "PR #42");
@@ -120,7 +132,7 @@ describe("comment drafts on the review screen", () => {
     );
     const t = setup([stored]);
     await see(t, "Drafts: 1 (D)");
-    expect(t.storage.load).toHaveBeenCalledWith("42");
+    expect(t.storage.load).toHaveBeenCalledWith("111122223333/42");
     await type(t, "D");
     await see(t, "[comment] from yesterday");
   });

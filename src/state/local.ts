@@ -35,7 +35,7 @@ async function writeObject(path: string, value: Obj): Promise<void> {
   await rename(tmp, path);
 }
 
-/** The ARN for a set of credentials. Keyed by profile, as the spec says. */
+/** The ARN for a set of credentials, keyed by `cred:` and a hash of them. */
 export interface IdentityStore {
   get(key: string): Promise<string | undefined>;
   set(key: string, arn: string): Promise<void>;
@@ -100,6 +100,9 @@ export function createLocalState(env: Env): LocalState {
       },
       set: (key, arn) =>
         update("identity.json", (o) => {
+          // Older versions keyed by profile (stale once its role changed) or by
+          // the access key ID itself, which this file should not hold.
+          for (const k of Object.keys(o)) if (!k.startsWith("cred:")) delete o[k];
           o[key] = arn;
         }),
     },

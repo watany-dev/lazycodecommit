@@ -81,6 +81,8 @@ export interface CodeCommitApi {
   region(): Promise<string>;
   /** The caller's ARN (sts:GetCallerIdentity): "me" for the inbox. */
   callerArn(): Promise<string>;
+  /** The access key ID of the credentials in use, read locally: the identity cache's key. */
+  credentialId(): Promise<string>;
   /** Every repository name in the region, sorted by name. */
   listRepositories(): Promise<string[]>;
   defaultBranch(repository: string): Promise<string | undefined>;
@@ -197,6 +199,10 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
       const out = await sts.send(new GetCallerIdentityCommand({}));
       if (!out.Arn) throw new Error("sts:GetCallerIdentity returned no ARN");
       return out.Arn;
+    },
+
+    async credentialId() {
+      return (await client.config.credentials()).accessKeyId;
     },
 
     async listRepositories() {
