@@ -1746,6 +1746,52 @@ describe("PullRequestDetail", () => {
     expect(lastFrame()).toBe(before);
   });
 
+  it("t shows more of a large diff in a commit view too", async () => {
+    const big = (tag: string) => Array.from({ length: 1000 }, (_, i) => `${tag} ${i}`).join("\n");
+    const commitDifferences = [
+      { beforeBlob: { blobId: "c1", path: "big.ts" }, afterBlob: { blobId: "c2", path: "big.ts" } },
+    ];
+    const screen = render(
+      <PullRequestDetail
+        pullRequest={pullRequest as any}
+        differences={differences as any}
+        commentThreads={[]}
+        diffTexts={diffTexts}
+        onBack={vi.fn()}
+        onHelp={vi.fn()}
+        onShowActivity={vi.fn()}
+        comment={defaultCommentProps}
+        reply={defaultReplyProps}
+        approval={defaultApprovalProps}
+        merge={defaultMergeProps}
+        close={defaultCloseProps}
+        commitView={{
+          ...defaultCommitProps,
+          commits: [
+            {
+              commitId: "abc1234567",
+              shortId: "abc1234",
+              message: "feat: big",
+              authorName: "alice",
+              authorDate: new Date("2026-02-13T10:00:00Z"),
+              parentIds: ["base123"],
+            },
+          ],
+          differences: commitDifferences,
+          diffTexts: new Map([["c1:c2", { before: big("old"), after: big("new") }]]),
+        }}
+        editComment={defaultEditCommentProps}
+        deleteComment={defaultDeleteCommentProps}
+        reaction={defaultReactionProps}
+      />,
+    );
+    await press(screen, "\t", "G", "k");
+    expect(screen.lastFrame()).toContain("[t] show next 300 lines");
+    expect(screen.lastFrame()).toContain("t more");
+    await press(screen, "t", "G");
+    expect(screen.lastFrame()).toContain("... truncated 600/2000 lines");
+  });
+
   it("t key does nothing in commit view", async () => {
     const sampleCommits = [
       {
@@ -4721,6 +4767,41 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).not.toContain("Select merge strategy:");
       expect(lastFrame()).not.toContain("Checking for conflicts...");
     });
+  });
+
+  it("says why the merge stopped when the conflict check fails", async () => {
+    const denied = Object.assign(
+      new Error("User is not authorized to perform: codecommit:GetMergeConflicts"),
+      { name: "AccessDeniedException" },
+    );
+    const screen = render(
+      <PullRequestDetail
+        pullRequest={pullRequest as any}
+        differences={differences as any}
+        commentThreads={[]}
+        diffTexts={diffTexts}
+        onBack={vi.fn()}
+        onHelp={vi.fn()}
+        onShowActivity={vi.fn()}
+        comment={defaultCommentProps}
+        reply={defaultReplyProps}
+        approval={defaultApprovalProps}
+        merge={{ ...defaultMergeProps, onCheckConflicts: vi.fn().mockRejectedValue(denied) }}
+        close={defaultCloseProps}
+        commitView={defaultCommitProps}
+        editComment={defaultEditCommentProps}
+        deleteComment={defaultDeleteCommentProps}
+        reaction={defaultReactionProps}
+      />,
+    );
+    await press(screen, "m", "\r");
+    await vi.waitFor(() =>
+      expect(screen.lastFrame()!.replace(/\s+/g, " ")).toContain(
+        "Access denied: your IAM policy does not allow codecommit:GetMergeConflicts.",
+      ),
+    );
+    await press(screen, "j");
+    expect(screen.lastFrame()).not.toContain("Access denied");
   });
 
   // Coverage: exercise merge cancel callback (onCancel at confirm stage)

@@ -25,6 +25,7 @@ import {
 } from "../utils/displayLines.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 import type { DisplayLine } from "../utils/formatDiff.js";
+import { formatErrorMessage } from "../utils/formatError.js";
 import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
 import { ConflictDisplay } from "./ConflictDisplay.js";
@@ -154,6 +155,8 @@ export function PullRequestDetail({
   const [selectedStrategy, setSelectedStrategy] = useState<MergeStrategy>("fast-forward");
   const [conflictSummary, setConflictSummary] = useState<ConflictSummary | null>(null);
   const [isCheckingConflicts, setIsCheckingConflicts] = useState(false);
+  /** Why the conflict check failed, shown until the next key. */
+  const [conflictCheckError, setConflictCheckError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
   const [viewIndex, setViewIndex] = useState(-1); // -1 = All changes
   const [collapsedThreads, setCollapsedThreads] = useState<Map<string, boolean>>(() =>
@@ -231,7 +234,7 @@ export function PullRequestDetail({
       commitDifferences,
       commitDiffTexts,
       new Map(),
-      new Map(),
+      diffLineLimits,
       [],
       new Map(),
       new Map(),
@@ -291,9 +294,10 @@ export function PullRequestDetail({
       if (summary.mergeable) {
         setMergeStep("confirm");
       }
-    } catch {
+    } catch (err) {
       setIsCheckingConflicts(false);
       setMergeStep(null);
+      setConflictCheckError(formatErrorMessage(err, "merge"));
     }
   }
 
@@ -330,6 +334,7 @@ export function PullRequestDetail({
     }
 
     if (dialogOpen) return;
+    setConflictCheckError(null);
 
     // === 2-key sequence: ]c / [c for change navigation ===
     if (pendingBracket && input === "c") {
@@ -356,6 +361,12 @@ export function PullRequestDetail({
 
     if (key.tab && (commits.length > 0 || commitsAvailable)) {
       if (commits.length === 0) {
+        // Commits that never came (none, or failed to load): Tab goes back.
+        if (viewIndex >= 0 && !isLoadingCommitDiff) {
+          setViewIndex(-1);
+          setCursorIndex(0);
+          return;
+        }
         // Lazy load: trigger first commit load
         setViewIndex(0);
         setCursorIndex(0);
@@ -396,11 +407,10 @@ export function PullRequestDetail({
       return;
     }
     if (input === "t") {
-      if (viewIndex >= 0) return;
       const currentLine = lines[cursorIndex];
       const diffKey = currentLine?.diffKey;
       if (!diffKey) return;
-      const texts = diffTexts.get(diffKey);
+      const texts = (viewIndex >= 0 ? commitDiffTexts : diffTexts).get(diffKey);
       /* v8 ignore next -- diffKey originates from diffTexts entries */
       if (!texts) return;
       const totalLines = countLines(texts.before) + countLines(texts.after);
@@ -904,6 +914,9 @@ export function PullRequestDetail({
           <Text dimColor>j/k move Enter select Esc close</Text>
         </Box>
       )}
+      {conflictCheckError && (
+        <Text color="red">Could not check for conflicts: {conflictCheckError}</Text>
+      )}
       <Box marginTop={1}>
         <Text dimColor>
           {dialogOpen || showFileList
@@ -911,7 +924,7 @@ export function PullRequestDetail({
             : pendingBracket
               ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
               : viewIndex >= 0
-                ? "Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help"
+                ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help${hasTruncation ? " t more" : ""}`
                 : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
         </Text>
       </Box>
