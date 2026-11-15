@@ -235,6 +235,8 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 ### 起動
 - lazycc browse は、clone 内ではそのリポジトリを、clone 外ではリポジトリ選択を開く。
 - lazycc browse my-repo --ref develop --path src/ で開始位置を指定できる。
+- --ref を省略すると既定ブランチを開く。--path が `/` で終わるときはフォルダとしてだけ探し、そうでなければフォルダがなければ同名のファイルを開く。
+- 端末でないときと --json のときは TUI を開かない。フォルダなら `ls -F` と同じ形の一覧を、ファイルなら中身を標準出力に出す（制御文字は他の出力と同じくキャレット表記になる）。バイナリと API のサイズ上限を超えるファイルは出さず、理由とコンソール URL を出して終了コード 1 にする。--json では binary か tooLarge を立て、content を null にして終了コード 0 にする。
 
 ### 作らないもの
 - blame、ファイル履歴、全文検索は作らない。必要なら lazycc clone で手元に落とす。
@@ -306,7 +308,7 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 | h / Backspace | 親フォルダに戻る |
 | b | ref を切り替える |
 | Ctrl+d / Ctrl+u | ファイル表示で半ページ動かす |
-| G | 末尾に移動する |
+| g / G | 先頭、末尾に移動する |
 
 ### リポジトリ選択
 | キー | 動作 |
@@ -426,7 +428,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | ホーム、PR 一覧 | ListRepositories、ListPullRequests、GetPullRequest、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts |
 | PR 作成 | GetRepository、ListPullRequests、GetPullRequest、GetBranch(clone 外のみ)、CreatePullRequest、GitPush |
 | ブランチ表 | ListBranches、GetBranch、GetRepository、DeleteBranch(削除時のみ) |
-| ブラウズ | GetFolder、GetFile、ListBranches |
+| ブラウズ | GetFolder、GetFile、ListBranches、GetRepository(--ref 省略時) |
 | レビュー(閲覧) | GetCommit、GetDifferences、GetBlob、GetCommentsForPullRequest、GetCommentReactions、DescribePullRequestEvents |
 | レビュー(書き込み) | PostCommentForPullRequest、PostCommentReply、UpdateComment、DeleteCommentContent、PutCommentReaction、UpdatePullRequestApprovalState、UpdatePullRequestStatus、MergePullRequestByFastForward、MergePullRequestBySquash、MergePullRequestByThreeWay |
 | checkout、clone、fetch | GitPull |

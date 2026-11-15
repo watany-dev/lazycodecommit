@@ -28,6 +28,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr merge [id]` | Merge with one of `--ff`, `--squash`, `--three-way`; refuses if the source branch moved since it was read |
 | `lazycc pr close [id]` | Close a PR without merging |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
+| `lazycc browse [repo]` | Read a repository's tree and files through the API, no clone needed. `--ref` picks a branch or commit (default: the default branch), `--path` where to start. On a terminal it opens the browse screen; otherwise it prints the folder listing or the file |
 | `lazycc clone <repo> [dir]` | Clone by repository name. `--protocol https\|ssh\|grc` picks the URL (default `https`; `grc` is git-remote-codecommit); flags after `--` go to `git clone` |
 | `lazycc completion bash\|zsh\|fish` | Print a shell completion script, e.g. `source <(lazycc completion bash)` in `~/.bashrc`, or `lazycc completion fish > ~/.config/fish/completions/lazycc.fish` |
 

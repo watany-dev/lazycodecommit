@@ -120,6 +120,8 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
       writes.push(`merge ${pr.id} ${strategy}`);
       return closed(pr, true);
     },
+    getFolder: async () => undefined,
+    getFile: async () => undefined,
     close: async (pr) => {
       writes.push(`close ${pr.id}`);
       return closed(pr, false);

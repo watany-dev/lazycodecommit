@@ -3,6 +3,7 @@ import { version } from "../../package.json" with { type: "json" };
 import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
 import { branchActions, loadBranchTable } from "../core/branch.js";
+import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { cloneRepository } from "../core/clone.js";
 import { type AccountContext, resolveAccountContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
@@ -31,7 +32,7 @@ import {
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
 import type { LocalState } from "../state/local.js";
-import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
+import type { BranchesRequest, BrowseRequest, ReviewRequest } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
 import {
   branchJson,
@@ -66,6 +67,7 @@ export interface Deps {
   /** Open the TUI; cli.ts loads it lazily so other commands never load Ink. */
   openReview(request: ReviewRequest): Promise<void>;
   openBranches(request: BranchesRequest): Promise<void>;
+  openBrowse(request: BrowseRequest): Promise<void>;
 }
 
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
@@ -82,6 +84,7 @@ Usage:
   lazycc pr merge [<id>] --ff | --squash | --three-way
   lazycc pr close [<id>]
   lazycc branch
+  lazycc browse [<repo>] [--ref branch|commit] [--path path]
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
   lazycc completion bash|zsh|fish
   lazycc --version
@@ -146,6 +149,10 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
   "pr close": { positionals: 1, options: {} },
   branch: { positionals: 0, options: {} },
   status: { positionals: 0, options: {} },
+  browse: {
+    positionals: 1,
+    options: { ref: { type: "string" }, path: { type: "string" } },
+  },
 };
 
 const MERGE_FLAGS: Record<string, MergeStrategy> = {
@@ -252,6 +259,11 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
       io.out(completionScript(shell as Shell, table).trimEnd());
       return 0;
     }
+    if (command === "browse" && positionals[0] !== undefined) {
+      if (values["repo"] !== undefined)
+        throw new UsageError("Pass the repository once: as the argument or with --repo");
+      values["repo"] = positionals[0];
+    }
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
     }
@@ -352,6 +364,29 @@ async function runCommand(
       const table = await loadBranchTable(branchDeps);
       if (json) print(branchJson(table));
       else for (const line of branchLines(table)) io.out(line);
+      return 0;
+    }
+    case "browse": {
+      const actions = await browseActions({ api, ctx }, region, str(values, "ref"));
+      const path = str(values, "path") ?? "";
+      if (io.interactive && !json) {
+        await deps.openBrowse({ actions, path });
+        return 0;
+      }
+      const node = await actions.open(actions.startRef, path);
+      const url = actions.consoleUrl(node.ref, node.path);
+      if (json) print(browseJson(ctx.repository, node, url));
+      else if (node.kind === "folder") for (const e of node.entries) io.out(entryLine(e));
+      else if (node.text !== undefined) io.out(node.text.replace(/\n$/, ""));
+      else {
+        io.err(
+          node.tooLarge
+            ? `lazycc: ${node.path} is too large for the CodeCommit API. Run \`lazycc clone ${ctx.repository}\` to read it.`
+            : `lazycc: ${node.path} is a binary file (${node.size} bytes), not shown.`,
+        );
+        io.err(url);
+        return 1;
+      }
       return 0;
     }
     case "clone": {
@@ -598,6 +633,24 @@ function printJson(io: Io, value: unknown): void {
       (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
     ),
   );
+}
+
+function entryLine(e: { name: string; type: keyof typeof ENTRY_MARK }): string {
+  return `${e.name}${ENTRY_MARK[e.type]}`;
+}
+
+function browseJson(repository: string, node: BrowseNode, url: string) {
+  const at = { repository, ref: node.ref, path: node.path };
+  if (node.kind === "folder") return { ...at, type: "folder", entries: node.entries, url };
+  return {
+    ...at,
+    type: "file",
+    size: node.size ?? null,
+    binary: node.binary === true,
+    tooLarge: node.tooLarge === true,
+    content: node.text ?? null,
+    url,
+  };
 }
 
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
