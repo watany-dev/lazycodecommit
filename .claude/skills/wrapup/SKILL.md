@@ -15,7 +15,7 @@ description: >
 
 ## 手順
 
-1. **CI**: `make check`（CI と同じ全チェック）が通っていること。落ちていたら
+1. **CI**: `bun run ci`（CI と同じ全チェック）が通っていること。落ちていたら
    ここで直す
 2. **正しさのレビュー**: Claude Code なら `/code-review`。それ以外のエージェント
    （Codex / Cursor）は同等のレビューを自分で行う —

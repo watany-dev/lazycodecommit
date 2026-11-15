@@ -29,5 +29,5 @@ description: >
 ## 手順
 
 1. コメントを削る。コメント以外が変わっていないことを diff で確かめる
-2. `make check` を通してコミット
+2. `bun run ci` を通してコミット
 3. TODO を issue 化し、参照の書き換えを別コミットにして push
