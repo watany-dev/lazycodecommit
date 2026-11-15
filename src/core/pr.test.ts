@@ -31,6 +31,7 @@ function deps(
     interactive?: boolean;
     confirm?: boolean;
     edited?: string;
+    stdin?: string;
     template?: string;
   } = {},
 ) {
@@ -53,6 +54,7 @@ function deps(
       reads.push({ path, within });
       return over.files?.[path] ?? null;
     },
+    readStdin: async () => over.stdin ?? "",
     note: (line) => notes.push(line),
   };
   return { d, notes, edits, reads };
@@ -177,6 +179,14 @@ describe("createPullRequest in a clone", () => {
     [{ body: "a", bodyFile: "b" }, "--body and --body-file"],
   ])("rejects conflicting flags %j", async (flags, message) => {
     await expect(createPullRequest({ ...FILL, ...flags }, deps().d)).rejects.toThrow(message);
+  });
+
+  it("reads --body-file - from stdin, like gh", async () => {
+    const api = fakeApi();
+    const { d, reads } = deps({ api, stdin: "from stdin\n" });
+    await createPullRequest({ ...FILL, title: "T", bodyFile: "-" }, d);
+    expect(api.created[0]).toMatchObject({ title: "T", description: "from stdin" });
+    expect(reads.filter((r) => r.path === "-")).toEqual([]);
   });
 
   it("reports a missing --body-file", async () => {

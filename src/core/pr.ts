@@ -38,6 +38,8 @@ export interface PrDeps {
    * path, symlinks resolved, is not inside that directory.
    */
   readFile(path: string, within?: string): Promise<string | null>;
+  /** All of stdin, for `--body-file -`. */
+  readStdin(): Promise<string>;
   /** Progress for the user, on stderr. */
   note(line: string): void;
 }
@@ -195,7 +197,8 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
 }
 
 async function readBodyFile(path: string, deps: PrDeps): Promise<string> {
-  const text = await deps.readFile(path);
+  // "-" is stdin, as in gh.
+  const text = path === "-" ? await deps.readStdin() : await deps.readFile(path);
   if (text === null) throw new UserError(`--body-file: ${path} does not exist`);
   return text.trim();
 }

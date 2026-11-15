@@ -28,3 +28,4 @@ the pull request」だけで、どの操作が含まれるかは書かれてい�
 
 - フェーズ1〜2の実装はこの判断に依存しない。
 - 確認結果はこの ADR に追記する。
+- 確認は `scripts/realcheck/realcheck.mjs` で行う（[手順](../dev/real-aws-check.md)）。
