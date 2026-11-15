@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { explainAwsError } from "../aws/errors.js";
+import { explainAwsError, isCredentialError } from "../aws/errors.js";
 
 /** The commits a comment is posted against: the PR's destination and source tips. */
 export interface Commits {
@@ -186,15 +186,18 @@ function replace(list: readonly CommentDraft[], draft: CommentDraft): CommentDra
 }
 
 /**
- * An answer from CodeCommit below 500 means it was not posted. Anything else
- * (a timeout, a dropped connection, a server error) may have posted it.
+ * An answer from CodeCommit below 500, or no credentials to sign with, means
+ * it was not posted. Anything else (a timeout, a dropped connection, a server
+ * error) may have posted it.
  */
 export function describeFailure(error: unknown): DraftProblem {
   const message =
     explainAwsError(error, undefined) ?? (error instanceof Error ? error.message : String(error));
   const status = (error as { $metadata?: { httpStatusCode?: unknown } } | null)?.$metadata
     ?.httpStatusCode;
-  const refused = typeof status === "number" && status < 500;
+  const refused =
+    (typeof status === "number" && status < 500) ||
+    (error instanceof Error && isCredentialError(error));
   return refused ? { kind: "failed", message } : { kind: "unknown", message };
 }
 

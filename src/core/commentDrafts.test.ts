@@ -209,6 +209,8 @@ describe("describeFailure", () => {
     });
     expect(describeFailure("boom")).toEqual({ kind: "unknown", message: "boom" });
     expect(describeFailure(null).kind).toBe("unknown");
+    // Nothing was sent without credentials to sign with.
+    expect(describeFailure(awsError("CredentialsProviderError")).kind).toBe("failed");
   });
 
   it("uses the explanation the CLI gives for known errors", () => {
