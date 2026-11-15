@@ -5,6 +5,8 @@ import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import type { Checks } from "../core/checks.js";
 import {
   type CommentDraft,
+  type Commits,
+  type DraftLocation,
   type DraftTarget,
   draftKey,
   editDraft,
@@ -38,13 +40,19 @@ const BLOB_TEXT_BATCH_DELAY_MS = 16;
 
 type Screen = "prs" | "detail" | "activity";
 
+type InlineLocation = Omit<DraftLocation, "lineText">;
+
+/** Where an inline draft is posted: its location without the line text kept to notice moves. */
+function inlineLocation({ lineText: _lineText, ...location }: DraftLocation): InlineLocation {
+  return location;
+}
+
 interface PaginationState {
-  currentPage: number;
   currentCursor: PaginationCursor;
   nextCursor: PaginationCursor;
+  /** One per page before this one. */
   previousCursors: PaginationCursor[];
   hasNextPage: boolean;
-  hasPreviousPage: boolean;
 }
 
 interface PaginationCursor {
@@ -57,20 +65,19 @@ const EMPTY_CURSOR: PaginationCursor = { apiToken: undefined, pending: [] };
 
 function createInitialPagination(): PaginationState {
   return {
-    currentPage: 1,
     currentCursor: EMPTY_CURSOR,
     nextCursor: EMPTY_CURSOR,
     previousCursors: [],
     hasNextPage: false,
-    hasPreviousPage: false,
   };
 }
 
-function filterPullRequestsByStatus(
-  pullRequests: PullRequestSummary[],
-  status: PullRequestDisplayStatus,
-): PullRequestSummary[] {
-  return pullRequests.filter((pr) => pr.status === status);
+/** The commits a comment is posted against, or undefined when the PR has none. */
+function tipOf(pr: PullRequest | null): Commits | undefined {
+  const t = pr?.pullRequestTargets?.[0];
+  return t?.destinationCommit && t.sourceCommit
+    ? { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit }
+    : undefined;
 }
 
 /** Where the review screen starts: the PR list (`pr list`) or one PR (`pr view`). */
@@ -179,9 +186,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
   }
 
   function addDraft(content: string, target: DraftTarget) {
-    const t = prDetail?.pullRequestTargets?.[0];
-    if (!t?.destinationCommit || !t.sourceCommit) return;
-    const tip = { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit };
+    const tip = tipOf(prDetail);
+    if (!tip) return;
     changeDrafts((list) => [...list, newDraft(content, target, tip)]);
   }
 
@@ -212,14 +218,11 @@ export function App({ service, repository, start, onExit }: AppProps) {
     try {
       // CodeCommit posts against the current tip only, so read it first.
       const detail = await service.getPullRequestDetail(pullRequestId, selectedRepo);
-      const t = detail.pullRequest.pullRequestTargets?.[0];
-      if (!t?.destinationCommit || !t.sourceCommit) {
-        throw new Error("The pull request has no commits to comment on.");
-      }
-      const tip = { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit };
-      const old = prDetail?.pullRequestTargets?.[0];
+      const tip = tipOf(detail.pullRequest);
+      if (!tip) throw new Error("The pull request has no commits to comment on.");
+      const old = tipOf(prDetail);
       moved =
-        old?.sourceCommit !== tip.afterCommitId || old?.destinationCommit !== tip.beforeCommitId;
+        old?.afterCommitId !== tip.afterCommitId || old?.beforeCommitId !== tip.beforeCommitId;
       const lineAt = await lineReader(draftsRef.current, tip, detail.differences, (blobId) =>
         service.getBlobContent(selectedRepo, blobId),
       );
@@ -243,15 +246,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
             ...on,
             content,
             clientRequestToken: token,
-            ...(target.kind === "inline"
-              ? {
-                  location: {
-                    filePath: target.location.filePath,
-                    filePosition: target.location.filePosition,
-                    relativeFileVersion: target.location.relativeFileVersion,
-                  },
-                }
-              : {}),
+            ...(target.kind === "inline" ? { location: inlineLocation(target.location) } : {}),
           });
         },
       });
@@ -290,40 +285,19 @@ export function App({ service, repository, start, onExit }: AppProps) {
     return () => markSeen(pr);
   }, [openId, openAuthor, service]);
 
+  /** A general comment, or an inline one at `location`. */
   const postCommentAction = useAsyncAction(
-    async (content: string) => {
-      if (!prDetail) return;
-      const target = prDetail.pullRequestTargets?.[0];
-      if (!target?.destinationCommit || !target?.sourceCommit) return;
+    async (content: string, location?: InlineLocation) => {
+      const tip = tipOf(prDetail);
+      if (!prDetail?.pullRequestId || !tip) return;
       await service.postComment({
-        pullRequestId: prDetail.pullRequestId!,
+        pullRequestId: prDetail.pullRequestId,
         repositoryName: selectedRepo,
-        beforeCommitId: target.destinationCommit,
-        afterCommitId: target.sourceCommit,
+        ...tip,
         content,
+        ...(location ? { location } : {}),
       });
-      await reloadComments(prDetail.pullRequestId!);
-    },
-    (err) => formatErrorMessage(err, "comment"),
-  );
-
-  const postInlineCommentAction = useAsyncAction(
-    async (
-      content: string,
-      location: { filePath: string; filePosition: number; relativeFileVersion: "BEFORE" | "AFTER" },
-    ) => {
-      if (!prDetail) return;
-      const target = prDetail.pullRequestTargets?.[0];
-      if (!target?.destinationCommit || !target?.sourceCommit) return;
-      await service.postComment({
-        pullRequestId: prDetail.pullRequestId!,
-        repositoryName: selectedRepo,
-        beforeCommitId: target.destinationCommit,
-        afterCommitId: target.sourceCommit,
-        content,
-        location,
-      });
-      await reloadComments(prDetail.pullRequestId!);
+      await reloadComments(prDetail.pullRequestId);
     },
     (err) => formatErrorMessage(err, "comment"),
   );
@@ -387,7 +361,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
     (err) => formatErrorMessage(err, "reaction"),
   );
 
-  // v0.4: activity timeline
   const [activityEvents, setActivityEvents] = useState<PrActivityEvent[]>([]);
   const [activityNextToken, setActivityNextToken] = useState<string | undefined>(undefined);
   const activityAction = useAsyncAction(
@@ -421,7 +394,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
     (err) => formatErrorMessage(err, "activity"),
   );
 
-  // v0.8: filter, search, pagination
   const [statusFilter, setStatusFilter] = useState<PullRequestDisplayStatus>("OPEN");
   const [searchQuery, setSearchQuery] = useState("");
   const [pagination, setPagination] = useState<PaginationState>(createInitialPagination);
@@ -508,7 +480,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
     while (filteredPullRequests.length < PAGE_SIZE && canFetch) {
       const result = await service.listPullRequests(repoName, nextToken, "CLOSED");
-      filteredPullRequests.push(...filterPullRequestsByStatus(result.pullRequests, status));
+      filteredPullRequests.push(...result.pullRequests.filter((pr) => pr.status === status));
       nextToken = result.nextToken;
       canFetch = nextToken !== undefined;
     }
@@ -627,16 +599,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
       // Background: approvals
       const revisionId = detail.pullRequest.revisionId;
-      if (revisionId) {
-        void Promise.all([
-          service.getApprovalStates({ pullRequestId, revisionId }),
-          service.evaluateApprovalRules({ pullRequestId, revisionId }).catch(() => null),
-        ]).then(([states, evaluation]) => {
-          if (isDetailLoadStale(loadId)) return;
-          setApprovals(states);
-          setApprovalEvaluation(evaluation);
-        });
-      }
+      if (revisionId) void reloadApprovals(pullRequestId, revisionId, loadId);
 
       // Background: CI. Each lookup's failure is inside the result; a failure
       // to load the CI clients at all leaves the line out.
@@ -674,8 +637,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
       ...prev,
       previousCursors: [...prev.previousCursors, prev.currentCursor],
       currentCursor: nextCursor,
-      currentPage: prev.currentPage + 1,
-      hasPreviousPage: true,
     }));
 
     void loadPullRequests(selectedRepo, statusFilter, nextCursor);
@@ -692,8 +653,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
       ...prev,
       previousCursors: newPreviousCursors,
       currentCursor: prevCursor,
-      currentPage: prev.currentPage - 1,
-      hasPreviousPage: newPreviousCursors.length > 0,
     }));
 
     void loadPullRequests(selectedRepo, statusFilter, prevCursor);
@@ -723,7 +682,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
   ) {
     const [approvalStates, evaluation] = await Promise.all([
       service.getApprovalStates({ pullRequestId, revisionId }),
-      /* v8 ignore next -- defensive: evaluation failure should not block approval */
+      // Without the rules line the approvals still show.
       service.evaluateApprovalRules({ pullRequestId, revisionId }).catch(() => null),
     ]);
     if (isDetailLoadStale(loadId)) return;
@@ -842,9 +801,9 @@ export function App({ service, repository, start, onExit }: AppProps) {
           searchQuery={searchQuery}
           onChangeSearchQuery={setSearchQuery}
           pagination={{
-            currentPage: pagination.currentPage,
+            currentPage: pagination.previousCursors.length + 1,
             hasNextPage: pagination.hasNextPage,
-            hasPreviousPage: pagination.hasPreviousPage,
+            hasPreviousPage: pagination.previousCursors.length > 0,
           }}
           onNextPage={handleNextPage}
           onPreviousPage={handlePreviousPage}
@@ -863,7 +822,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
           onHelp={() => setShowHelp(true)}
           onShowActivity={handleShowActivity}
           comment={postCommentAction}
-          inlineComment={postInlineCommentAction}
           reply={postReplyAction}
           approval={{ ...approvalAction, approvals, evaluation: approvalEvaluation }}
           checks={checks}
@@ -895,9 +853,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
               changeDrafts((list) => list.map((d) => (d.id === id ? editDraft(d, content) : d))),
             discard: (id) => changeDrafts((list) => list.filter((d) => d.id !== id)),
             postAnyway: (id) => {
-              const t = prDetail.pullRequestTargets?.[0];
-              if (!t?.destinationCommit || !t.sourceCommit) return;
-              const tip = { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit };
+              const tip = tipOf(prDetail);
+              if (!tip) return;
               changeDrafts((list) => list.map((d) => (d.id === id ? postAnyway(d, tip) : d)));
             },
             submit: () => void handleSubmitDrafts(),

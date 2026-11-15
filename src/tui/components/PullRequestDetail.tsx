@@ -71,8 +71,8 @@ interface Props {
   onBack: () => void;
   onHelp: () => void;
   onShowActivity: () => void;
-  comment: AsyncActionState<[content: string]>;
-  inlineComment: AsyncActionState<[content: string, location: InlineLocation]>;
+  /** A general comment, or an inline one with a location. */
+  comment: AsyncActionState<[content: string, location?: InlineLocation]>;
   reply: AsyncActionState<[inReplyTo: string, content: string]>;
   approval: AsyncActionState<["APPROVE" | "REVOKE"]> & {
     approvals: Approval[];
@@ -119,7 +119,6 @@ export function PullRequestDetail({
   onHelp,
   onShowActivity,
   comment,
-  inlineComment,
   reply,
   approval,
   merge,
@@ -140,11 +139,7 @@ export function PullRequestDetail({
 }: Props) {
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isCommenting, setIsCommenting] = useState(false);
-  const [inlineCommentLocation, setInlineCommentLocation] = useState<{
-    filePath: string;
-    filePosition: number;
-    relativeFileVersion: "BEFORE" | "AFTER";
-  } | null>(null);
+  const [inlineCommentLocation, setInlineCommentLocation] = useState<InlineLocation | null>(null);
   const [replyTarget, setReplyTarget] = useState<{
     commentId: string;
     author: string;
@@ -187,10 +182,10 @@ export function PullRequestDetail({
     setCollapsedThreads((prev) => buildCollapsedThreadState(commentThreads, prev));
   }, [commentThreads]);
 
-  useAsyncDismiss(comment.isProcessing, comment.error, () => setIsCommenting(false));
-  useAsyncDismiss(inlineComment.isProcessing, inlineComment.error, () =>
-    setInlineCommentLocation(null),
-  );
+  useAsyncDismiss(comment.isProcessing, comment.error, () => {
+    setIsCommenting(false);
+    setInlineCommentLocation(null);
+  });
   useAsyncDismiss(reply.isProcessing, reply.error, () => setReplyTarget(null));
   useAsyncDismiss(approval.isProcessing, approval.error, () => setApprovalAction(null));
   /* v8 ignore next -- merge success auto-close tested in app.test.tsx */
@@ -271,13 +266,11 @@ export function PullRequestDetail({
 
   const filePosition = useMemo(() => {
     if (headerIndices.length === 0) return { current: 0, total: 0 };
-    let current = 1;
-    for (let i = headerIndices.length - 1; i >= 0; i--) {
-      if (cursorIndex >= headerIndices[i]!) {
-        current = i + 1;
-        break;
-      }
-    }
+    const current =
+      Math.max(
+        headerIndices.findLastIndex((h) => cursorIndex >= h),
+        0,
+      ) + 1;
     return { current, total: headerIndices.length };
   }, [cursorIndex, headerIndices]);
 
@@ -300,20 +293,20 @@ export function PullRequestDetail({
     }
   }
 
-  const visibleLineCount =
+  /** A box, prompt or list below the diff takes the keys and part of the screen. */
+  const dialogOpen = Boolean(
     isCommenting ||
-    inlineCommentLocation ||
-    replyTarget ||
-    editTarget ||
-    deleteTarget ||
-    approvalAction ||
-    mergeStep ||
-    isClosing ||
-    reactionTarget ||
-    showFileList ||
-    showDrafts
-      ? 20
-      : 30;
+      inlineCommentLocation ||
+      replyTarget ||
+      editTarget ||
+      deleteTarget ||
+      approvalAction ||
+      mergeStep ||
+      isClosing ||
+      reactionTarget ||
+      showDrafts,
+  );
+  const visibleLineCount = dialogOpen || showFileList ? 20 : 30;
 
   useKeys((input, key) => {
     // File list mode: handle its own keys before the modal guard
@@ -332,19 +325,7 @@ export function PullRequestDetail({
       return;
     }
 
-    if (
-      isCommenting ||
-      inlineCommentLocation ||
-      replyTarget ||
-      editTarget ||
-      deleteTarget ||
-      approvalAction ||
-      mergeStep ||
-      isClosing ||
-      reactionTarget ||
-      showDrafts
-    )
-      return;
+    if (dialogOpen) return;
 
     // === 2-key sequence: ]c / [c for change navigation ===
     if (pendingBracket && input === "c") {
@@ -531,27 +512,26 @@ export function PullRequestDetail({
     if (input === "e") {
       const currentLine = lines[cursorIndex];
       if (!currentLine) return;
-      const editInfo = getCommentIdFromLine(currentLine);
-      if (!editInfo) return;
-      const content = findCommentContent(commentThreads, editInfo.commentId);
-      setEditTarget({ commentId: editInfo.commentId, content });
+      const commentId = commentIdOf(currentLine);
+      if (!commentId) return;
+      setEditTarget({ commentId, content: findCommentContent(commentThreads, commentId) });
       return;
     }
     if (input === "d") {
       const currentLine = lines[cursorIndex];
       if (!currentLine) return;
-      const delInfo = getCommentIdFromLine(currentLine);
-      if (!delInfo) return;
-      setDeleteTarget(delInfo);
+      const commentId = commentIdOf(currentLine);
+      if (!commentId) return;
+      setDeleteTarget({ commentId });
       return;
     }
     if (input === "g") {
       if (viewIndex >= 0) return;
       const currentLine = lines[cursorIndex];
       if (!currentLine) return;
-      if (!COMMENT_LINE_TYPES.has(currentLine.type)) return;
-      if (!currentLine.commentId) return;
-      setReactionTarget(currentLine.commentId);
+      const commentId = commentIdOf(currentLine);
+      if (!commentId) return;
+      setReactionTarget(commentId);
       return;
     }
     if (input === "D" && drafts) {
@@ -681,7 +661,10 @@ export function PullRequestDetail({
               setIsCommenting(false);
             })
           }
-          onCancel={() => setIsCommenting(false)}
+          onCancel={() => {
+            setIsCommenting(false);
+            comment.clearError();
+          }}
           isPosting={comment.isProcessing}
           error={comment.error}
           onClearError={comment.clearError}
@@ -694,7 +677,7 @@ export function PullRequestDetail({
             {inlineCommentLocation.filePosition}
           </Text>
           <CommentInput
-            onSubmit={(content) => inlineComment.execute(content, inlineCommentLocation)}
+            onSubmit={(content) => comment.execute(content, inlineCommentLocation)}
             onDraft={
               drafts &&
               ((content) => {
@@ -705,10 +688,13 @@ export function PullRequestDetail({
                 setInlineCommentLocation(null);
               })
             }
-            onCancel={() => setInlineCommentLocation(null)}
-            isPosting={inlineComment.isProcessing}
-            error={inlineComment.error}
-            onClearError={inlineComment.clearError}
+            onCancel={() => {
+              setInlineCommentLocation(null);
+              comment.clearError();
+            }}
+            isPosting={comment.isProcessing}
+            error={comment.error}
+            onClearError={comment.clearError}
           />
         </Box>
       )}
@@ -911,35 +897,21 @@ export function PullRequestDetail({
       )}
       <Box marginTop={1}>
         <Text dimColor>
-          {isCommenting ||
-          inlineCommentLocation ||
-          replyTarget ||
-          editTarget ||
-          deleteTarget ||
-          approvalAction ||
-          mergeStep ||
-          isClosing ||
-          reactionTarget ||
-          showFileList ||
-          showDrafts
+          {dialogOpen || showFileList
             ? ""
             : pendingBracket
               ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
-              : viewIndex === -1 && (commits.length > 0 || commitsAvailable)
-                ? `Tab view ↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`
-                : viewIndex >= 0
-                  ? "Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help"
-                  : `↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
+              : viewIndex >= 0
+                ? "Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help"
+                : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
         </Text>
       </Box>
     </Box>
   );
 }
 
-function getCommentIdFromLine(line: DisplayLine): { commentId: string } | null {
-  if (!COMMENT_LINE_TYPES.has(line.type)) return null;
-  if (!line.commentId) return null;
-  return { commentId: line.commentId };
+function commentIdOf(line: DisplayLine): string | undefined {
+  return COMMENT_LINE_TYPES.has(line.type) ? line.commentId : undefined;
 }
 
 /* v8 ignore start -- commentId always matches a thread entry; loop-exit branch unreachable */
@@ -958,8 +930,8 @@ function findCommentContent(commentThreads: CommentThread[], commentId: string):
 function getReplyTargetFromLine(
   line: DisplayLine,
 ): { commentId: string; author: string; content: string } | null {
-  if (!COMMENT_LINE_TYPES.has(line.type)) return null;
-  if (!line.commentId) return null;
+  const commentId = commentIdOf(line);
+  if (!commentId) return null;
 
   // Extract author from line text
   const text = line.text;
@@ -975,14 +947,10 @@ function getReplyTargetFromLine(
     author = prefix.replace(/^[💬└\s]+/u, "").trim();
   }
 
-  return { commentId: line.commentId, author, content };
+  return { commentId, author, content };
 }
 
-function getLocationFromLine(line: DisplayLine): {
-  filePath: string;
-  filePosition: number;
-  relativeFileVersion: "BEFORE" | "AFTER";
-} | null {
+function getLocationFromLine(line: DisplayLine): InlineLocation | null {
   if (!line.filePath) return null;
 
   if (line.type === "delete" && line.beforeLineNumber) {
@@ -1030,14 +998,7 @@ function findPrevHeaderIndex(headerIndices: number[], currentIndex: number): num
 }
 
 function formatStrategyName(strategy: MergeStrategy): string {
-  switch (strategy) {
-    case "fast-forward":
-      return "fast-forward";
-    case "squash":
-      return "squash";
-    case "three-way":
-      return "three-way merge";
-  }
+  return strategy === "three-way" ? "three-way merge" : strategy;
 }
 
 /** The review screen's CI block: the overall state, then one line per project or pipeline. */
