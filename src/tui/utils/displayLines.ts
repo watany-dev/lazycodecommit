@@ -1,8 +1,7 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
 import { blobKey } from "../../core/blobTexts.js";
 import type { CommentThread, ReactionSummary, ReactionsByComment } from "../../core/review.js";
-import { printable } from "../../core/text.js";
-import { extractAuthorName } from "./formatDate.js";
+import { printable, shortArn } from "../../core/text.js";
 import { computeSimpleDiff, type DisplayLine } from "./formatDiff.js";
 
 export const LARGE_DIFF_THRESHOLD = 1500;
@@ -75,7 +74,7 @@ function appendThreadLines(
   const shouldFold = comments.length >= FOLD_THRESHOLD;
   const isCollapsed = collapsedThreads.get(threadKey) ?? shouldFold;
 
-  const rootAuthor = extractAuthorName(rootComment.authorArn ?? "unknown");
+  const rootAuthor = shortArn(rootComment.authorArn ?? "unknown");
   const rootContent = commentText(rootComment);
   const rootReactionText = formatReactionBadge(reactionsByComment.get(rootComment.commentId ?? ""));
 
@@ -107,7 +106,7 @@ function appendThreadLines(
   }
 
   for (const reply of replies) {
-    const author = extractAuthorName(reply.authorArn ?? "unknown");
+    const author = shortArn(reply.authorArn ?? "unknown");
     const content = commentText(reply);
     const replyReactionText = formatReactionBadge(reactionsByComment.get(reply.commentId ?? ""));
 

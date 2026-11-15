@@ -2,7 +2,8 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 import React, { useEffect, useMemo, useState } from "react";
 import type { PullRequestDisplayStatus, PullRequestSummary } from "../../core/review.js";
-import { extractAuthorName, formatRelativeDate } from "../utils/formatDate.js";
+import { shortArn } from "../../core/text.js";
+import { formatRelativeDate } from "../utils/formatDate.js";
 
 interface PaginationViewState {
   currentPage: number;
@@ -77,7 +78,7 @@ export function PullRequestList({
     return pullRequests.filter(
       (pr) =>
         pr.title.toLowerCase().includes(query) ||
-        extractAuthorName(pr.authorArn).toLowerCase().includes(query),
+        shortArn(pr.authorArn).toLowerCase().includes(query),
     );
   }, [pullRequests, searchQuery]);
 
@@ -195,7 +196,7 @@ export function PullRequestList({
               {pr.title}
               {"  "}
               <Text dimColor>
-                {extractAuthorName(pr.authorArn)} {formatRelativeDate(pr.creationDate)}
+                {shortArn(pr.authorArn)} {formatRelativeDate(pr.creationDate)}
               </Text>
             </Text>
           </Box>

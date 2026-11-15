@@ -6,10 +6,6 @@ import { ActivityTimeline } from "./ActivityTimeline.js";
 
 vi.mock("../utils/formatDate.js", () => ({
   formatRelativeDate: vi.fn().mockReturnValue("3h ago"),
-  extractAuthorName: vi.fn((arn: string) => {
-    const parts = arn.split("/");
-    return parts[parts.length - 1] ?? arn;
-  }),
 }));
 
 const makeEvent = (overrides: Partial<PrActivityEvent> = {}): PrActivityEvent => ({

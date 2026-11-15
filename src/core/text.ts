@@ -17,3 +17,11 @@ export function printable(text: string, multiline = false): string {
       : `^[${String.fromCharCode(code - 64)}`;
   });
 }
+
+/** "arn:aws:iam::1:user/alice" → "alice"; "arn:aws:sts::1:assumed-role/Dev/bob" → "Dev/bob". */
+export function shortArn(arn: string): string {
+  const resource = arn.split(":").slice(5).join(":");
+  if (!resource) return arn;
+  const slash = resource.indexOf("/");
+  return slash === -1 ? resource : resource.slice(slash + 1);
+}

@@ -19,7 +19,3 @@ export function formatRelativeDate(date: Date, now: Date = new Date()): string {
   }
   return date.toLocaleDateString();
 }
-
-export function extractAuthorName(authorArn: string): string {
-  return authorArn.slice(authorArn.lastIndexOf("/") + 1);
-}
