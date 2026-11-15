@@ -2,6 +2,7 @@ import { type ParseArgsConfig, parseArgs } from "node:util";
 import { version } from "../../package.json" with { type: "json" };
 import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
+import { branchActions, loadBranchTable } from "../core/branch.js";
 import { cloneRepository } from "../core/clone.js";
 import { type RepoContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
@@ -20,8 +21,16 @@ import {
 } from "../core/pr.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
-import type { ReviewRequest } from "../tui/index.js";
-import { listLines, printable, prJson, statusLines, viewLines } from "./format.js";
+import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
+import {
+  branchJson,
+  branchLines,
+  listLines,
+  printable,
+  prJson,
+  statusLines,
+  viewLines,
+} from "./format.js";
 
 export interface Io {
   out(line: string): void;
@@ -40,8 +49,9 @@ export interface Deps {
   createGit(cwd: string): Git;
   createApi(options: { region?: string; profile?: string }): Promise<CodeCommitApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
-  /** Opens the review TUI; cli.ts loads it lazily so other commands never load Ink. */
+  /** Open the TUI; cli.ts loads it lazily so other commands never load Ink. */
   openReview(request: ReviewRequest): Promise<void>;
+  openBranches(request: BranchesRequest): Promise<void>;
 }
 
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
@@ -56,6 +66,7 @@ Usage:
   lazycc pr approve [<id>] [--revoke]
   lazycc pr merge [<id>] --ff | --squash | --three-way
   lazycc pr close [<id>]
+  lazycc branch
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
   lazycc --version
 
@@ -117,6 +128,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     },
   },
   "pr close": { positionals: 1, options: {} },
+  branch: { positionals: 0, options: {} },
 };
 
 const MERGE_FLAGS: Record<string, MergeStrategy> = {
@@ -277,6 +289,34 @@ async function runCommand(
     });
 
   switch (command) {
+    case "branch": {
+      const branchDeps = { api, git, ctx, config };
+      if (io.interactive && !json) {
+        await deps.openBranches({
+          actions: branchActions(branchDeps, region),
+          region,
+          ...optional("profile", ctx.profile),
+          ...(ctx.clone ? { git } : {}),
+          async createPullRequest(head) {
+            try {
+              const result = await createPullRequest(
+                { head, fill: false, push: false, noPush: false, dryRun: false },
+                prDeps,
+              );
+              // dry-run is off, so the result is a PR, new or already open.
+              return { pullRequestId: (result as { pr: { id: string } }).pr.id };
+            } catch (error) {
+              return { message: describeError(error, ctx.profile) };
+            }
+          },
+        });
+        return 0;
+      }
+      const table = await loadBranchTable(branchDeps);
+      if (json) print(branchJson(table));
+      else for (const line of branchLines(table)) io.out(line);
+      return 0;
+    }
     case "clone": {
       const url = await cloneRepository(
         {
@@ -458,17 +498,23 @@ function report(error: unknown, io: Io, profile: string | undefined): number {
     io.err("Run `lazycc --help` for usage.");
     return 2;
   }
-  if (error instanceof UserError || error instanceof ConfigError || error instanceof GitError) {
-    io.err(`lazycc: ${error.message}`);
-    return 1;
+  io.err(`lazycc: ${describeError(error, profile)}`);
+  if (io.env["LAZYCC_DEBUG"] && error instanceof Error && error.stack) io.err(error.stack);
+  return 1;
+}
+
+/** One line for the user, without the "lazycc: " prefix. */
+function describeError(error: unknown, profile: string | undefined): string {
+  if (
+    error instanceof UsageError ||
+    error instanceof UserError ||
+    error instanceof ConfigError ||
+    error instanceof GitError
+  ) {
+    return error.message;
   }
   const explained = explainAwsError(error, profile);
-  if (explained) {
-    io.err(`lazycc: ${explained}`);
-    return 1;
-  }
+  if (explained) return explained;
   const e = error instanceof Error ? error : new Error(String(error));
-  io.err(`lazycc: ${e.name === "Error" ? "" : `${e.name}: `}${e.message}`);
-  if (io.env["LAZYCC_DEBUG"] && e.stack) io.err(e.stack);
-  return 1;
+  return `${e.name === "Error" ? "" : `${e.name}: `}${e.message}`;
 }

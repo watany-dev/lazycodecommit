@@ -5413,4 +5413,36 @@ describe("App", () => {
       expect(exit).not.toHaveBeenCalled();
     });
   });
+
+  it("goes back to the parent screen from an error with q", async () => {
+    vi.mocked(getPullRequestDetail).mockRejectedValue(new Error("boom"));
+    const onExit = vi.fn();
+    const { lastFrame, stdin } = render(
+      <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} onExit={onExit} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("Press q to go back."));
+    stdin.write("q");
+    await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it("returns to the parent screen after a close when it has one", async () => {
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: { pullRequestId: "42", title: "fix: login", pullRequestTargets: [] },
+      differences: [],
+      commentThreads: [],
+    } as any);
+    vi.mocked(closePullRequest).mockResolvedValue({} as any);
+    const onExit = vi.fn();
+    const { lastFrame, stdin } = render(
+      <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} onExit={onExit} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
+    stdin.write("x");
+    await vi.waitFor(() => expect(lastFrame()).toContain("(y/n)"));
+    stdin.write("y");
+    await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
+    expect(listPullRequests).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+  });
 });

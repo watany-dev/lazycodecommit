@@ -2,7 +2,7 @@
 
 A daily-driver client for AWS CodeCommit: subcommands like `gh`, a TUI like
 lazygit. Work in progress: Phase 1 (pull requests from the command line) is
-in, and Phase 2 has started with the review screen. See [docs/dev/spec.ja.md](docs/dev/spec.ja.md).
+in, and so are the review screen and the branch table from Phase 2. See [docs/dev/spec.ja.md](docs/dev/spec.ja.md).
 
 ## Usage
 
@@ -26,6 +26,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr approve [id]` | Approve a PR; `--revoke` takes your approval back |
 | `lazycc pr merge [id]` | Merge with one of `--ff`, `--squash`, `--three-way`; refuses if the source branch moved since it was read |
 | `lazycc pr close [id]` | Close a PR without merging |
+| `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc clone <repo> [dir]` | Clone by repository name. `--protocol https\|ssh\|grc` picks the URL (default `https`; `grc` is git-remote-codecommit); flags after `--` go to `git clone` |
 
 The review screen is the one from
@@ -33,13 +34,22 @@ The review screen is the one from
 same keys (`?` lists them): diff, comments, inline comments, replies,
 reactions, approval, merge and close. Inside a clone the diff comes from git
 (fetching the PR's branches if needed), and from the API otherwise. With
-`--json`, or when not on a terminal, `pr view` and `pr list` print instead.
+`--json`, or when not on a terminal, `pr view`, `pr list` and `branch` print
+instead.
+
+On the branch screen, Enter opens the branch's PR in the review screen and `n`
+creates one: the screen closes for `pr create`'s editor and push prompt, then
+opens on the new PR. `d` deletes the branch on CodeCommit (never the default
+branch or one with an open PR), Space switches to it inside a clone, `/`
+filters and Ctrl+r runs `git fetch --prune` and reloads. A branch counts as
+merged when a merged PR's source commit is its tip; the last
+`branch.closedPrLookback` closed PRs (default 100) are checked.
 
 Every command takes `--profile`, `--region` and `--json`; the `pr` commands
-also take `-R/--repo`.
+and `branch` also take `-R/--repo`.
 Exit codes: 0 success, 1 error, 2 bad arguments. Optional settings live in
 `~/.config/lazycc/config.json` (`profile`, `region`, `pr.template`,
-`concurrency`).
+`concurrency`, `branch.closedPrLookback`).
 
 ## Development
 

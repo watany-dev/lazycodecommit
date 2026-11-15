@@ -1,12 +1,14 @@
 import {
   CodeCommitClient,
   CreatePullRequestCommand,
+  DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
   GetBranchCommand,
   GetMergeConflictsCommand,
   GetPullRequestApprovalStatesCommand,
   GetPullRequestCommand,
   GetRepositoryCommand,
+  ListBranchesCommand,
   ListPullRequestsCommand,
   MergePullRequestByFastForwardCommand,
   MergePullRequestBySquashCommand,
@@ -16,6 +18,7 @@ import {
   UpdatePullRequestApprovalStateCommand,
   UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
+import { mapLimit } from "./mapLimit.js";
 
 export type PullRequestStatus = "OPEN" | "CLOSED";
 
@@ -59,6 +62,8 @@ export interface CodeCommitApi {
   region(): Promise<string>;
   defaultBranch(repository: string): Promise<string | undefined>;
   cloneUrls(repository: string): Promise<{ https: string; ssh: string }>;
+  listBranches(repository: string): Promise<string[]>;
+  deleteBranch(repository: string, branch: string): Promise<void>;
   /** Tip commit of a remote branch, or undefined when the branch does not exist. */
   branchCommit(repository: string, branch: string): Promise<string | undefined>;
   listPullRequestIds(
@@ -114,24 +119,6 @@ export function toPullRequest(pr: SdkPullRequest | undefined): PullRequest {
   };
 }
 
-/** Runs `fn` over `items` with at most `limit` in flight, keeping order. */
-export async function mapLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i] as T);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
 export function createCodeCommitApi(options: { region?: string; profile?: string }): CodeCommitApi {
   const client = new CodeCommitClient({
     ...(options.region ? { region: options.region } : {}),
@@ -152,6 +139,28 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
       if (!m?.cloneUrlHttp || !m.cloneUrlSsh)
         throw new Error(`CodeCommit returned no clone URL for ${repository}`);
       return { https: m.cloneUrlHttp, ssh: m.cloneUrlSsh };
+    },
+
+    async listBranches(repository) {
+      const branches: string[] = [];
+      let nextToken: string | undefined;
+      do {
+        const out = await client.send(
+          new ListBranchesCommand({
+            repositoryName: repository,
+            ...(nextToken ? { nextToken } : {}),
+          }),
+        );
+        branches.push(...(out.branches ?? []));
+        nextToken = out.nextToken;
+      } while (nextToken);
+      return branches;
+    },
+
+    async deleteBranch(repository, branch) {
+      await client.send(
+        new DeleteBranchCommand({ repositoryName: repository, branchName: branch }),
+      );
     },
 
     async branchCommit(repository, branch) {

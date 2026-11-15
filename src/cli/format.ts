@@ -1,4 +1,5 @@
 import type { PullRequest } from "../aws/codecommit.js";
+import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
 
@@ -70,14 +71,55 @@ export function listLines(prs: readonly PullRequest[]): string[] {
     shortArn(pr.authorArn),
     date(pr.lastActivityDate),
   ]);
+  return align(rows);
+}
+
+/** Pads every column but the last to its widest cell. */
+function align(rows: readonly string[][]): string[] {
   const widths = rows[0]?.map((_, i) => Math.max(...rows.map((r) => cells(r[i] as string)))) ?? [];
   return rows.map((r) =>
     r
       .map((cell, i) =>
         i === r.length - 1 ? cell : cell + " ".repeat((widths[i] as number) - cells(cell)),
       )
-      .join("  "),
+      .join("  ")
+      .trimEnd(),
   );
+}
+
+/** spec: ブランチ×PR 対応表, as text: one line per branch, the default marked with *. */
+export function branchLines(table: BranchTable): string[] {
+  return align(
+    table.rows.map((r) => [
+      `${r.isDefault ? "*" : " "} ${printable(r.name)}`,
+      STATE_LABEL[r.state],
+      r.ahead === undefined ? "" : `↑${r.ahead} ↓${r.behind}`,
+      r.lastCommit ? `${date(r.lastCommit.date)} ${printable(r.lastCommit.author)}` : "",
+      [r.pr ? `#${r.pr.id} ${printable(r.pr.title)}` : "", rulesSummary(r.rules)]
+        .filter(Boolean)
+        .join("  "),
+    ]),
+  );
+}
+
+export function branchJson(table: BranchTable) {
+  return {
+    repository: table.repository,
+    defaultBranch: table.defaultBranch ?? null,
+    branches: table.rows.map((r) => ({
+      name: r.name,
+      default: r.isDefault,
+      state: r.state,
+      tip: r.tip,
+      pullRequest: r.pr ?? null,
+      approvalRules: r.rules ?? null,
+      ahead: r.ahead ?? null,
+      behind: r.behind ?? null,
+      lastCommit: r.lastCommit
+        ? { date: date(r.lastCommit.date), author: r.lastCommit.author }
+        : null,
+    })),
+  };
 }
 
 export function viewLines(pr: PullRequest, region: string): string[] {

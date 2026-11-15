@@ -11,4 +11,5 @@ process.exitCode = await run(process.argv.slice(2), {
   createApi: async (options) => (await import("./aws/codecommit.js")).createCodeCommitApi(options),
   loadConfig,
   openReview: async (request) => (await import("./tui/index.js")).openReview(request),
+  openBranches: async (request) => (await import("./tui/index.js")).openBranches(request),
 });

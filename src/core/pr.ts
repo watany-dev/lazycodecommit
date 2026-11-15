@@ -39,9 +39,13 @@ export interface PrDeps {
   note(line: string): void;
 }
 
-export function consoleUrl(region: string, repository: string, id: string): string {
+export function repositoryConsoleUrl(region: string, repository: string, path: string): string {
   const host = region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com";
-  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/pull-requests/${id}/details?region=${region}`;
+  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/${path}?region=${region}`;
+}
+
+export function consoleUrl(region: string, repository: string, id: string): string {
+  return repositoryConsoleUrl(region, repository, `pull-requests/${id}/details`);
 }
 
 function concurrency(config: Config): number {
@@ -124,10 +128,9 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
 
   let draft: Draft;
   let unpushed: number | null = 0;
-  if (clone) {
-    if ((await git.resolveCommit(`refs/heads/${head}`)) === null) {
-      throw new UserError(`No local branch named ${head}.`);
-    }
+  // A branch someone else pushed has no local copy: take it from CodeCommit as it is.
+  const local = clone !== undefined && (await git.resolveCommit(`refs/heads/${head}`)) !== null;
+  if (clone && local) {
     const baseRef = await localBaseRef(git, base);
     const commits = await git.commits(baseRef, `refs/heads/${head}`);
     if (commits.length === 0) {
@@ -137,7 +140,11 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
     draft = withTemplate(draftFromCommits(head, commits), await readTemplate(clone.root, deps));
   } else {
     if ((await api.branchCommit(ctx.repository, head)) === undefined) {
-      throw new UserError(`${ctx.repository} has no branch named ${head}.`);
+      throw new UserError(
+        clone
+          ? `No local branch named ${head}, and ${ctx.repository} has none either.`
+          : `${ctx.repository} has no branch named ${head}.`,
+      );
     }
     draft = { title: head, body: "" };
   }

@@ -23,6 +23,8 @@ export function fakeGit(overrides: Partial<Git> = {}): Git {
     diffTree: async () => [],
     blob: async () => Buffer.from(""),
     firstParentLog: async () => [],
+    remoteBranches: async () => [],
+    aheadBehind: async () => ({ ahead: 0, behind: 0 }),
     ...overrides,
   };
 }
@@ -69,6 +71,8 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
       https: `https://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
       ssh: `ssh://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
     }),
+    listBranches: async () => ["main", "topic"],
+    deleteBranch: async () => {},
     branchCommit: async (_repo, branch) => (branch === "missing" ? undefined : "r0ffee"),
     listPullRequestIds: async (_repo, status, limit) =>
       prs

@@ -191,8 +191,20 @@ describe("createPullRequest in a clone", () => {
 
   it("errors when the local head branch is missing", async () => {
     await expect(createPullRequest({ ...FILL, head: "missing" }, deps().d)).rejects.toThrow(
-      "No local branch named missing",
+      "No local branch named missing, and demo has none either.",
     );
+  });
+
+  it("creates from a branch that exists only on origin, without pushing", async () => {
+    const api = fakeApi();
+    const push = vi.fn();
+    const git = {
+      resolveCommit: async (r: string) => (r === "refs/heads/theirs" ? null : "c"),
+      push,
+    };
+    await createPullRequest({ ...FILL, head: "theirs" }, deps({ api, git }).d);
+    expect(api.created[0]).toMatchObject({ title: "theirs", sourceBranch: "theirs" });
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("prefers origin/<base> and falls back to the local base", async () => {
