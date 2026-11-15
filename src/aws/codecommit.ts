@@ -128,10 +128,10 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
 
     async cloneUrls(repository) {
       const out = await client.send(new GetRepositoryCommand({ repositoryName: repository }));
-      return {
-        https: out.repositoryMetadata?.cloneUrlHttp ?? "",
-        ssh: out.repositoryMetadata?.cloneUrlSsh ?? "",
-      };
+      const m = out.repositoryMetadata;
+      if (!m?.cloneUrlHttp || !m.cloneUrlSsh)
+        throw new Error(`CodeCommit returned no clone URL for ${repository}`);
+      return { https: m.cloneUrlHttp, ssh: m.cloneUrlSsh };
     },
 
     async branchCommit(repository, branch) {

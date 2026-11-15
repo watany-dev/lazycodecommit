@@ -21,8 +21,11 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr list` | List PRs (`--state open\|closed`, `--limit`) |
 | `lazycc pr view [id]` | Show a PR; without an id, the current branch's |
 | `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR |
+| `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it (fast-forwarding an existing local branch) |
+| `lazycc clone <repo> [dir]` | Clone by repository name. `--protocol https\|ssh\|grc` picks the URL (default `https`; `grc` is git-remote-codecommit); flags after `--` go to `git clone` |
 
-Every `pr` command takes `-R/--repo`, `--profile`, `--region` and `--json`.
+Every command takes `--profile`, `--region` and `--json`; the `pr` commands
+also take `-R/--repo`.
 Exit codes: 0 success, 1 error, 2 bad arguments. Optional settings live in
 `~/.config/lazycc/config.json` (`profile`, `region`, `pr.template`,
 `concurrency`).
