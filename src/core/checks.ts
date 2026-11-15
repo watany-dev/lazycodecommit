@@ -66,6 +66,18 @@ export function loadTargetRuns(api: CiApi, targets: readonly CiTarget[]): Promis
   );
 }
 
+/** As loadTargetRuns; when the clients cannot be created, each target carries that error. */
+async function runsVia(client: CiClient, targets: readonly CiTarget[]): Promise<TargetRuns[]> {
+  let api: CiApi;
+  try {
+    api = await client();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return targets.map((t) => ({ ...t, error: message }));
+  }
+  return loadTargetRuns(api, targets);
+}
+
 const STATES: Record<CiProvider, Record<string, CheckState>> = {
   codebuild: {
     SUCCEEDED: "pass",
@@ -118,6 +130,11 @@ export function checksFor(commit: string, targets: readonly TargetRuns[]): Check
   return { state: overallState(runs.map((r) => r.state)), commit, runs };
 }
 
+/** Why a target shows none: only the newest runs are searched, so an older run on the commit is not found. */
+export function noRun(commit: string): string {
+  return `no run on ${commit.slice(0, 7) || "(no commit)"} among the newest ${RECENT_RUNS}`;
+}
+
 export const CHECK_MARK: Record<CheckState, string> = {
   pass: "✓",
   fail: "✗",
@@ -160,7 +177,7 @@ export async function pullRequestChecks(
 ): Promise<Checks | null> {
   const targets = ciTargets(config, pr.repository);
   if (!targets) return null;
-  return checksFor(pr.sourceCommit, await loadTargetRuns(await client(), targets));
+  return checksFor(pr.sourceCommit, await runsVia(client, targets));
 }
 
 /**
@@ -175,9 +192,7 @@ export function repositoryRuns(config: Config, client: CiClient): RepositoryRuns
     let runs = byRepository.get(repository);
     if (!runs) {
       const targets = ciTargets(config, repository);
-      runs = targets
-        ? client().then((ci) => loadTargetRuns(ci, targets))
-        : Promise.resolve(undefined);
+      runs = targets ? runsVia(client, targets) : Promise.resolve(undefined);
       byRepository.set(repository, runs);
     }
     return runs;

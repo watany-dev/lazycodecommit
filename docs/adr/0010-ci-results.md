@@ -54,6 +54,10 @@ ADR 0007 で後回しにした「CodeBuild と CodePipeline の結果を PR に�
 - 一致の条件は、CodeBuild は `resolvedSourceVersion`、CodePipeline は
   `sourceRevisions` のどれかの `revisionId` が `sourceCommit` と等しいこと。
 - プロジェクトとパイプラインごとに、一致した中で最も新しい実行を1件出す。
+- CodeBuild の `resolvedSourceVersion` はソースを取得した後にしか入らない。
+  キューに入ったばかりのビルド（再実行など）が一致せず古い結果が出ないよう、
+  それが空のあいだは、起動時の `sourceVersion` が 40 桁のコミット ID ならそれで
+  一致させる。ブランチ名で起動したビルドは、ソースを取得するまで一致しない。
 - 直近の実行だけを見る。CodeBuild は `ListBuildsForProject`（新しい順）の先頭
   20 件を `BatchGetBuilds` で読む。CodePipeline は `ListPipelineExecutions` を
   `maxResults` 20 で1回呼ぶ。プロジェクトとパイプラインごとに API 1〜2 回で済み、
@@ -105,6 +109,11 @@ PR 全体の `state` は、各実行の `state` のうち、`fail`、`error`、`
 
 ホームの「承認待ち」には出さない。承認する側が CI を見るのはレビュー画面で足りる。
 CI 結果は承認状態と同じく遅延取得し、取得に失敗しても PR の表示は止めない。
+CodeBuild と CodePipeline のクライアントを作れなかったとき（チャンクの読み込み
+失敗など）も、各実行を `error` にして PR は出す。`none` の行は「直近 20 件に
+一致する実行がない」と書き、それより古い実行があり得ることを示す。ホームの行は
+状態の記号だけなので、`lazycc status` は取得に失敗した理由をリポジトリごとに
+標準エラーへ出す（終了コードは変えない）。
 
 ### --json
 

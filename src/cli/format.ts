@@ -1,6 +1,6 @@
 import type { PullRequest, RuleEvaluation } from "../aws/codecommit.js";
 import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
-import { CHECK_MARK, type Checks } from "../core/checks.js";
+import { CHECK_MARK, type Checks, noRun } from "../core/checks.js";
 import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
@@ -132,13 +132,7 @@ function checkRunLines(checks: Checks): string[] {
     checks.runs.map((r) => {
       const name = `${r.provider} ${r.name}`;
       if (r.state === "error") return [CHECK_MARK.error, name, "", printable(r.message ?? "")];
-      if (r.state === "none")
-        return [
-          CHECK_MARK.none,
-          name,
-          "",
-          `no run on ${checks.commit.slice(0, 7) || "(no commit)"}`,
-        ];
+      if (r.state === "none") return [CHECK_MARK.none, name, "", noRun(checks.commit)];
       const when = r.startedAt ? ` ${date(r.startedAt)}` : "";
       return [CHECK_MARK[r.state], name, `${r.status}${when}`, r.url ?? ""];
     }),

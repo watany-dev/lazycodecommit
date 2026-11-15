@@ -847,6 +847,16 @@ async function runStatus(
   for (const { pr, detailError } of incomplete) {
     io.err(`lazycc: ${pr.repository} #${pr.id}: could not load approvals or rules: ${detailError}`);
   }
+  // A row shows only CI's mark; why a lookup failed is said once per repository.
+  // Only repositories with a PR of ours were looked up, and no others are.
+  const looked = new Set(
+    inbox.items.filter((i) => i.section === "mine").map((i) => i.pr.repository),
+  );
+  for (const repository of looked) {
+    for (const t of (await runs(repository)) ?? []) {
+      if ("error" in t) io.err(`lazycc: ${repository}: CI ${t.provider} ${t.name}: ${t.error}`);
+    }
+  }
   // The cache only speeds up the next TUI start; failing to write it is not an error.
   await state.cache.set("home", toCache(inbox, region)).catch(() => {});
   return inbox.errors.length > 0 || incomplete.length > 0 ? 1 : 0;
