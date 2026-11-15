@@ -147,13 +147,24 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
 
-  /** Shows `next` and writes it to drafts.json; the promise rejects when the write fails. */
-  async function storeDrafts(key: string, next: readonly CommentDraft[]) {
+  /**
+   * Shows `next` and writes it to drafts.json, then shows what was saved, which
+   * holds another lazycc's changes to this PR's drafts. Rejects when the write fails.
+   */
+  async function storeDrafts(
+    key: string,
+    next: readonly CommentDraft[],
+  ): Promise<readonly CommentDraft[]> {
     draftsRef.current = next;
     setDrafts(next);
     try {
-      await service.drafts?.save(key, next);
+      const saved = (await service.drafts?.save(key, next)) ?? next;
       setDraftSaveError(null);
+      if (draftsForRef.current === key) {
+        draftsRef.current = saved;
+        setDrafts(saved);
+      }
+      return saved;
     } catch (err) {
       setDraftSaveError(formatErrorMessage(err));
       throw err;
@@ -211,8 +222,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
       const lineAt = await lineReader(draftsRef.current, tip, detail.differences, (blobId) =>
         service.getBlobContent(selectedRepo, blobId),
       );
-      const anchored = reanchor(draftsRef.current, tip, lineAt);
-      await storeDrafts(key, anchored);
+      const anchored = await storeDrafts(key, reanchor(draftsRef.current, tip, lineAt));
       const result = await submitDrafts(anchored, {
         save: (list) => storeDrafts(key, list),
         progress: (done, total) => setDraftProgress({ done, total }),

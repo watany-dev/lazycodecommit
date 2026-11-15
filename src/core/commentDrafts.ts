@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { explainAwsError, isCredentialError } from "../aws/errors.js";
+import { explainAwsError, isCredentialError, wasNotSent } from "../aws/errors.js";
 import { accountOf, type LocalState } from "../state/local.js";
 
 /** The commits a comment is posted against: the PR's destination and source tips. */
@@ -166,8 +166,11 @@ type PostDraft = (draft: CommentDraft, commits: Commits, token: string) => Promi
 
 export interface SubmitDeps {
   readonly post: PostDraft;
-  /** Persists what is left; called before and after every post. */
-  readonly save: (drafts: readonly CommentDraft[]) => Promise<void>;
+  /**
+   * Persists what is left; called before and after every post. It may return
+   * the list as saved, with another lazycc's changes merged in (draftStorage).
+   */
+  readonly save: (drafts: readonly CommentDraft[]) => Promise<readonly CommentDraft[] | void>;
   readonly progress?: (done: number, total: number) => void;
 }
 
@@ -183,34 +186,42 @@ export interface SubmitResult {
  * posts several. Each posted draft leaves the list at once, so a crash never
  * posts it again; the first failure stops the run (the same credentials,
  * permissions or throttling would fail the rest). Moved drafts are skipped.
+ * A draft another lazycc changed or posted meanwhile is left to it.
  */
 export async function submitDrafts(
   drafts: readonly CommentDraft[],
   deps: SubmitDeps,
 ): Promise<SubmitResult> {
-  let remaining = [...drafts];
-  const queue = drafts.filter((d) => d.problem?.kind !== "moved");
+  let remaining: readonly CommentDraft[] = [...drafts];
+  const save = async (list: readonly CommentDraft[]) => {
+    remaining = (await deps.save(list)) ?? list;
+  };
+  const queue = drafts.filter((d) => d.problem?.kind !== "moved").map((d) => d.id);
   let posted = 0;
-  for (const original of queue) {
+  for (const id of queue) {
     deps.progress?.(posted, queue.length);
-    let draft = original;
+    const current = remaining.find((d) => d.id === id);
+    if (!current || current.problem?.kind === "moved") continue;
     // A token is only reused with the commits it was sent with: an unsettled
     // send is retried as it was; otherwise new commits take a new token.
-    const retry = unsettled(draft);
-    const from = (retry && draft.sent) || draft;
+    const retry = unsettled(current);
+    const from = (retry && current.sent) || current;
     const commits: Commits = {
       beforeCommitId: from.beforeCommitId,
       afterCommitId: from.afterCommitId,
     };
     const token =
-      draft.sent && !retry && !sameCommits(draft.sent, draft) ? randomUUID() : draft.token;
-    draft = {
-      ...draft,
-      token,
-      sent: commits,
-    };
-    remaining = replace(remaining, draft);
-    await deps.save(remaining);
+      current.sent && !retry && !sameCommits(current.sent, current) ? randomUUID() : current.token;
+    const draft: CommentDraft = { ...current, token, sent: commits };
+    await save(replace(remaining, draft));
+    // Another lazycc changed it first (sent, edited, posted): leave it.
+    if (
+      !sameDraft(
+        remaining.find((d) => d.id === id),
+        draft,
+      )
+    )
+      continue;
     try {
       await deps.post(draft, commits, token);
     } catch (error) {
@@ -221,13 +232,11 @@ export async function submitDrafts(
         ...draft,
         problem: retry ? { kind: "unknown", message: problem.message } : problem,
       };
-      remaining = replace(remaining, stopped);
-      await deps.save(remaining);
+      await save(replace(remaining, stopped));
       return { remaining, posted, stopped };
     }
     posted++;
-    remaining = remaining.filter((d) => d.id !== draft.id);
-    await deps.save(remaining);
+    await save(remaining.filter((d) => d.id !== id));
   }
   deps.progress?.(posted, queue.length);
   return { remaining, posted };
@@ -238,8 +247,8 @@ function replace(list: readonly CommentDraft[], draft: CommentDraft): CommentDra
 }
 
 /**
- * An answer from CodeCommit below 500, or no credentials to sign with, means
- * it was not posted. Anything else (a timeout, a dropped connection, a server
+ * An answer from CodeCommit below 500, no credentials to sign with, or an
+ * error raised before the request left (aws/review.ts) means it was not posted. Anything else (a timeout, a dropped connection, a server
  * error) may have posted it.
  */
 export function describeFailure(error: unknown): DraftProblem {
@@ -249,7 +258,8 @@ export function describeFailure(error: unknown): DraftProblem {
     ?.httpStatusCode;
   const refused =
     (typeof status === "number" && status < 500) ||
-    (error instanceof Error && isCredentialError(error));
+    (error instanceof Error && isCredentialError(error)) ||
+    wasNotSent(error);
   return refused ? { kind: "failed", message } : { kind: "unknown", message };
 }
 
@@ -342,10 +352,42 @@ function asDraft(v: unknown): CommentDraft | undefined {
   };
 }
 
+const canonical = (d: CommentDraft | undefined) => (d ? JSON.stringify(asDraft(d)) : "");
+const sameDraft = (a: CommentDraft | undefined, b: CommentDraft | undefined) =>
+  canonical(a) === canonical(b);
+
+/**
+ * A three-way merge by draft id, for two lazycc processes on one PR. `base` is
+ * what this process last read or wrote, `mine` what it wants now, `disk` what
+ * is on disk now. A draft only one side changed takes that side's version; a
+ * draft both changed keeps the disk's, which may record a send, so a draft
+ * posted elsewhere is never brought back and never posted again from here.
+ * The disk's order is kept; drafts new here go last.
+ */
+export function mergeDrafts(
+  base: readonly CommentDraft[],
+  mine: readonly CommentDraft[],
+  disk: readonly CommentDraft[],
+): CommentDraft[] {
+  const byId = (list: readonly CommentDraft[]) => new Map(list.map((d) => [d.id, d]));
+  const b = byId(base);
+  const m = byId(mine);
+  const d = byId(disk);
+  const ids = [...d.keys(), ...[...m.keys()].filter((id) => !d.has(id))];
+  return ids.flatMap((id) => {
+    const theirs = d.get(id);
+    const ours = m.get(id);
+    const was = b.get(id);
+    const pick = sameDraft(ours, was) || !sameDraft(theirs, was) ? theirs : ours;
+    return pick ? [pick] : [];
+  });
+}
+
 /** A PR's drafts on disk, by draftKey, for the review screen. */
 export interface DraftStorage {
   load(key: string): Promise<CommentDraft[]>;
-  save(key: string, drafts: readonly CommentDraft[]): Promise<void>;
+  /** Returns the drafts as saved, which may hold another process's changes. */
+  save(key: string, drafts: readonly CommentDraft[]): Promise<CommentDraft[]>;
 }
 
 /**
@@ -361,10 +403,27 @@ export function draftKey(pr: {
   return `${accountOf(pr.authorArn)}/${pr.pullRequestId ?? ""}`;
 }
 
-/** drafts.json, keyed like seen.json: `${region}/${account}/${id}`. */
+/**
+ * drafts.json, keyed like seen.json: `${region}/${account}/${id}`. Each save
+ * merges with what another lazycc wrote since this one last read the key.
+ */
 export function draftStorage(store: LocalState["drafts"], region: string): DraftStorage {
+  const base = new Map<string, readonly CommentDraft[]>();
   return {
-    load: async (key) => parseDrafts(await store.get(`${region}/${key}`)),
-    save: (key, drafts) => store.set(`${region}/${key}`, drafts),
+    async load(key) {
+      const list = parseDrafts(await store.get(`${region}/${key}`));
+      base.set(key, list);
+      return list;
+    },
+    async save(key, drafts) {
+      const was = base.get(key) ?? [];
+      const saved = parseDrafts(
+        await store.update(`${region}/${key}`, (disk) =>
+          mergeDrafts(was, drafts, parseDrafts(disk)),
+        ),
+      );
+      base.set(key, saved);
+      return saved;
+    },
   };
 }

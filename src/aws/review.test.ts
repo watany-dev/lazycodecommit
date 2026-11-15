@@ -1,4 +1,6 @@
+import { CodeCommitClient } from "@aws-sdk/client-codecommit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { wasNotSent } from "./errors.js";
 import {
   closePullRequest,
   createClient,
@@ -617,6 +619,48 @@ describe("postComment", () => {
         content: "test",
       }),
     ).rejects.toThrow("Empty comment response from CodeCommit API.");
+  });
+});
+
+describe("posting: what was never sent", () => {
+  const params = {
+    pullRequestId: "42",
+    repositoryName: "my-service",
+    beforeCommitId: "def456",
+    afterCommitId: "abc123",
+    content: "test",
+  };
+  const fakeCreds = { accessKeyId: "AKIDEXAMPLE", secretAccessKey: "secret" };
+
+  it("marks an error raised before the request leaves, such as no region", async () => {
+    const client = new CodeCommitClient({
+      credentials: fakeCreds,
+      region: async () => {
+        throw new Error("Region is missing");
+      },
+    });
+    const err = await postComment(client, params).catch((e: unknown) => e);
+    expect(wasNotSent(err)).toBe(true);
+    const reply = await postCommentReply(client, { inReplyTo: "c1", content: "x" }).catch(
+      (e: unknown) => e,
+    );
+    expect(wasNotSent(reply)).toBe(true);
+  });
+
+  it("does not mark an error from the request itself, which may have landed", async () => {
+    const client = new CodeCommitClient({
+      region: "us-east-1",
+      credentials: fakeCreds,
+      maxAttempts: 1,
+      requestHandler: {
+        handle: async () => {
+          throw Object.assign(new Error("socket hang up"), { name: "ECONNRESET" });
+        },
+      },
+    });
+    const err = await postComment(client, params).catch((e: unknown) => e);
+    expect((err as Error).message).toBe("socket hang up");
+    expect(wasNotSent(err)).toBe(false);
   });
 });
 

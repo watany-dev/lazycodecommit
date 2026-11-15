@@ -162,10 +162,12 @@ export function fakeState(): FakeState {
     },
     drafts: {
       get: async (k) => draftLists.get(k),
-      set: async (k, v) =>
-        void (v.length === 0
-          ? draftLists.delete(k)
-          : draftLists.set(k, JSON.parse(JSON.stringify(v)))),
+      update: async (k, change) => {
+        const v: unknown[] = JSON.parse(JSON.stringify(change(draftLists.get(k))));
+        if (v.length === 0) draftLists.delete(k);
+        else draftLists.set(k, v);
+        return v;
+      },
     },
     cache: {
       get: async (k) => sections.get(k),
