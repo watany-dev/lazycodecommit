@@ -2,9 +2,7 @@ import type { CodeCommitApi, PullRequest, RuleEvaluation } from "../aws/codecomm
 import { mapLimit } from "../aws/mapLimit.js";
 import type { Config } from "../state/config.js";
 import { type IdentityStore, seenKey } from "../state/local.js";
-
-/** How many open PRs to read per repository. */
-const OPEN_LIMIT = 1000;
+import { OPEN_SCAN_LIMIT } from "./pr.js";
 
 export type Section = "awaiting" | "mine";
 
@@ -202,7 +200,7 @@ export async function fetchInbox(repositories: readonly string[], deps: InboxDep
   };
   const listed = await mapLimit(repositories, deps.concurrency, async (repository) => {
     try {
-      const ids = await deps.api.listPullRequestIds(repository, "OPEN", OPEN_LIMIT);
+      const ids = await deps.api.listPullRequestIds(repository, "OPEN", OPEN_SCAN_LIMIT);
       return ids.map((id) => ({ repository, id }));
     } catch (e) {
       fail(repository, e);

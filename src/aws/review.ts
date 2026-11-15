@@ -487,7 +487,8 @@ export async function getCommit(
   };
 }
 
-const MAX_COMMITS = 100;
+/** The most commits the review screen lists for one PR. */
+export const MAX_COMMITS = 100;
 
 export async function getCommitsForPR(
   client: CodeCommitClient,
