@@ -81,6 +81,9 @@ server.close();
 
 const report = readFileSync(out, "utf8");
 const bad = report.split("\n").filter((l) => /^\| (FAIL|DIFF) \|/.test(l));
+// The report is pasted back into chats: no user or session name may stay in it.
+const names = report.match(/\b(alice|bob|carol)\b/g);
+if (names) bad.push(`report keeps the names ${[...new Set(names)].join(", ")}`);
 if (!values.out) rmSync(dir, { recursive: true, force: true });
 if (code !== 0 || bad.length > 0) {
   console.error(`realcheck mock run: exit ${code}\n${bad.join("\n")}`);
