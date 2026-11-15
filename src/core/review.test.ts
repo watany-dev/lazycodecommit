@@ -1,29 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
-import * as aws from "../aws/review.js";
+import type { ReviewApi } from "../aws/review.js";
 import { GitError } from "../git/git.js";
 import { fakeGit } from "../testing/fakes.js";
 import { createReviewService, openReviewService } from "./review.js";
 
-vi.mock("../aws/review.js", async (importOriginal) => {
-  const real = await importOriginal<typeof aws>();
-  const spied = Object.fromEntries(
-    Object.entries(real).map(([k, v]) => [k, typeof v === "function" ? vi.fn(v) : v]),
-  );
+function fakeApi() {
   return {
-    ...spied,
+    listPullRequests: vi.fn(async () => ({ pullRequests: [] })),
     getPullRequestDetail: vi.fn(async () => ({
       pullRequest: {},
       differences: [],
       commentThreads: [],
     })),
+    getComments: vi.fn(async () => []),
     getAllDifferences: vi.fn(async () => [{ changeType: "M", afterBlob: { blobId: "api" } }]),
     getBlobContent: vi.fn(async () => "from api"),
     getCommitsForPR: vi.fn(async () => [{ commitId: "api", message: "m", authorName: "n" }]),
-    postComment: vi.fn(async () => ({ commentId: "c1" })),
-  };
-});
+    getPullRequestActivity: vi.fn(async () => ({ events: [] })),
+  } as unknown as { [K in keyof ReviewApi]: ReturnType<typeof vi.fn> & ReviewApi[K] };
+}
 
-const client = { send: vi.fn() } as any;
+let api = fakeApi();
 const target = {
   sourceReference: "refs/heads/topic",
   destinationReference: "refs/heads/main",
@@ -32,30 +29,10 @@ const target = {
 };
 
 describe("createReviewService without a clone", () => {
-  it("binds every operation to the client", async () => {
-    const service = createReviewService(client);
-    const spies: Record<string, { mock: { lastCall?: unknown[] } }> = { ...aws } as never;
-    for (const [name, fn] of Object.entries(service)) {
-      await Promise.resolve((fn as () => unknown)()).catch(() => {});
-      expect(spies[name]?.mock.lastCall?.[0]).toBe(client);
-    }
-  });
-
-  it("passes the client to every call", async () => {
-    const service = createReviewService(client);
-    await service.postComment({
-      pullRequestId: "1",
-      repositoryName: "demo",
-      beforeCommitId: "a",
-      afterCommitId: "b",
-      content: "hi",
-    });
-    expect(aws.postComment).toHaveBeenCalledWith(
-      client,
-      expect.objectContaining({ content: "hi" }),
-    );
-    await service.getPullRequestDetail("1", "demo");
-    expect(aws.getPullRequestDetail).toHaveBeenCalledWith(client, "1", "demo");
+  it("passes calls through to the API", async () => {
+    api = fakeApi();
+    await createReviewService(api).getPullRequestDetail("1", "demo");
+    expect(api.getPullRequestDetail).toHaveBeenCalledWith("1", "demo");
   });
 });
 
@@ -67,10 +44,10 @@ describe("openReviewService", () => {
 });
 
 async function loader(git: Parameters<typeof createReviewService>[1]) {
-  vi.mocked(aws.getPullRequestDetail).mockClear();
-  await createReviewService(client, git).getPullRequestDetail("1", "demo");
-  const call = vi.mocked(aws.getPullRequestDetail).mock.calls[0];
-  return call?.[3] as (t: typeof target & { mergeBase?: string }) => Promise<unknown>;
+  api = fakeApi();
+  await createReviewService(api, git).getPullRequestDetail("1", "demo");
+  const call = api.getPullRequestDetail.mock.calls[0] as unknown[] | undefined;
+  return call?.[2] as (t: typeof target & { mergeBase?: string }) => Promise<unknown>;
 }
 
 const fail = async () => {
@@ -137,12 +114,12 @@ describe("createReviewService in a clone", () => {
     });
     const load = await loader(git);
     expect(await load(target)).toEqual([{ changeType: "M", afterBlob: { blobId: "api" } }]);
-    expect(aws.getAllDifferences).toHaveBeenCalledWith(client, "demo", "dst", "src");
+    expect(api.getAllDifferences).toHaveBeenCalledWith("demo", "dst", "src");
   });
 
   it("reads blobs, commit diffs and commits from git, falling back to the API", async () => {
     const ok = createReviewService(
-      client,
+      fakeApi(),
       fakeGit({
         blob: async () => Buffer.from("from git"),
         diffTree: async () => [{ status: "M", path: "a", before: "1", after: "2" }],
@@ -171,7 +148,7 @@ describe("createReviewService in a clone", () => {
     ]);
 
     const broken = createReviewService(
-      client,
+      fakeApi(),
       fakeGit({ blob: fail, diffTree: fail, firstParentLog: fail }),
     );
     expect(await broken.getBlobContent("demo", "b")).toBe("from api");
@@ -188,9 +165,10 @@ describe("text written by other people", () => {
   const SHOWN = "a^[]52;c;aGk=^G^[[2Jb";
 
   it("reaches the review screen with control characters made visible", async () => {
-    const service = createReviewService(client, fakeGit());
+    api = fakeApi();
+    const service = createReviewService(api, fakeGit());
     const comment = { commentId: "c", content: `${EVIL}\r\nline 2\ttab` };
-    vi.mocked(aws.listPullRequests).mockResolvedValueOnce({
+    vi.mocked(api.listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
           pullRequestId: "1",
@@ -201,16 +179,16 @@ describe("text written by other people", () => {
         },
       ],
     });
-    vi.mocked(aws.getPullRequestDetail).mockResolvedValueOnce({
+    vi.mocked(api.getPullRequestDetail).mockResolvedValueOnce({
       pullRequest: { pullRequestId: "1", title: EVIL, description: EVIL },
       differences: [{ afterBlob: { blobId: "b", path: "p" } }],
       commentThreads: [{ location: null, comments: [comment] }],
     });
     // A deleted comment has no content.
-    vi.mocked(aws.getComments).mockResolvedValueOnce([
+    vi.mocked(api.getComments).mockResolvedValueOnce([
       { location: null, comments: [comment, { commentId: "d", deleted: true }] },
     ]);
-    vi.mocked(aws.getPullRequestActivity).mockResolvedValueOnce({
+    vi.mocked(api.getPullRequestActivity).mockResolvedValueOnce({
       events: [{ eventDate: new Date(0), eventType: "X", actorArn: "a", description: EVIL }],
     });
 
@@ -235,12 +213,13 @@ describe("text written by other people", () => {
         { id: "c1", parents: [], author: EVIL, date: new Date(0), subject: EVIL },
       ],
     });
-    const local = createReviewService(client, git);
+    const local = createReviewService(fakeApi(), git);
     expect(await local.getBlobContent("demo", "b")).toBe(`${SHOWN}\nx`);
     expect(await local.getCommitsForPR("demo", "s", "m")).toMatchObject([
       { message: SHOWN, authorName: SHOWN },
     ]);
-    vi.mocked(aws.getBlobContent).mockResolvedValueOnce(EVIL);
-    expect(await createReviewService(client).getBlobContent("demo", "b")).toBe(SHOWN);
+    api = fakeApi();
+    vi.mocked(api.getBlobContent).mockResolvedValueOnce(EVIL);
+    expect(await createReviewService(api).getBlobContent("demo", "b")).toBe(SHOWN);
   });
 });
