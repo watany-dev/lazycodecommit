@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ vi.mock("node:readline/promises", () => ({
   createInterface: () => ({ question: async () => answers.shift() ?? "", close: () => {} }),
 }));
 
-const { processIo } = await import("./io.js");
+const { exitOnClosedPipe, processIo } = await import("./io.js");
 
 let dir: string;
 const saved = { ...process.env };
@@ -78,5 +79,26 @@ describe("processIo", () => {
     expect(err).toHaveBeenCalledWith("e\n");
     out.mockRestore();
     err.mockRestore();
+  });
+});
+
+describe("exitOnClosedPipe", () => {
+  // `lazycc pr list | head -1`: the reader closes the pipe and the next write fails.
+  it("exits quietly with 0 when the reader closed the pipe", () => {
+    const stream = new EventEmitter();
+    const exit = vi.fn();
+    exitOnClosedPipe(stream, exit);
+    stream.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it("rethrows any other stream error", () => {
+    const stream = new EventEmitter();
+    const exit = vi.fn();
+    exitOnClosedPipe(stream, exit);
+    expect(() => stream.emit("error", Object.assign(new Error("EIO"), { code: "EIO" }))).toThrow(
+      "EIO",
+    );
+    expect(exit).not.toHaveBeenCalled();
   });
 });
