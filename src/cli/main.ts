@@ -66,6 +66,7 @@ export interface Io {
   confirm(question: string): Promise<boolean>;
   edit(text: string): Promise<string>;
   readFile(path: string, within?: string): Promise<string | null>;
+  readStdin(): Promise<string>;
 }
 
 export interface Deps {
@@ -384,6 +385,7 @@ async function runCommand(
     confirm: io.confirm,
     edit: io.edit,
     readFile: io.readFile,
+    readStdin: io.readStdin,
     note: io.err,
   };
   const print = (value: unknown) => printJson(io, value);
@@ -690,6 +692,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
                 confirm: io.confirm,
                 edit: io.edit,
                 readFile: io.readFile,
+                readStdin: io.readStdin,
                 note: io.err,
               },
             );

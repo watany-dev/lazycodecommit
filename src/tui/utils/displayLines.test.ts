@@ -264,3 +264,42 @@ describe("buildDisplayLines file paths", () => {
     expect(lines.find((l) => l.type === "add")?.filePath).toBe(path);
   });
 });
+
+describe("buildDisplayLines deleted comments", () => {
+  it("marks a deleted comment or reply instead of showing an empty body", () => {
+    const commentThreads: CommentThread[] = [
+      {
+        location: null,
+        comments: [
+          { commentId: "c1", content: "", deleted: true, authorArn: "arn:aws:iam::1:user/alice" },
+          {
+            commentId: "c2",
+            inReplyTo: "c1",
+            content: "",
+            deleted: true,
+            authorArn: "arn:aws:iam::1:user/bob",
+          },
+          {
+            commentId: "c3",
+            inReplyTo: "c1",
+            content: "still here",
+            authorArn: "arn:aws:iam::1:user/bob",
+          },
+        ],
+      },
+    ];
+    const lines = buildDisplayLines(
+      [],
+      new Map(),
+      new Map(),
+      new Map(),
+      commentThreads,
+      new Map(),
+      NO_REACTIONS,
+    );
+    const texts = lines
+      .filter((l) => l.type === "comment" || l.type === "comment-reply")
+      .map((l) => l.text);
+    expect(texts).toEqual(["alice: (deleted)", "└ bob: (deleted)", "└ bob: still here"]);
+  });
+});
