@@ -43,7 +43,7 @@ export async function loadConfig(
   }
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch (error) {
     throw new ConfigError(path, `invalid JSON: ${(error as Error).message}`);
   }
