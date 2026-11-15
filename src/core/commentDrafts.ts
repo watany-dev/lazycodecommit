@@ -66,9 +66,20 @@ export function newDraft(
   };
 }
 
+/**
+ * The last send may have posted it: no answer came back, or the run stopped
+ * (a crash, a failed save) between sending and recording the outcome. Only a
+ * retry with the same token and commits can tell, so nothing else may change.
+ */
+function unsettled(draft: CommentDraft): boolean {
+  return (
+    draft.problem?.kind === "unknown" || (draft.sent !== undefined && draft.problem === undefined)
+  );
+}
+
 /** A draft whose last send got no answer cannot change until a retry settles it. */
 export function canEdit(draft: CommentDraft): boolean {
-  return draft.problem?.kind !== "unknown";
+  return !unsettled(draft);
 }
 
 /** New content, new token: the old token may have been sent with the old content. */
@@ -100,7 +111,7 @@ export function reanchor(
   lineAt: (location: DraftLocation) => string | undefined,
 ): CommentDraft[] {
   return drafts.map((d) => {
-    if (sameCommits(d, tip) || d.problem?.kind === "unknown" || d.problem?.kind === "moved") {
+    if (sameCommits(d, tip) || unsettled(d) || d.problem?.kind === "moved") {
       return d;
     }
     if (d.target.kind === "inline" && lineAt(d.target.location) !== d.target.location.lineText) {
@@ -185,8 +196,8 @@ export async function submitDrafts(
     let draft = original;
     // A token is only reused with the commits it was sent with: an unsettled
     // send is retried as it was; otherwise new commits take a new token.
-    const retry = draft.sent && draft.problem?.kind === "unknown";
-    const from = retry ? draft.sent! : draft;
+    const retry = unsettled(draft);
+    const from = (retry && draft.sent) || draft;
     const commits: Commits = {
       beforeCommitId: from.beforeCommitId,
       afterCommitId: from.afterCommitId,
@@ -203,7 +214,13 @@ export async function submitDrafts(
     try {
       await deps.post(draft, commits, token);
     } catch (error) {
-      const stopped: CommentDraft = { ...draft, problem: describeFailure(error) };
+      const problem = describeFailure(error);
+      // A refused retry says nothing of the send before it, which may have
+      // landed: the draft stays unsettled, or new commits would post it twice.
+      const stopped: CommentDraft = {
+        ...draft,
+        problem: retry ? { kind: "unknown", message: problem.message } : problem,
+      };
       remaining = replace(remaining, stopped);
       await deps.save(remaining);
       return { remaining, posted, stopped };

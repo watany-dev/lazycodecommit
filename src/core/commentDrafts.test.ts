@@ -116,6 +116,43 @@ describe("submitDrafts", () => {
     expect(second.calls[0]).toEqual(first.calls[0]);
   });
 
+  it("keeps a send unsettled when its retry is refused, so new commits cannot post it twice", async () => {
+    const first = harness(new Map([[1, awsError("TimeoutError")]]));
+    const r1 = await submitDrafts([general()], first.deps);
+    const second = harness(new Map([[1, awsError("ThrottlingException", 400)]]));
+    const r2 = await submitDrafts(r1.remaining, second.deps);
+    expect(r2.stopped?.problem?.kind).toBe("unknown");
+    expect(canEdit(r2.stopped!)).toBe(false);
+    const third = harness();
+    await submitDrafts(
+      reanchor(r2.remaining, NEW, () => undefined),
+      third.deps,
+    );
+    expect(third.calls[0]).toEqual(first.calls[0]);
+  });
+
+  it("treats a send cut off before its outcome was saved as unsettled", async () => {
+    // The process died after sending: drafts.json holds the draft as sending.
+    const first = harness();
+    const d = general();
+    let saved: readonly CommentDraft[] = [];
+    first.deps.save.mockImplementation(async (list) => {
+      saved = list;
+    });
+    first.deps.post.mockImplementationOnce(async () => {
+      throw new Error("killed");
+    });
+    await submitDrafts([d], first.deps);
+    const cut = { ...saved[0]!, problem: undefined };
+    delete (cut as { problem?: unknown }).problem;
+    expect(cut.sent).toEqual(OLD);
+    expect(canEdit(cut)).toBe(false);
+    expect(reanchor([cut], NEW, () => undefined)).toEqual([cut]);
+    const second = harness();
+    await submitDrafts([cut], second.deps);
+    expect(second.calls[0]).toMatchObject({ commits: OLD, token: d.token });
+  });
+
   it("sends a refused draft again with the same token while nothing changed", async () => {
     const first = harness(new Map([[1, awsError("ThrottlingException", 400)]]));
     const r1 = await submitDrafts([general()], first.deps);
