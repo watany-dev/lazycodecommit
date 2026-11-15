@@ -16,6 +16,15 @@ export const USERS = {
   AKIDLIMITED: { arn: `arn:aws:iam::${ACCOUNT}:user/carol`, limited: true },
 };
 
+const STS_IDENTITY = new Map(
+  Object.values(USERS).map((u) => [
+    u,
+    `<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><GetCallerIdentityResult><Arn>${u.arn}</Arn><UserId>AIDMOCK</UserId><Account>${ACCOUNT}</Account></GetCallerIdentityResult><ResponseMetadata><RequestId>mock</RequestId></ResponseMetadata></GetCallerIdentityResponse>`,
+  ]),
+);
+const STS_DENIED =
+  '<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><Error><Type>Sender</Type><Code>InvalidClientTokenId</Code><Message>The security token included in the request is invalid.</Message></Error><RequestId>mock</RequestId></ErrorResponse>';
+
 class ApiError extends Error {
   constructor(name, message) {
     super(message);
@@ -464,11 +473,9 @@ export function startMockServer(gitRoot) {
       const caller = USERS[key];
       const target = String(req.headers["x-amz-target"] ?? "");
       if (!target) {
-        // STS (query protocol): only GetCallerIdentity.
-        res.writeHead(200, { "content-type": "text/xml" });
-        res.end(
-          `<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><GetCallerIdentityResult><Arn>${caller?.arn}</Arn><UserId>AIDMOCK</UserId><Account>${ACCOUNT}</Account></GetCallerIdentityResult><ResponseMetadata><RequestId>${randomUUID()}</RequestId></ResponseMetadata></GetCallerIdentityResponse>`,
-        );
+        // STS (query protocol): only GetCallerIdentity, answered from the fixed USERS table.
+        res.writeHead(caller ? 200 : 403, { "content-type": "text/xml" });
+        res.end(caller ? STS_IDENTITY.get(caller) : STS_DENIED);
         return;
       }
       const op = target.split(".")[1];
