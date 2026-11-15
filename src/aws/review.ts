@@ -548,13 +548,41 @@ export function createReviewApi(client: CodeCommitClient) {
     sourceCommit: string,
     mergeBase: string,
   ): Promise<CommitInfo[]> {
+    const read = new Map<string, Promise<CommitInfo>>();
+    const commitOf = (id: string) => {
+      let commit = read.get(id);
+      if (!commit) read.set(id, (commit = getCommit(repositoryName, id)));
+      return commit;
+    };
+    // Like git log mergeBase..source: past a merge (the destination merged
+    // into the source), the first-parent chain can reach the destination's
+    // older commits without passing mergeBase. Its ancestors are read only
+    // as far as a lookup needs, up to MAX_COMMITS of them.
+    const inBase = new Set([mergeBase]);
+    const frontier = [mergeBase];
+    let budget = MAX_COMMITS;
+    const isInBase = async (id: string) => {
+      while (!inBase.has(id) && frontier.length > 0 && budget-- > 0) {
+        for (const p of (await commitOf(frontier.shift() as string)).parentIds) {
+          if (!inBase.has(p)) frontier.push(p);
+          inBase.add(p);
+        }
+      }
+      return inBase.has(id);
+    };
+
     const commits: CommitInfo[] = [];
     let currentId = sourceCommit;
-
-    while (currentId !== mergeBase && commits.length < MAX_COMMITS) {
-      const commit = await getCommit(repositoryName, currentId);
+    let pastMerge = false;
+    while (
+      currentId !== mergeBase &&
+      commits.length < MAX_COMMITS &&
+      !(pastMerge && (await isInBase(currentId)))
+    ) {
+      const commit = await commitOf(currentId);
       commits.push(commit);
       if (commit.parentIds.length === 0) break;
+      if (commit.parentIds.length > 1) pastMerge = true;
       currentId = commit.parentIds[0]!;
     }
 
