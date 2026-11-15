@@ -44,6 +44,8 @@ describe("parseRemoteUrl", () => {
     "/tmp/repo.git",
     "https://git-codecommit.ap-northeast-1.amazonaws.com/v1/repos/",
     "codecommit::ap-northeast-1://",
+    // A broken %-escape used to throw URIError and stop every command in the clone.
+    "https://git-codecommit.ap-northeast-1.amazonaws.com/v1/repos/my%zzrepo",
   ])("rejects %s", (url) => {
     expect(parseRemoteUrl(url)).toBeNull();
   });
