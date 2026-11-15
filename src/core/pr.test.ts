@@ -408,6 +408,13 @@ describe("resolvePullRequest", () => {
     );
   });
 
+  it("says why the clone was not used when a flag ruled it out", async () => {
+    const ctx = { ...OUTSIDE, otherClone: "this clone is of demo in us-east-1" };
+    await expect(resolvePullRequest(undefined, deps({ ctx }).d)).rejects.toThrow(
+      "pass a pull request id (this clone is of demo in us-east-1)",
+    );
+  });
+
   it("needs a branch", async () => {
     await expect(
       resolvePullRequest(undefined, deps({ git: { currentBranch: async () => null } }).d),
