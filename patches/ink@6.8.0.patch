@@ -1,0 +1,21 @@
+diff --git a/build/render-node-to-output.js b/build/render-node-to-output.js
+index f00a27842045de18edfc7fbd6c65467a1d6f641c..5d2acc0045a47c87bb2fe70824a3a5008cf186e5 100644
+--- a/build/render-node-to-output.js
++++ b/build/render-node-to-output.js
+@@ -1,4 +1,5 @@
+ import widestLine from 'widest-line';
++import measureText from './measure-text.js';
+ import indentString from 'indent-string';
+ import Yoga from 'yoga-layout';
+ import wrapText from './wrap-text.js';
+@@ -90,7 +91,9 @@ const renderNodeToOutput = (node, output, options) => {
+         if (node.nodeName === 'ink-text') {
+             let text = squashTextNodes(node);
+             if (text.length > 0) {
+-                const currentWidth = widestLine(text);
++                // Use the memoized text measurement to avoid re-segmenting
++                // unchanged text on every frame
++                const currentWidth = measureText(text).width;
+                 const maxWidth = getMaxWidth(yogaNode);
+                 if (currentWidth > maxWidth) {
+                     const textWrap = node.style.textWrap ?? 'wrap';

@@ -25,3 +25,7 @@ updates:
       # offer an API that Node 20 lacks.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # Ink 7 and later need Node 22 (engines), and lazycc must run on
+      # CloudShell's Node 20 (engines.node). Minor and patch updates still come.
+      - dependency-name: "ink"
+        update-types: ["version-update:semver-major"]

@@ -80,7 +80,7 @@ describe("CommentInput", () => {
     });
   });
 
-  it("calls onCancel on Escape key", () => {
+  it("calls onCancel on Escape key", async () => {
     const onCancel = vi.fn();
     const { stdin } = render(
       <CommentInput
@@ -92,7 +92,7 @@ describe("CommentInput", () => {
       />,
     );
     stdin.write("\u001B");
-    expect(onCancel).toHaveBeenCalled();
+    await vi.waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 
   it("shows posting state", () => {

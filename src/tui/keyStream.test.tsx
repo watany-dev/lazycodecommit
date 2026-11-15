@@ -93,6 +93,30 @@ describe("keyStream", () => {
     expect(t.source.unref).toHaveBeenCalled();
   });
 
+  it("takes a lone Esc and the key after it as two keys", async () => {
+    // Ink holds a lone Esc until the next turn, to tell it from the start of a
+    // sequence; the next key must not reach it in time to make an Alt chord.
+    const t = terminal();
+    const stdin = keyStream(t.source as unknown as NodeJS.ReadStream);
+    const seen: string[] = [];
+    function Recorder() {
+      useKeys((input, key) => {
+        seen.push(key.escape ? "esc" : key.meta ? `alt+${input}` : input);
+      });
+      return <Text>ready</Text>;
+    }
+    const app = render(
+      <KeysProvider>
+        <Recorder />
+      </KeysProvider>,
+      { stdin, stdout: t.stdout as unknown as NodeJS.WriteStream, debug: true },
+    );
+    t.source.write("\u001b");
+    t.source.write("j");
+    await vi.waitFor(() => expect(seen).toEqual(["esc", "j"]), { timeout: 2000 });
+    app.unmount();
+  });
+
   it("stops reading the terminal while no screen takes input", async () => {
     const t = terminal();
     const stdin = keyStream(t.source as unknown as NodeJS.ReadStream);

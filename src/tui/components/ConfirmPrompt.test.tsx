@@ -33,11 +33,11 @@ describe("ConfirmPrompt", () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it("calls onCancel on Escape key", () => {
+  it("calls onCancel on Escape key", async () => {
     const onCancel = vi.fn();
     const { stdin } = render(<ConfirmPrompt {...defaultProps} onCancel={onCancel} />);
     stdin.write("\x1B");
-    expect(onCancel).toHaveBeenCalled();
+    await vi.waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 
   it("shows processing message when isProcessing is true", () => {
