@@ -25,10 +25,11 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.build.json",
     "dead-code": "knip",
     "audit": "bun audit",
+    "lint:semgrep": "uvx semgrep@1.178.0 scan --config p/default --error --metrics=off --quiet",
     "lint:workflows": "uvx --from actionlint-py==1.7.12.25 actionlint && uvx zizmor@1.24.1 --persona auditor .github/workflows",
     "smoke": "bash scripts/pack-smoke.sh",
     "startup": "node scripts/startup.mjs",
-    "ci": "bun run lint && bun run format:check && bun run typecheck && bun run dead-code && bun run audit && bun run test:coverage && bun run build && bun run smoke && bun run startup && bun run lint:workflows"
+    "ci": "bun run lint && bun run format:check && bun run typecheck && bun run dead-code && bun run audit && bun run test:coverage && bun run build && bun run smoke && bun run startup && bun run lint:workflows && bun run lint:semgrep"
   },
   "repository": {
     "type": "git",

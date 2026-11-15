@@ -1,9 +1,10 @@
 # CI
 
-`bun run ci` is the pre-push gate and runs what CI runs, except Semgrep:
-oxlint, biome, `tsc --noEmit`, knip, `bun audit`, Vitest with a 95% coverage
-gate, the build, `scripts/pack-smoke.sh`, `scripts/startup.mjs`, then
-actionlint and zizmor (through `uvx`; zizmor's online audits need `GH_TOKEN`).
+`bun run ci` is the pre-push gate and runs what CI runs: oxlint, biome,
+`tsc --noEmit`, knip, `bun audit`, Vitest with the coverage gate (95% overall,
+80% for every file), the build, `scripts/pack-smoke.sh`, `scripts/startup.mjs`,
+then actionlint, zizmor and Semgrep (through `uvx`; zizmor's online audits need
+`GH_TOKEN`, Semgrep downloads its rules from semgrep.dev).
 
 ## Workflows
 
@@ -13,7 +14,7 @@ actionlint and zizmor (through `uvx`; zizmor's online audits need `GH_TOKEN`).
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Lint (oxlint, biome, tsc, knip)`        | Lint, format, types, unused exports and dependencies                                                                                       |
 | `Audit (bun audit)`                      | Known advisories in dependencies; also runs daily                                                                                          |
-| `Test (ubuntu-24.04)`, `Test (macos-15)` | Vitest with the coverage gate                                                                                                              |
+| `Test (ubuntu-24.04)`, `Test (macos-15)` | Vitest with the coverage gate, on Node 22 (Vitest runs on Node.js, and 22 is the oldest it supports)                                      |
 | `Package`                                | `bun run build` and `npm pack`; uploads the tarball                                                                                        |
 | `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, runs `pr list` from it against a stand-in CodeCommit endpoint (the SDK chunk) and opens and quits the review screen on a pseudo-terminal (the TUI chunk), checks `dist/THIRD_PARTY_LICENSES.txt` ships, gates cold start (median of 15 `--version` runs) at the spec's 300 ms, and fails if the files every command loads contain Ink or React |
 | `Workflow lint (actionlint)`, `Zizmor`   | Workflow correctness and security; zizmor findings fail the job in its log                                                                 |
@@ -33,8 +34,9 @@ The lowest Node in the matrix is `engines.node` in `package.json`.
 `release.yml`, on a `v*` tag (or by hand as a rehearsal, below): checks the tag equals `v` + `package.json`
 version and points at a commit on `main`; audits, builds and tests without
 caches; runs the Node matrix (install and cold start) on the tarball; publishes that same tarball to npm with
-Trusted Publishing (OIDC, provenance); creates the GitHub Release with the
-tarball and `SHA256SUMS` in one call.
+Trusted Publishing (OIDC, provenance); attests the tarball's build provenance
+(`gh attestation verify <tgz> -R watany-dev/lazycodecommit`) and creates the
+GitHub Release with the tarball and `SHA256SUMS` in one call.
 
 Conventions every workflow follows (zizmor enforces most of them):
 
@@ -48,8 +50,10 @@ Conventions every workflow follows (zizmor enforces most of them):
 - `src/` is type-checked with Node types only (`tsconfig.json`); Bun types
   are limited to `build.ts` (`tsconfig.build.json`), so a `Bun.*` call in
   shipped code fails `tsc`.
-- One pinned version per tool: Bun in `packageManager`, actionlint and zizmor
-  in `lint:workflows` and `ci.yml` (keep them in sync).
+- One pinned version per tool: Bun in `packageManager`; actionlint and zizmor
+  in `lint:workflows` and `ci.yml`; Semgrep in `lint:semgrep` and `ci.yml`
+  (keep each pair in sync). CI installs actionlint from its release binary,
+  checked against a SHA-256 in `ci.yml`.
 
 ## Repository settings checklist
 
