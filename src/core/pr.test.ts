@@ -172,6 +172,34 @@ describe("createPullRequest in a clone", () => {
     );
   });
 
+  it("refuses a title or body longer than CodeCommit takes before pushing", async () => {
+    const push = vi.fn(async () => {});
+    const long = (subject: string, body = "") =>
+      deps({
+        git: {
+          unpushedCount: async () => null,
+          push,
+          commits: async () => [{ subject, body }],
+        },
+      }).d;
+    await expect(createPullRequest({ ...FILL, push: true }, long("x".repeat(151)))).rejects.toThrow(
+      "The title is 151 characters; CodeCommit takes up to 150. Pass a shorter --title.",
+    );
+    await expect(
+      createPullRequest({ ...FILL, push: true }, long("ok", "y".repeat(10_241))),
+    ).rejects.toThrow("The body is 10241 characters; CodeCommit takes up to 10240.");
+    await expect(
+      createPullRequest({ ...FILL, dryRun: true }, long("x".repeat(151))),
+    ).rejects.toThrow("The title is 151 characters");
+    expect(push).not.toHaveBeenCalled();
+    const api = fakeApi();
+    await createPullRequest(
+      FILL,
+      deps({ api, git: { commits: async () => [{ subject: "x".repeat(150), body: "" }] } }).d,
+    );
+    expect(api.created[0]?.title).toHaveLength(150);
+  });
+
   it("refuses to open an editor without a terminal", async () => {
     await expect(
       createPullRequest({ ...FILL, fill: false, title: "only" }, deps().d),

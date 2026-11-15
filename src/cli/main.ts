@@ -881,12 +881,12 @@ function printableIo(io: Io): Io {
   };
 }
 
-// JSON.stringify escapes C0 controls but not C1 (U+0080-U+009F); \u escapes
-// keep the data exact and the terminal safe.
+// JSON.stringify escapes C0 controls but not DEL or C1 (U+007F-U+009F); \u
+// escapes keep the data exact and the terminal safe.
 function printJson(io: Io, value: unknown): void {
   io.out(
     JSON.stringify(value, null, 2).replace(
-      /[\u0080-\u009f]/g,
+      /[\u007f-\u009f]/g,
       (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
     ),
   );

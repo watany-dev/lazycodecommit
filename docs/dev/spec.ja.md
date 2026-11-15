@@ -114,6 +114,7 @@ lazycc pr create は、clone 内なら引数なしで push から PR 作成ま�
 - 複数件なら、ブランチ名を整形してタイトルにし、コミット件名を箇条書きで本文に入れる。
 - テンプレートファイルがあれば本文の末尾に差し込む。
 - $EDITOR で下書きを開く。1行目がタイトル、空行の後が本文。タイトルが空なら中止する。
+- タイトルが 150 文字、本文が 10240 文字(CreatePullRequest の上限)を超えるなら、push の前にエラーにする。--fill で長いコミット件名がそのままタイトルになり、push だけ済んで PR ができないことを防ぐため。
 - origin に同名のブランチがないか、origin/<branch> にないコミットがあれば、確認のうえ git push -u origin <branch> を実行する。upstream ではなく origin/<branch> と比べるのは、PR のソースが同名のリモートブランチだから。エディタの後に置くのは、エディタで中止したときに何も push しないため。
 - CreatePullRequest を呼ぶ。SDK の再試行で二重作成しないよう clientRequestToken を付ける。
 - PR ID、タイトル、コンソール URL を出力する。
