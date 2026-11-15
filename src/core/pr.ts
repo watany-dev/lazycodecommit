@@ -59,8 +59,6 @@ async function findOpenPullRequest(
   );
 }
 
-// ---------------------------------------------------------------- pr create
-
 export interface CreateOptions {
   readonly base?: string;
   readonly head?: string;
@@ -226,8 +224,6 @@ async function pushIfAllowed(
     throw new UserError(`git push failed: ${(error as Error).message}`);
   }
 }
-
-// ---------------------------------------------------------------- pr list / view / status
 
 export async function listPullRequests(
   opts: { readonly state: PullRequestStatus; readonly limit: number },
