@@ -10,6 +10,12 @@ import {
   GetRepositoryCommand,
   ListBranchesCommand,
   ListPullRequestsCommand,
+  MergePullRequestByFastForwardCommand,
+  MergePullRequestBySquashCommand,
+  MergePullRequestByThreeWayCommand,
+  PostCommentForPullRequestCommand,
+  UpdatePullRequestApprovalStateCommand,
+  UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mockClient } from "aws-sdk-client-mock";
@@ -297,5 +303,60 @@ describe("createCodeCommitApi", () => {
     });
     cc.on(GetMergeConflictsCommand).resolves({});
     expect(await api.mergeable(pr)).toBe(false);
+  });
+
+  it("posts a comment on the whole PR, against its current commits", async () => {
+    cc.on(PostCommentForPullRequestCommand).resolves({ comment: { commentId: "c9" } });
+    expect(await api.postComment(pr, "LGTM")).toBe("c9");
+    expect(cc.commandCalls(PostCommentForPullRequestCommand)[0]?.args[0].input).toEqual({
+      pullRequestId: "7",
+      repositoryName: "demo",
+      beforeCommitId: "d1",
+      afterCommitId: "s1",
+      content: "LGTM",
+    });
+    cc.on(PostCommentForPullRequestCommand).resolves({});
+    await expect(api.postComment(pr, "x")).rejects.toThrow("no comment");
+  });
+
+  it.each([
+    [true, "APPROVE"],
+    [false, "REVOKE"],
+  ] as const)("sets the approval (approve=%s) on the current revision", async (approve, state) => {
+    cc.on(UpdatePullRequestApprovalStateCommand).resolves({});
+    await api.setApproval(pr, approve);
+    expect(cc.commandCalls(UpdatePullRequestApprovalStateCommand)[0]?.args[0].input).toEqual({
+      pullRequestId: "7",
+      revisionId: "rev7",
+      approvalState: state,
+    });
+  });
+
+  it.each([
+    ["fast-forward", MergePullRequestByFastForwardCommand],
+    ["squash", MergePullRequestBySquashCommand],
+    ["three-way", MergePullRequestByThreeWayCommand],
+  ] as const)(
+    "merges by %s, only if the source is still the commit we saw",
+    async (strategy, command) => {
+      cc.on(command).resolves({ pullRequest: sdkPr("7", { pullRequestStatus: "CLOSED" }) });
+      expect((await api.merge(pr, strategy)).status).toBe("CLOSED");
+      expect(cc.commandCalls(command)[0]?.args[0].input).toEqual({
+        pullRequestId: "7",
+        repositoryName: "demo",
+        sourceCommitId: "s1",
+      });
+    },
+  );
+
+  it("closes a PR", async () => {
+    cc.on(UpdatePullRequestStatusCommand).resolves({
+      pullRequest: sdkPr("7", { pullRequestStatus: "CLOSED" }),
+    });
+    expect((await api.close(pr)).status).toBe("CLOSED");
+    expect(cc.commandCalls(UpdatePullRequestStatusCommand)[0]?.args[0].input).toEqual({
+      pullRequestId: "7",
+      pullRequestStatus: "CLOSED",
+    });
   });
 });

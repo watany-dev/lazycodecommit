@@ -156,6 +156,19 @@ describe("createGit", () => {
     await expect(git.switchBranch("nope")).rejects.toBeInstanceOf(GitError);
   });
 
+  it("reads a branch name starting with a dash as a name, not an option", async () => {
+    // Git accepts such ref names, so anyone who can push can create one.
+    sh(work, "push", "-q", "origin", "HEAD:refs/heads/--orphan=pwn");
+    sh(work, "fetch", "-q", "origin");
+    const git = createGit(work);
+    for (const quiet of [true, false]) {
+      await expect(git.switchBranch("--orphan=pwn", { quiet })).rejects.toBeInstanceOf(GitError);
+      expect(await git.currentBranch()).toBe("main");
+    }
+    await expect(git.fastForward("--no-ff")).rejects.toBeInstanceOf(GitError);
+    expect(sh(work, "ls-files")).toBe("f.txt");
+  });
+
   it("refuses a fast-forward when the branches diverged", async () => {
     sh(work, "switch", "-q", "-c", "topic");
     await commit("mine");

@@ -59,10 +59,10 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
 | lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
-| lazycc pr comment <id> | PR にコメントする | 可 |
-| lazycc pr approve <id> | 承認する。--revoke で取り消す | 可 |
-| lazycc pr merge <id> | マージする。方式は --ff、--squash、--three-way | 可 |
-| lazycc pr close <id> | マージせずに閉じる | 可 |
+| lazycc pr comment [id] | PR にコメントする。本文は -b、-F、端末ではエディタ。閉じた PR にもコメントできる | ID 指定で可 |
+| lazycc pr approve [id] | 承認する。--revoke で取り消す | ID 指定で可 |
+| lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つを必ず指定する。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
+| lazycc pr close [id] | マージせずに閉じる | ID 指定で可 |
 | lazycc branch | ブランチ×PR 対応表を開く | 可 |
 | lazycc browse [repo] | clone なしでコードを読む | 可 |
 | lazycc clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
@@ -80,6 +80,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 - 端末(TTY)では TUI または色付きテキストを出す。
 - パイプ先や --json 指定時は TUI を開かず、テキストか JSON を出す。
 - 終了コードは 0 が成功、1 が実行時エラー、2 が引数の誤り。
+- pr comment、approve、merge、close の ID 省略時は、pr view と同じく現在のブランチの PR を対象にする。approve、merge、close はマージ済みや閉じた PR には API を呼ばずに終了コード 1 で断る。
 
 ### リポジトリの推定
 

@@ -23,6 +23,10 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr view [id]` | Show a PR; without an id, the current branch's. On a terminal it opens the review screen |
 | `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR |
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it (fast-forwarding an existing local branch) |
+| `lazycc pr comment [id]` | Comment on a PR with `-b text`, `-F file`, or the editor on a terminal |
+| `lazycc pr approve [id]` | Approve a PR; `--revoke` takes your approval back |
+| `lazycc pr merge [id]` | Merge with one of `--ff`, `--squash`, `--three-way`; refuses if the source branch moved since it was read |
+| `lazycc pr close [id]` | Close a PR without merging |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc clone <repo> [dir]` | Clone by repository name. `--protocol https\|ssh\|grc` picks the URL (default `https`; `grc` is git-remote-codecommit); flags after `--` go to `git clone` |
 

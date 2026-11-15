@@ -10,7 +10,13 @@ import {
   GetRepositoryCommand,
   ListBranchesCommand,
   ListPullRequestsCommand,
+  MergePullRequestByFastForwardCommand,
+  MergePullRequestBySquashCommand,
+  MergePullRequestByThreeWayCommand,
+  PostCommentForPullRequestCommand,
   type PullRequest as SdkPullRequest,
+  UpdatePullRequestApprovalStateCommand,
+  UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mapLimit } from "./mapLimit.js";
@@ -57,6 +63,8 @@ export interface NewPullRequest {
   readonly clientRequestToken: string;
 }
 
+export type MergeStrategy = "fast-forward" | "squash" | "three-way";
+
 export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
@@ -78,7 +86,19 @@ export interface CodeCommitApi {
   approvers(pr: PullRequest): Promise<string[]>;
   evaluateApprovalRules(pr: PullRequest): Promise<RuleEvaluation>;
   mergeable(pr: PullRequest): Promise<boolean>;
+  /** Posts a comment on the whole PR and returns its id. */
+  postComment(pr: PullRequest, content: string): Promise<string>;
+  setApproval(pr: PullRequest, approve: boolean): Promise<void>;
+  /** Refuses when the source branch has moved past `pr.sourceCommit`. */
+  merge(pr: PullRequest, strategy: MergeStrategy): Promise<PullRequest>;
+  close(pr: PullRequest): Promise<PullRequest>;
 }
+
+const MERGE_COMMANDS = {
+  "fast-forward": MergePullRequestByFastForwardCommand,
+  squash: MergePullRequestBySquashCommand,
+  "three-way": MergePullRequestByThreeWayCommand,
+} as const;
 
 const HEADS = "refs/heads/";
 
@@ -259,6 +279,49 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
         }),
       );
       return out.mergeable ?? false;
+    },
+
+    async postComment(pr, content) {
+      const out = await client.send(
+        new PostCommentForPullRequestCommand({
+          pullRequestId: pr.id,
+          repositoryName: pr.repository,
+          beforeCommitId: pr.destinationCommit,
+          afterCommitId: pr.sourceCommit,
+          content,
+        }),
+      );
+      if (!out.comment?.commentId) throw new Error("CodeCommit returned no comment");
+      return out.comment.commentId;
+    },
+
+    async setApproval(pr, approve) {
+      await client.send(
+        new UpdatePullRequestApprovalStateCommand({
+          pullRequestId: pr.id,
+          revisionId: pr.revisionId,
+          approvalState: approve ? "APPROVE" : "REVOKE",
+        }),
+      );
+    },
+
+    async merge(pr, strategy) {
+      const Command = MERGE_COMMANDS[strategy];
+      const out = await client.send(
+        new Command({
+          pullRequestId: pr.id,
+          repositoryName: pr.repository,
+          sourceCommitId: pr.sourceCommit,
+        }),
+      );
+      return toPullRequest(out.pullRequest);
+    },
+
+    async close(pr) {
+      const out = await client.send(
+        new UpdatePullRequestStatusCommand({ pullRequestId: pr.id, pullRequestStatus: "CLOSED" }),
+      );
+      return toPullRequest(out.pullRequest);
     },
   };
 }
