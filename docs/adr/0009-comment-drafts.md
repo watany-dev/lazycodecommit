@@ -82,6 +82,8 @@ PostCommentForPullRequest の afterCommitId は「コメントを投稿する時
 - 他人には 1 件ずつ通知が届く。まとめて 1 つのレビューにはならない。
 - 一括投稿で新たに要る IAM 権限はない（PostCommentForPullRequest、
   PostCommentReply、GetPullRequest はレビュー画面で既に使う）。
-- トークンの保持期間は文書化されていないため、日をまたいだ再試行で二重投稿を
-  防げるかは実機で確かめる（docs/dev/real-aws-check.md）。
-- 古い先端に対して投稿した場合の振る舞い（拒否されるか）も実機で確かめる。
+- 同じトークンでの再投稿、先端が進んだ後の再投稿、古い先端への投稿は
+  `scripts/realcheck` で実機で確かめる（docs/dev/real-aws-check.md）。モックは
+  API リファレンスのとおりに答える。
+- トークンの保持期間は文書化されておらず、realcheck でも確かめられない。日を
+  またいだ再試行で二重投稿しうることは残る。
