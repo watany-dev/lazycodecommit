@@ -276,7 +276,7 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 
 ## CI 結果の表示
 
-PR のソースコミットに対する CodeBuild と CodePipeline の結果を出す。設定で見る先を指定したリポジトリだけが対象で、指定がなければ CodeBuild と CodePipeline の API を呼ばない(ADR 0009)。
+PR のソースコミットに対する CodeBuild と CodePipeline の結果を出す。設定で見る先を指定したリポジトリだけが対象で、指定がなければ CodeBuild と CodePipeline の API を呼ばない(ADR 0010)。
 
 ### 結び付け方
 - 設定の ci にリポジトリごとの CodeBuild プロジェクト名と CodePipeline のパイプライン名を書く。
@@ -292,7 +292,7 @@ PR のソースコミットに対する CodeBuild と CodePipeline の結果を�
 
 - 状態は pass、fail、pending、cancel、none(一致する実行がない)、error(取得に失敗)にまとめ、元の状態も残す。
 - 承認状態と同じく遅延取得し、取得に失敗しても PR の表示は止めない。失敗は error として理由を出す。
-- --json の形は ADR 0009 のとおり。設定がないリポジトリでは "checks": null にする。
+- --json の形は ADR 0010 のとおり。設定がないリポジトリでは "checks": null にする。
 
 ## 画面遷移とキーバインド
 
@@ -493,6 +493,6 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | PR テンプレートの置き場所 | `.codecommit/pull_request_template.md` を既定にし、設定で変更できる | [0004](../adr/0004-pr-template-location.md) |
 | 承認待ちの定義 | 簡易条件に、承認プールに自分が入っているかの条件を足す | [0005](../adr/0005-awaiting-my-approval.md) |
 | 未読判定の検証 | フェーズ3の完了条件として実機で確認する | [0006](../adr/0006-unread-detection.md) |
-| CI 結果の表示 | フェーズ5で、設定に書いたプロジェクトとパイプラインの実行をソースコミットで PR に結び付ける | [0009](../adr/0009-ci-results.md)(0007 を置き換え) |
+| CI 結果の表示 | フェーズ5で、設定に書いたプロジェクトとパイプラインの実行をソースコミットで PR に結び付ける | [0010](../adr/0010-ci-results.md)(0007 を置き換え) |
 | コメントの下書き一括投稿 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
 | マージ方式の既定値 | フラグがなければ設定の `pr.mergeOption` を使う | [0008](../adr/0008-merge-option-default.md) |
