@@ -5,6 +5,7 @@ import {
   type Commits,
   canEdit,
   describeFailure,
+  draftKey,
   draftStorage,
   editDraft,
   lineReader,
@@ -303,5 +304,17 @@ describe("lineReader", () => {
     expect(readBlob).not.toHaveBeenCalled();
     expect(lineAt(at("AFTER", "gone.ts"))).toBeUndefined();
     expect(lineAt(at("AFTER", "c.ts", 1))).toBeUndefined();
+  });
+});
+
+describe("draftKey", () => {
+  it("puts the owning account before the PR id, from the author's ARN", () => {
+    expect(draftKey({ pullRequestId: "5", authorArn: "arn:aws:iam::111122223333:user/a" })).toBe(
+      "111122223333/5",
+    );
+    expect(
+      draftKey({ pullRequestId: "5", authorArn: "arn:aws:sts::444455556666:assumed-role/R/s" }),
+    ).toBe("444455556666/5");
+    expect(draftKey({ pullRequestId: "5" })).toBe("unknown/5");
   });
 });

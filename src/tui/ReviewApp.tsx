@@ -5,6 +5,7 @@ import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import {
   type CommentDraft,
   type DraftTarget,
+  draftKey,
   editDraft,
   lineReader,
   newDraft,
@@ -145,11 +146,11 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const [draftError, setDraftError] = useState<string | null>(null);
 
   /** Shows `next` and writes it to drafts.json; the promise rejects when the write fails. */
-  async function storeDrafts(pullRequestId: string, next: readonly CommentDraft[]) {
+  async function storeDrafts(key: string, next: readonly CommentDraft[]) {
     draftsRef.current = next;
     setDrafts(next);
     try {
-      await service.drafts?.save(pullRequestId, next);
+      await service.drafts?.save(key, next);
       setDraftSaveError(null);
     } catch (err) {
       setDraftSaveError(formatErrorMessage(err));
@@ -159,9 +160,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   /** Edits from the screen: a failed write shows in the header, the drafts stay in memory. */
   function changeDrafts(change: (list: readonly CommentDraft[]) => readonly CommentDraft[]) {
-    const id = prDetail?.pullRequestId;
-    if (!id) return;
-    storeDrafts(id, change(draftsRef.current)).catch(() => {});
+    if (!prDetail?.pullRequestId) return;
+    storeDrafts(draftKey(prDetail), change(draftsRef.current)).catch(() => {});
   }
 
   function addDraft(content: string, target: DraftTarget) {
@@ -171,16 +171,16 @@ export function App({ service, repository, start, onExit }: AppProps) {
     changeDrafts((list) => [...list, newDraft(content, target, tip)]);
   }
 
-  async function loadDrafts(pullRequestId: string) {
-    if (draftsForRef.current === pullRequestId) return;
-    draftsForRef.current = pullRequestId;
+  async function loadDrafts(key: string) {
+    if (draftsForRef.current === key) return;
+    draftsForRef.current = key;
     draftsRef.current = [];
     setDrafts([]);
     setDraftError(null);
     if (!service.drafts) return;
     try {
-      const list = await service.drafts.load(pullRequestId);
-      if (draftsForRef.current !== pullRequestId) return;
+      const list = await service.drafts.load(key);
+      if (draftsForRef.current !== key) return;
       draftsRef.current = list;
       setDrafts(list);
     } catch (err) {
@@ -191,6 +191,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
   async function handleSubmitDrafts() {
     const pullRequestId = prDetail?.pullRequestId;
     if (!pullRequestId || isPostingDrafts) return;
+    const key = draftKey(prDetail);
     setIsPostingDrafts(true);
     setDraftError(null);
     let moved = false;
@@ -209,9 +210,9 @@ export function App({ service, repository, start, onExit }: AppProps) {
         service.getBlobContent(selectedRepo, blobId),
       );
       const anchored = reanchor(draftsRef.current, tip, lineAt);
-      await storeDrafts(pullRequestId, anchored);
+      await storeDrafts(key, anchored);
       const result = await submitDrafts(anchored, {
-        save: (list) => storeDrafts(pullRequestId, list),
+        save: (list) => storeDrafts(key, list),
         progress: (done, total) => setDraftProgress({ done, total }),
         post: async (draft, on, token) => {
           const { target, content } = draft;
@@ -540,7 +541,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
       if (isDetailLoadStale(loadId)) return;
 
       setPrDetail(detail.pullRequest);
-      void loadDrafts(pullRequestId);
+      void loadDrafts(draftKey(detail.pullRequest));
       setPrDifferences(detail.differences);
       setCommentThreads(detail.commentThreads);
       setDiffTexts(new Map());
