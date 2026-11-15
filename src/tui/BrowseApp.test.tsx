@@ -299,9 +299,14 @@ describe("BrowseApp review fixes", () => {
       }),
     });
     const { stdin, lastFrame } = await setup(a);
-    await press(stdin, "j", "\r", "b");
-    // A fixed 30 ms per key let Enter reach a picker that had not drawn yet on
-    // a slow runner; wait for the picker, then for the failure.
+    // A fixed 30 ms per key let a key reach a handler that had not caught up
+    // with the previous one on a slow runner (macos-15): Enter opened docs/,
+    // or reached a picker that had not drawn. Wait for each step to show.
+    await press(stdin, "j");
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/> src\//));
+    await press(stdin, "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("@ main : src/"));
+    await press(stdin, "b");
     await vi.waitFor(() => expect(lastFrame()).toContain("ref:"));
     await press(stdin, "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("throttled"));
