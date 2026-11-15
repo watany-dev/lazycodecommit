@@ -372,7 +372,9 @@ export function createReviewApi(client: CodeCommitClient) {
       beforeCommitId?: string;
     },
   ): Promise<CommentThread[]> {
-    const commentThreads: CommentThread[] = [];
+    // By location and commits: a page ends after maxResults comments, so one
+    // line's comments can go on over the next page.
+    const groups = new Map<string, { location: CommentThread["location"]; comments: Comment[] }>();
     const baseInput = {
       pullRequestId,
       ...(params?.repositoryName ? { repositoryName: params.repositoryName } : {}),
@@ -397,13 +399,16 @@ export function createReviewApi(client: CodeCommitClient) {
                 (thread.location.relativeFileVersion as "BEFORE" | "AFTER") ?? "AFTER",
             }
           : null;
-        for (const comments of splitThreads(thread.comments ?? [])) {
-          commentThreads.push({ location, comments });
-        }
+        const key = JSON.stringify([thread.beforeCommitId, thread.afterCommitId, location]);
+        let group = groups.get(key);
+        if (!group) groups.set(key, (group = { location, comments: [] }));
+        group.comments.push(...(thread.comments ?? []));
       }
       nextToken = commentsResponse.nextToken;
     } while (nextToken);
-    return commentThreads;
+    return [...groups.values()].flatMap(({ location, comments }) =>
+      splitThreads(comments).map((thread) => ({ location, comments: thread })),
+    );
   }
 
   async function postComment(params: {

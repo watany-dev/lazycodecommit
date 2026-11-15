@@ -885,6 +885,36 @@ describe("getComments", () => {
     expect(threads.every((t) => t.location?.filePosition === 3)).toBe(true);
   });
 
+  it("keeps a thread whole when its replies come on the next page", async () => {
+    // A page holds up to maxResults comments, so one line's comments can be split.
+    const line = { filePath: "a.ts", filePosition: 3, relativeFileVersion: "AFTER" };
+    mockSend
+      .mockResolvedValueOnce({
+        commentsForPullRequestData: [
+          {
+            beforeCommitId: "d",
+            afterCommitId: "s",
+            location: line,
+            comments: [{ commentId: "r1" }],
+          },
+        ],
+        nextToken: "t",
+      })
+      .mockResolvedValueOnce({
+        commentsForPullRequestData: [
+          {
+            beforeCommitId: "d",
+            afterCommitId: "s",
+            location: line,
+            comments: [{ commentId: "x1", inReplyTo: "r1", creationDate: at(1) }],
+          },
+        ],
+      });
+
+    const threads = await getComments("42");
+    expect(threads.map((t) => t.comments.map((c) => c.commentId))).toEqual([["r1", "x1"]]);
+  });
+
   it("sorts replies by creationDate within a thread", async () => {
     mockSend.mockResolvedValueOnce({
       commentsForPullRequestData: [
