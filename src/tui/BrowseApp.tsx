@@ -5,7 +5,7 @@ import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
 import { type TopSwitch, topSwitch } from "./top.js";
-import { formatErrorMessage } from "./utils/formatError.js";
+import { screenErrorText } from "./utils/formatError.js";
 
 interface Props {
   actions: BrowseActions;
@@ -82,7 +82,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
       }
       return null;
     } catch (err) {
-      const message = errorText(err);
+      const message = screenErrorText(err);
       if (folder || file) setNote({ text: message, error: true });
       else setLoadError(message);
       return err;
@@ -123,7 +123,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
       setPicker((p) => p && { ...p, branches });
     } catch (err) {
       setPicker(null);
-      setNote({ text: errorText(err), error: true });
+      setNote({ text: screenErrorText(err), error: true });
     }
   }
 
@@ -403,14 +403,6 @@ function RefPickerView(props: {
       )}
     </>
   );
-}
-
-function errorText(err: unknown): string {
-  // Our own refusals (no such path or ref) are already for the user.
-  if (err instanceof Error && (err.name === "UserError" || err.name === "UsageError")) {
-    return err.message;
-  }
-  return formatErrorMessage(err);
 }
 
 function BrowseHelp() {

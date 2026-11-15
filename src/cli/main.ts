@@ -105,6 +105,16 @@ Flags for every command:
 
 Exit codes: 0 success, 1 error, 2 bad arguments.`;
 
+/** The usage line of one command, with the flags every command takes. */
+function commandUsage(command: string): string {
+  const [commands = "", common = ""] = USAGE.split("\n\nFlags for every command:");
+  const own = commands
+    .split("\n")
+    .filter((l) => l === `  lazycc ${command}` || l.startsWith(`  lazycc ${command} `));
+  if (own.length === 0) return USAGE;
+  return ["Usage:", ...own, "", `Flags for every command:${common}`].join("\n");
+}
+
 type Options = NonNullable<ParseArgsConfig["options"]>;
 
 const COMMON: Options = {
@@ -240,16 +250,9 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     let command: string;
     let commandArgs: readonly string[];
     if (noun === undefined || noun.startsWith("-")) {
-      // Bare lazycc (flags allowed) opens the home screen.
-      if (!io.interactive) {
-        if (noun === undefined) {
-          io.out(USAGE);
-          return 0;
-        }
-        parse("home", args);
-        throw new UsageError("lazycc without a command needs a terminal; use lazycc status.");
-      }
-      command = "home";
+      // Bare lazycc (flags allowed) opens the home screen, or prints it as status
+      // text when there is no terminal (spec: 出力と終了コード).
+      command = io.interactive ? "home" : "status";
       commandArgs = args;
     } else if (noun === "home") {
       throw new UsageError("Unknown command: home");
@@ -274,7 +277,7 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     }
     const { values, positionals } = parse(command, commandArgs);
     if (values["help"]) {
-      io.out(USAGE);
+      io.out(commandUsage(command));
       return 0;
     }
     if (command === "clone") {

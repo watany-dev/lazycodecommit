@@ -13,7 +13,7 @@ import { printable } from "../core/text.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
-import { formatErrorMessage } from "./utils/formatError.js";
+import { formatErrorMessage, screenErrorText } from "./utils/formatError.js";
 
 /** How the screen opens: on the table, on a PR just created, or with a note from a failed create. */
 export type BranchesStart =
@@ -73,7 +73,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
       setNote({ text: done });
       await load(false);
     } catch (err) {
-      setNote({ text: errorText(err), error: true });
+      setNote({ text: screenErrorText(err), error: true });
     } finally {
       setBusy(false);
     }
@@ -290,14 +290,6 @@ const STATE_COLOR: Record<BranchRow["state"], string> = {
   merged: "magenta",
   none: "white",
 };
-
-function errorText(err: unknown): string {
-  // Our own refusals (default branch, open PR) and git's messages are already for the user.
-  if (err instanceof Error && (err.name === "UserError" || err.name === "GitError")) {
-    return err.message;
-  }
-  return formatErrorMessage(err);
-}
 
 function BranchHelp() {
   const keys: [string, string][] = [

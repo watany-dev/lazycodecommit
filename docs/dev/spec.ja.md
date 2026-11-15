@@ -79,6 +79,8 @@ git が知らないことだけを扱い、git でできることは git に任�
 ### 出力と終了コード
 - 端末(TTY)では TUI または色付きテキストを出す。
 - パイプ先や --json 指定時は TUI を開かず、テキストか JSON を出す。
+- 引数なしの lazycc は、パイプ先や --json 指定時は lazycc status と同じ内容を出す。
+- lazycc <コマンド> --help はそのコマンドの使い方と共通フラグを出す。
 - 終了コードは 0 が成功、1 が実行時エラー、2 が引数の誤り。
 - 読み手が途中でパイプを閉じたとき(lazycc pr list | head -1 など)は、何も出さずに終了コード 0 で終わる。
 - pr comment、approve、merge、close の ID 省略時は、pr view と同じく現在のブランチの PR を対象にする。approve、merge、close はマージ済みや閉じた PR には API を呼ばずに終了コード 1 で断る。

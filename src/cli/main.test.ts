@@ -76,15 +76,25 @@ describe("top level", () => {
     expect(await cli([flag])).toMatchObject({ code: 0, out: version });
   });
 
+  it.each([[["--help"]], [["-h"]], [["help"]], [["pr", "--help"]]])(
+    "prints usage for %j",
+    async (args) => {
+      expect(await cli(args)).toMatchObject({ code: 0, out: USAGE });
+    },
+  );
+
   it.each([
-    [[]],
-    [["--help"]],
-    [["-h"]],
-    [["help"]],
-    [["pr", "--help"]],
-    [["pr", "list", "--help"]],
-  ])("prints usage for %j", async (args) => {
-    expect(await cli(args)).toMatchObject({ code: 0, out: USAGE });
+    [["pr", "list", "--help"], "lazycc pr list [--state open|closed] [-L limit]"],
+    [["pr", "create", "-h"], "lazycc pr create [-B base]"],
+    [["branch", "--help"], "lazycc branch"],
+    [["clone", "--help"], "lazycc clone <repo>"],
+    [["completion", "--help"], "lazycc completion bash|zsh|fish"],
+  ])("prints only the command's usage for %j", async (args, line) => {
+    const r = await cli(args);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(line);
+    expect(r.out).toContain("--profile <name>");
+    expect(r.out).not.toContain("lazycc pr view");
   });
 
   it("exits 2 for bare `pr`", async () => {
@@ -1175,11 +1185,26 @@ describe("home", () => {
     expect((await cli(["home"], { interactive: true })).err).toContain("Unknown command: home");
   });
 
-  it("asks for a terminal, or status, when given flags without one", async () => {
-    const r = await cli(["-R", "x"]);
-    expect(r.code).toBe(2);
-    expect(r.err).toContain("needs a terminal; use lazycc status");
+  it("prints the status text for bare lazycc without a terminal (spec: 出力と終了コード)", async () => {
+    const r = await cli([], {
+      api: fakeApi([pullRequest({ id: "1", repository: "demo", title: "Review me" })]),
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Awaiting your approval (1)");
     expect(r.tops).toEqual([]);
+  });
+
+  it("prints the whole usage for --help after a bare lazycc's flags", async () => {
+    expect(await cli(["-R", "x", "--help"], { interactive: true })).toMatchObject({
+      code: 0,
+      out: USAGE,
+    });
+  });
+
+  it("prints the status JSON for bare lazycc --json", async () => {
+    const r = await cli(["--json"], { api: fakeApi([]) });
+    expect(r.code).toBe(0);
+    expect(json(r.out)).toMatchObject({ awaiting: [], mine: [] });
   });
 
   it("hands pr.mergeOption to every review screen as the preselected strategy", async () => {

@@ -15,15 +15,22 @@ actionlint and zizmor (through `uvx`; zizmor's online audits need `GH_TOKEN`).
 | `Audit (bun audit)`                      | Known advisories in dependencies; also runs daily                                                                                          |
 | `Test (ubuntu-24.04)`, `Test (macos-15)` | Vitest with the coverage gate                                                                                                              |
 | `Package`                                | `bun run build` and `npm pack`; uploads the tarball                                                                                        |
-| `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, gates cold start (median of 15 `--version` runs) at the spec's 300 ms, and fails if the files every command loads contain Ink or React |
+| `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, runs `pr list` from it against a stand-in CodeCommit endpoint (the SDK chunk) and opens and quits the review screen on a pseudo-terminal (the TUI chunk), checks `dist/THIRD_PARTY_LICENSES.txt` ships, gates cold start (median of 15 `--version` runs) at the spec's 300 ms, and fails if the files every command loads contain Ink or React |
 | `Workflow lint (actionlint)`, `Zizmor`   | Workflow correctness and security; zizmor findings fail the job in its log                                                                 |
 | `Semgrep`                                | `p/default`, fails on findings; SARIF to code scanning except from fork PRs, whose token cannot upload                                     |
 
 The Node jobs are why the package can promise "runs on CloudShell's Node.js
 through npx, no Bun": Bun builds and tests, but nothing in the tarball needs it.
+`scripts/smoke-dist.mjs` (called by `pack-smoke.sh`) is the part that runs the
+bundled SDK and TUI, which `--version` never loads; it needs `python3` for the
+pseudo-terminal, locally too.
+
+Every dependency is bundled, so `build.ts` writes the bundled packages' license
+texts to `dist/THIRD_PARTY_LICENSES.txt` and fails when a package ships none;
+add its text to `MISSING_LICENSE_FILES` in `build.ts` then.
 The lowest Node in the matrix is `engines.node` in `package.json`.
 
-`release.yml`, on a `v*` tag: checks the tag equals `v` + `package.json`
+`release.yml`, on a `v*` tag (or by hand as a rehearsal, below): checks the tag equals `v` + `package.json`
 version and points at a commit on `main`; audits, builds and tests without
 caches; runs the Node matrix (install and cold start) on the tarball; publishes that same tarball to npm with
 Trusted Publishing (OIDC, provenance); creates the GitHub Release with the
@@ -71,21 +78,38 @@ secret scanning with push protection.
 
 ## Releases
 
-Before the first tag:
+**Rehearsal.** Actions → Release → Run workflow runs every job on the chosen
+branch without publishing: the tag checks only warn, publish is
+`npm publish --dry-run` with no OIDC token (skipped with a warning while
+`package.json` is private), and no GitHub Release is created. Run it after
+any change to `release.yml` and before the first tag.
 
-1. Remove `"private": true` from `package.json`. The package is
-   `lazycodecommit` with bins `lazycodecommit` and `lazycc`; the flag stays
-   until the steps below are done, so an early tag cannot publish.
-2. On npmjs.com, add a Trusted Publisher for the package: repository
-   `watany-dev/lazycodecommit`, workflow `release.yml`, environment `npm`.
-   Enable 2FA for every maintainer and create no publish tokens.
-3. Create the `npm` environment (Settings → Environments): deployment tags
-   `v*` only, the maintainer as required reviewer.
-4. Add a `v*` tag ruleset limiting creation, update and deletion to the
+**Before the first tag**, in this order. npm only lets you add a Trusted
+Publisher to a package that already exists, so the name has to be published
+once by hand before `release.yml` can publish it:
+
+1. Create the `npm` environment (Settings → Environments): deployment tags
+   `v*` only, the maintainer as required reviewer. A workflow that names a
+   missing environment creates it with no protection, so do this first.
+2. Add a `v*` tag ruleset limiting creation, update and deletion to the
    maintainer, and enable immutable releases (Settings → General → Releases).
+3. Run the rehearsal on `main`; everything should pass, with the "private"
+   warning on the dry-run publish.
+4. Publish a placeholder by hand from your machine, with 2FA, to claim
+   `lazycodecommit` (it is unclaimed as of 2026-11): for example
+   `npx setup-npm-trusted-publish lazycodecommit`, which publishes an empty
+   placeholder version. Never publish the real package by hand: it would
+   have no provenance.
+5. On npmjs.com, add the Trusted Publisher: repository
+   `watany-dev/lazycodecommit`, workflow `release.yml`, environment `npm`.
+   Then, under the package's publishing access, require 2FA and disallow
+   tokens. Create no publish tokens.
+6. On a branch, remove `"private": true` from `package.json` and set
+   `version` above the placeholder's; merge it, run the rehearsal on `main`
+   again (now a real `npm publish --dry-run`), then push the tag.
 
-To release: bump `version` in `package.json` on `main`, then push the tag
-`v<version>`.
+**To release** after that: bump `version` in `package.json` on `main`, then
+push the tag `v<version>`.
 
 ## Not yet decided
 
