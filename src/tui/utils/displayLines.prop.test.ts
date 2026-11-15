@@ -1,3 +1,4 @@
+import type { Difference } from "@aws-sdk/client-codecommit";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { CommentThread } from "../../core/review.js";
@@ -5,6 +6,7 @@ import {
   buildDisplayLines,
   COMMENT_LINE_TYPES,
   countLines,
+  diffLimitKey,
   FOLD_THRESHOLD,
 } from "./displayLines.js";
 
@@ -90,5 +92,49 @@ describe("buildDisplayLines", () => {
       ),
       { numRuns: 1500 },
     );
+  });
+});
+
+const lineArrays = fc.array(fc.constantFrom("a", "b", "c", "d", ""), { maxLength: 30 });
+
+/** A file of these lines; a trailing "x" keeps an empty last line from being read as a final newline. */
+const fileOf = (l: string[]) => (l.length === 0 ? "" : `${l.join("\n")}\nx`);
+
+/** The diff rows of one modified file shown with at most `limit` lines (undefined: all). */
+function diffRows(before: string[], after: string[], limit?: number): string[] {
+  const differences: Difference[] = [
+    { beforeBlob: { blobId: "b", path: "f" }, afterBlob: { blobId: "a", path: "f" } },
+  ];
+  return buildDisplayLines(
+    differences,
+    new Map([["b:a", { before: fileOf(before), after: fileOf(after) }]]),
+    new Map([["b:a", "loaded" as const]]),
+    limit === undefined ? new Map() : new Map([[diffLimitKey("f", "b:a"), limit]]),
+    [],
+    new Map(),
+    new Map(),
+  )
+    .filter((l) => l.type === "add" || l.type === "delete" || l.type === "context")
+    .map((l) => `${l.text}|${l.beforeLineNumber}|${l.afterLineNumber}`);
+}
+
+describe("buildDisplayLines truncation", () => {
+  // A cut-off diff shows the first rows of the whole diff: cutting each side
+  // on its own made lines past the cut on one side read as deleted or added.
+  it("shows a prefix of the whole diff", () => {
+    fc.assert(
+      fc.property(lineArrays, lineArrays, fc.nat(80), (before, after, limit) => {
+        const all = diffRows(before, after);
+        const shown = diffRows(before, after, limit);
+        expect(shown).toEqual(all.slice(0, shown.length));
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("does not mark an unchanged line as deleted when the cut falls after an added line", () => {
+    const before = ["one", "two", "three", "four"];
+    const after = ["new", ...before];
+    expect(diffRows(before, after, 4)).not.toContain("-two|2|undefined");
   });
 });
