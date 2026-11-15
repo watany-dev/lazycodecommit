@@ -71,12 +71,30 @@ export async function resolveMe(
   return arn;
 }
 
-function globToRegExp(glob: string): RegExp {
-  const body = glob
-    .split("")
-    .map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^${}()|[\]\\]/g, "\\$&")))
-    .join("");
-  return new RegExp(`^${body}$`);
+/**
+ * `*` and `?` wildcard match without building a RegExp from the pattern: the
+ * patterns come from other people's approval rules, and a regex of many `.*`
+ * can backtrack for a long time. Greedy with one backtrack point, O(n·m) worst case.
+ */
+function globMatch(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && (pattern[p] === "?" || pattern[p] === text[t])) {
+      p++;
+      t++;
+    } else if (p < pattern.length && pattern[p] === "*") {
+      star = p++;
+      mark = t;
+    } else if (star !== -1) {
+      p = star + 1;
+      t = ++mark;
+    } else return false;
+  }
+  while (pattern[p] === "*") p++;
+  return p === pattern.length;
 }
 
 /**
@@ -86,7 +104,7 @@ function globToRegExp(glob: string): RegExp {
  * undefined so the caller can keep the PR (ADR 0005).
  */
 function matchesMember(member: string, me: string): boolean | undefined {
-  if (member.startsWith("arn:")) return globToRegExp(member).test(me);
+  if (member.startsWith("arn:")) return globMatch(member, me);
   const short = /^CodeCommitApprovers:(\d+):(.+)$/.exec(member);
   if (!short) return undefined;
   const [, account, name] = short;
