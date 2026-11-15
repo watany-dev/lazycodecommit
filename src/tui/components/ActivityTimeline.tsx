@@ -1,7 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import React, { memo, useMemo, useState } from "react";
 import type { PrActivityEvent } from "../../core/review.js";
-import { extractAuthorName, formatRelativeDate } from "../utils/formatDate.js";
+import { shortArn } from "../../core/text.js";
+import { formatRelativeDate } from "../utils/formatDate.js";
 
 /** Match PullRequestDetail's default viewport so j/k cost stays constant. */
 const VISIBLE_EVENT_COUNT = 30;
@@ -125,7 +126,7 @@ const ActivityEventRow = memo(function ActivityEventRow({
 }) {
   const icon = getEventIcon(event.eventType);
   const timeAgo = formatRelativeDate(event.eventDate);
-  const actorName = extractAuthorName(event.actorArn);
+  const actorName = shortArn(event.actorArn);
   const actorDisplay = actorName.length > 12 ? `${actorName.slice(0, 11)}…` : actorName.padEnd(12);
 
   return (
