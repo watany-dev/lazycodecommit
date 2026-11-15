@@ -112,7 +112,8 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
     if (path !== undefined) setCursors((c) => ({ ...c, [folderKey]: path }));
   };
 
-  const lines = file?.text === undefined ? [] : file.text.replace(/\r?\n$/, "").split(/\r?\n/);
+  // An empty file has no lines; a final newline ends the last line.
+  const lines = file?.text ? file.text.replace(/\r?\n$/, "").split(/\r?\n/) : [];
   const maxScroll = Math.max(lines.length - height, 0);
   const scrollTo = (n: number) => setScroll(Math.max(0, Math.min(n, maxScroll)));
 

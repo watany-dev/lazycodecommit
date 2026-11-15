@@ -30,6 +30,7 @@ import { ConfirmPrompt } from "./ConfirmPrompt.js";
 import { ConflictDisplay } from "./ConflictDisplay.js";
 import { DiffRow } from "./DiffLine.js";
 import { DraftList, type DraftSubmitState } from "./DraftList.js";
+import { windowStart } from "./FilterLine.js";
 import { MergeStrategySelector } from "./MergeStrategySelector.js";
 import { ReactionPicker } from "./ReactionPicker.js";
 
@@ -38,6 +39,9 @@ type InlineLocation = {
   filePosition: number;
   relativeFileVersion: "BEFORE" | "AFTER";
 };
+
+/** Rows of the f file list on screen; a PR of many files scrolls it. */
+const FILE_LIST_ROWS = 10;
 
 const EMPTY_STATUS_MAP = new Map<string, "loading" | "loaded" | "error">();
 
@@ -474,6 +478,10 @@ export function PullRequestDetail({
       if (!thread) return;
       const threadKey = getThreadKey(thread, currentLine.threadIndex);
       const defaultCollapsed = thread.comments.length >= FOLD_THRESHOLD;
+      const collapsing = defaultCollapsed && !(collapsedThreads.get(threadKey) ?? true);
+      // Folding from a reply removes the cursor's row: stay on the thread's fold line.
+      const root = rootRowOf(lines, cursorIndex);
+      if (collapsing && cursorIndex > root) setCursorIndex(root + 1);
       setCollapsedThreads((prev) => {
         const next = new Map(prev);
         next.set(threadKey, !(prev.get(threadKey) ?? defaultCollapsed));
@@ -555,6 +563,7 @@ export function PullRequestDetail({
     return Math.max(0, Math.min(idealOffset, maxOffset));
   }, [cursorIndex, lines.length, visibleLineCount]);
   const visibleLines = lines.slice(scrollOffset, scrollOffset + visibleLineCount);
+  const fileListTop = windowStart(fileListCursor, FILE_LIST_ROWS, fileNames.length);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -886,9 +895,9 @@ export function PullRequestDetail({
       {showFileList && (
         <Box flexDirection="column">
           <Text bold>Files ({fileNames.length}):</Text>
-          {fileNames.map((name, i) => (
+          {fileNames.slice(fileListTop, fileListTop + FILE_LIST_ROWS).map((name, i) => (
             <Text key={name}>
-              {i === fileListCursor ? "> " : "  "}
+              {fileListTop + i === fileListCursor ? "> " : "  "}
               {name}
             </Text>
           ))}
@@ -908,6 +917,14 @@ export function PullRequestDetail({
       </Box>
     </Box>
   );
+}
+
+/** The first row of the thread that row `index` belongs to. */
+function rootRowOf(lines: DisplayLine[], index: number): number {
+  const thread = lines[index]?.threadIndex;
+  let i = index;
+  while (i > 0 && lines[i - 1]!.threadIndex === thread) i--;
+  return i;
 }
 
 function commentIdOf(line: DisplayLine): string | undefined {

@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import React, { memo, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import type { PrActivityEvent } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
@@ -28,6 +28,11 @@ export function ActivityTimeline({
   onBack,
 }: Props) {
   const [cursorIndex, setCursorIndex] = useState(0);
+
+  // A retry after an expired page token starts the list over, shorter.
+  useEffect(() => {
+    setCursorIndex((prev) => Math.min(prev, Math.max(events.length - 1, 0)));
+  }, [events.length]);
 
   useKeys((input, key) => {
     if (key.escape || input === "q") {

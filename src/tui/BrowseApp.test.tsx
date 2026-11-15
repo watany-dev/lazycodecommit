@@ -45,6 +45,8 @@ function node(ref: string, path: string): BrowseNode {
       };
     case "docs":
       return { kind: "folder", ref, path: "docs", entries: [] };
+    case "empty.txt":
+      return { kind: "file", ref, path: p, size: 0, text: "" };
     case "crlf.txt":
       return { kind: "file", ref, path: p, size: 10, text: "one\r\ntwo\r\n" };
     case "README.md":
@@ -289,6 +291,12 @@ describe("BrowseApp review fixes", () => {
     const { lastFrame } = await setup(actions(), "crlf.txt", "one");
     expect(lastFrame()).toContain("2 │ two");
     expect(lastFrame()).not.toContain("one?");
+  });
+
+  it("shows an empty file as 0 lines, with no line 1", async () => {
+    const { lastFrame } = await setup(actions(), "empty.txt", "bytes");
+    expect(lastFrame()).toContain("0 lines · 0 bytes");
+    expect(lastFrame()).not.toContain("1 │");
   });
 
   it("comes back up onto the folder opened through a filter", async () => {

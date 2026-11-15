@@ -401,6 +401,19 @@ describe("formatErrorMessage", () => {
       );
     });
 
+    it("leaves words that only contain a region-like run alone", () => {
+      expect(
+        formatErrorMessage(makeError("Error", "Branch focus-fix-2 not found in us-west-2")),
+      ).toBe("Branch focus-fix-2 not found in [REGION]");
+    });
+
+    it("keeps a 40-character commit ID, which is no secret key", () => {
+      const commit = "0123456789abcdef0123456789abcdef01234567";
+      expect(formatErrorMessage(makeError("Error", `Could not find commit ${commit}.`))).toBe(
+        `Could not find commit ${commit}.`,
+      );
+    });
+
     it("returns plain message for generic errors", () => {
       expect(formatErrorMessage(makeError("Error", "Something went wrong"))).toBe(
         "Something went wrong",
