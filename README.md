@@ -24,6 +24,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it (fast-forwarding an existing local branch) |
 | `lazycc clone <repo> [dir]` | Clone by repository name. `--protocol https\|ssh\|grc` picks the URL (default `https`; `grc` is git-remote-codecommit); flags after `--` go to `git clone` |
 
+<<<<<<< HEAD
 The review screen is the one from
 [review-codecommit](https://github.com/watany-dev/review-codecommit), with the
 same keys (`?` lists them): diff, comments, inline comments, replies,
@@ -31,6 +32,8 @@ reactions, approval, merge and close. Inside a clone the diff comes from git
 (fetching the PR's branches if needed), and from the API otherwise. With
 `--json`, or when not on a terminal, `pr view` and `pr list` print instead.
 
+=======
+>>>>>>> origin/claude/project-thread-efp285
 Every command takes `--profile`, `--region` and `--json`; the `pr` commands
 also take `-R/--repo`.
 Exit codes: 0 success, 1 error, 2 bad arguments. Optional settings live in

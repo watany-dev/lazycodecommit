@@ -468,6 +468,7 @@ describe("clone", () => {
     expect(r).toMatchObject({ code: 1, err: "lazycc: git clone failed" });
   });
 });
+<<<<<<< HEAD
 
 describe("the review screen on a terminal", () => {
   it("opens pr view on the PR, with git inside the clone", async () => {
@@ -506,3 +507,5 @@ describe("the review screen on a terminal", () => {
     expect(r.out).not.toBe("");
   });
 });
+=======
+>>>>>>> origin/claude/project-thread-efp285

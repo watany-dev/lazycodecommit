@@ -307,6 +307,7 @@ async function runCommand(
       return 0;
     }
     case "pr list": {
+<<<<<<< HEAD
       if (
         io.interactive &&
         !json &&
@@ -316,6 +317,8 @@ async function runCommand(
         await review(null);
         return 0;
       }
+=======
+>>>>>>> origin/claude/project-thread-efp285
       const state = (str(values, "state") ?? "open").toUpperCase();
       if (state !== "OPEN" && state !== "CLOSED")
         throw new UsageError("--state must be open or closed");
