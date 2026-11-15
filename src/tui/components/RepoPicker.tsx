@@ -2,6 +2,7 @@ import { Box, Text, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import type { HomeActions } from "../../core/home.js";
+import { printable } from "../../core/text.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 
 interface Props {
@@ -116,7 +117,7 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
         {saving ? (
           <Text color="cyan">Saving...</Text>
         ) : note ? (
-          <Text {...(note.error ? { color: "red" } : {})}>{note.text}</Text>
+          <Text {...(note.error ? { color: "red" } : {})}>{printable(note.text)}</Text>
         ) : (
           <Text dimColor>Enter show w watch/unwatch p PR list / filter q back</Text>
         )}

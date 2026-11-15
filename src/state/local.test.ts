@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -113,5 +113,18 @@ describe("flush", () => {
     void s.cache.set("home", 1);
     await s.flush();
     expect(JSON.parse(await readFile(join(dir, "cache.json"), "utf8"))).toEqual({ home: 1 });
+  });
+});
+
+describe("file modes", () => {
+  it("keeps state readable by the user only: it holds private repositories' PR titles", async () => {
+    const s = state();
+    await s.cache.set("home", { title: "secret project" });
+    await s.seen.mark(seenKey("us-east-1", "1"), new Date());
+    await s.identity.set("dev", "arn:aws:iam::1:user/me");
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    for (const name of ["cache.json", "seen.json", "identity.json"]) {
+      expect((await stat(join(dir, name))).mode & 0o777, name).toBe(0o600);
+    }
   });
 });
