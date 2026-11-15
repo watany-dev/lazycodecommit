@@ -11,7 +11,10 @@ lazycc runs without any configuration. Everything here is optional.
   "profile": "dev",
   "region": "ap-northeast-1",
   "repos": ["my-service", "my-infra"],
-  "pr": { "template": ".codecommit/pull_request_template.md" },
+  "pr": {
+    "template": ".codecommit/pull_request_template.md",
+    "mergeOption": "squash"
+  },
   "branch": { "closedPrLookback": 100 },
   "concurrency": 8
 }
@@ -23,7 +26,7 @@ lazycc runs without any configuration. Everything here is optional.
 | `region` | string | none | AWS region, used when no flag, remote or `AWS_REGION` / `AWS_DEFAULT_REGION` gives one |
 | `repos` | array of strings | none | Repositories the home screen and `status` watch. Without it, the clone you are in. The repository picker's `w` edits this list |
 | `pr.template` | string | `.codecommit/pull_request_template.md` | PR body template for `pr create`, relative to the clone's root |
-| `pr.mergeOption` | `"ff"`, `"squash"` or `"three-way"` | none | Accepted and validated, but not used yet: `pr merge` still needs one of `--ff`, `--squash`, `--three-way` |
+| `pr.mergeOption` | `"ff"`, `"squash"` or `"three-way"` | none | The merge strategy `pr merge` uses when given none of `--ff`, `--squash`, `--three-way`, and the one selected first in the review screen's merge picker. Without it, `pr merge` needs a flag |
 | `branch.closedPrLookback` | positive integer | 100 | How many recent closed PRs the branch table checks to tell whether a branch was merged |
 | `concurrency` | positive integer | 8 | How many API calls run at once when reading many repositories or PRs |
 
@@ -67,6 +70,7 @@ lazycc keeps a few files under `~/.local/state/lazycc/`
 | `cache.json` | The home screen's last result, shown while it refreshes |
 | `identity.json` | Your ARN per profile, from `sts:GetCallerIdentity` |
 
+The directory and files are created readable only by you (`0700` / `0600`).
 They are safe to delete. A damaged file is discarded and rebuilt rather than
 stopping lazycc. In CloudShell the home directory persists per region, so
 unread state survives between sessions in the same region.

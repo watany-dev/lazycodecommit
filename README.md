@@ -94,7 +94,7 @@ is optional, the current branch's open PR is used.
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it, fast-forwarding an existing local branch. Needs a clone |
 | `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file`, or the editor on a terminal. Closed PRs can be commented on too |
 | `lazycc pr approve [<id>]` | Approve; `--revoke` takes the approval back |
-| `lazycc pr merge [<id>]` | Merge with exactly one of `--ff`, `--squash`, `--three-way`. Refuses if the source branch moved since the PR was read |
+| `lazycc pr merge [<id>]` | Merge with one of `--ff`, `--squash`, `--three-way`, or without a flag by the config's `pr.mergeOption`. Refuses if the source branch moved since the PR was read |
 | `lazycc pr close [<id>]` | Close without merging |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc browse [<repo>]` | Read a repository's tree and files through the API, no clone needed. `--ref` picks a branch or commit (default: the default branch), `--path` where to start. On a terminal it opens the browse screen; otherwise it prints the folder listing or the file |
@@ -175,9 +175,8 @@ The full list is in [docs/keybindings.md](docs/keybindings.md).
   opens the repository picker, `/` filters, `Ctrl+r` refreshes, `u` shows the
   PR's console URL. It shows the last result at once while it refreshes.
 - **Repository picker**: `Enter` shows only that repository on the home
-  screen, `w` adds it to or
-  removes it from the watch list (saved in the config's `repos`), `p` opens
-  its PR list.
+  screen, `w` adds it to or removes it from the watch list (saved in the
+  config's `repos`), `p` opens its PR list.
 - **Branch screen** (`lazycc branch`): `Enter` opens the branch's PR, `n`
   creates one (through `pr create`'s editor and push prompt), `d` deletes the
   branch on CodeCommit, Space switches to it inside a clone, `/` filters,
@@ -199,7 +198,10 @@ Nothing needs configuring. Optional settings live in
   "profile": "dev",
   "region": "ap-northeast-1",
   "repos": ["my-service", "my-infra"],
-  "pr": { "template": ".codecommit/pull_request_template.md" },
+  "pr": {
+    "template": ".codecommit/pull_request_template.md",
+    "mergeOption": "squash"
+  },
   "branch": { "closedPrLookback": 100 },
   "concurrency": 8
 }

@@ -154,17 +154,24 @@ describe("HomeApp", () => {
     await vi.waitFor(() => expect(lastFrame()).not.toContain("Fix cache"));
     await press(stdin, "u");
     expect(lastFrame()).toContain("https://console/demo/11");
-    await press(stdin, "/", "z", "z", "\r");
-    expect(lastFrame()).toContain("filter: zz");
+    // Each key waits for the screen it leads to: on a slow runner a fixed tick
+    // lets the next key reach the filter input before the last one has landed.
+    const step = async (key: string, shows: string | RegExp) => {
+      await press(stdin, key);
+      await vi.waitFor(() => expect(lastFrame()).toMatch(shows));
+    };
+    await step("/", /^ \//m);
+    await step("z", "/z");
+    await step("z", "/zz");
+    await step("\r", "filter: zz");
     expect(lastFrame()).toContain("No pull request matches.");
-    await press(stdin, "/", "\u001b");
-    expect(lastFrame()).toContain("Add retry");
-    await press(stdin, "j", "k", "?");
-    expect(lastFrame()).toContain("Home help");
-    await press(stdin, "x");
-    expect(lastFrame()).toContain("Awaiting your approval");
+    await step("/", "/zz");
+    await step("\u001b", "Add retry");
+    await press(stdin, "j", "k");
+    await step("?", "Home help");
+    await step("x", "Awaiting your approval");
     await press(stdin, "q");
-    expect(exit).toHaveBeenCalled();
+    await vi.waitFor(() => expect(exit).toHaveBeenCalled());
   });
 
   it("refreshes on Ctrl+r", async () => {
@@ -349,5 +356,20 @@ describe("HomeApp", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #11"));
     await press(stdin, "q");
     await vi.waitFor(() => expect(a.markSeen).toHaveBeenCalledWith("11"));
+  });
+});
+
+describe("HomeApp with hostile text", () => {
+  it("shows PR titles with control characters made visible", async () => {
+    const hostile = [
+      awaiting("11", "Add retry\x1b]52;c;aGk=\x07\x1b[2J"),
+      mine("21", "Mine\u009b2J"),
+    ];
+    const { lastFrame, stdin } = await setup(actions({ fetch: vi.fn(async () => inbox(hostile)) }));
+    expect(lastFrame()).toContain("Add retry^[]52;c;aGk=^G^[[2J");
+    expect(lastFrame()).not.toContain("\x1b]52");
+    await press(stdin, "\t");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Mine^[[2J"));
+    expect(lastFrame()).not.toContain("\u009b");
   });
 });
