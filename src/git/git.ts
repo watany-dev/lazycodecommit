@@ -64,7 +64,8 @@ export interface Git {
   fetch(refspecs: readonly string[], opts?: { readonly quiet: boolean }): Promise<void>;
   /**
    * `git switch <branch>` (which creates a tracking branch for a branch only on
-   * origin), or `git switch -c <branch> --track <track>`. `quiet` keeps git's
+   * origin), or `git switch -c <branch>` from `track`, the remote-tracking ref
+   * of origin's <branch>, with that branch as upstream. `quiet` keeps git's
    * output off the terminal, for the TUI.
    */
   switchBranch(
@@ -185,12 +186,22 @@ export function createGit(cwd: string): Git {
     },
     async switchBranch(branch, opts) {
       // Ref names may start with "-": --end-of-options keeps one someone pushed
-      // (say "--orphan=x") from being read as an option.
+      // (say "--orphan=x") from being read as an option. Not --track: it refuses
+      // a start point outside remote.origin.fetch, as in a single-branch clone,
+      // so the upstream is set the way --track would set it.
       const args = opts?.track
-        ? ["switch", "-c", branch, "--track", opts.track]
+        ? ["switch", "-c", branch, "--no-track", opts.track]
         : ["switch", "--end-of-options", branch];
       if (opts?.quiet) await required(args);
       else await streamed(args);
+      if (opts?.track) {
+        await required(["config", `branch.${branch}.remote`, "origin"]);
+        await required(["config", `branch.${branch}.merge`, `refs/heads/${branch}`]);
+        // --track sets rebase for a remote upstream under these two settings.
+        const rebase = await value(["config", "branch.autoSetupRebase"]);
+        if (rebase === "always" || rebase === "remote")
+          await required(["config", `branch.${branch}.rebase`, "true"]);
+      }
     },
     fastForward: (ref) => streamed(["merge", "--ff-only", "--end-of-options", ref]),
     clone: (url, args) => streamed(["clone", url, ...args]),
