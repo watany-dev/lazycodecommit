@@ -195,7 +195,17 @@ export function branchActions(deps: BranchDeps, region: string): BranchActions {
     },
     deleteBranch: (row) => deleteRemoteBranch(row, deps),
     ...(ctx.clone
-      ? { switchBranch: (row: BranchRow) => git.switchBranch(row.name, { quiet: true }) }
+      ? {
+          async switchBranch(row: BranchRow) {
+            // A branch only on origin is named outright: git's guess refuses
+            // when another remote has a branch of the same name.
+            const local = (await git.resolveCommit(`refs/heads/${row.name}`)) !== null;
+            await git.switchBranch(
+              row.name,
+              local ? { quiet: true } : { track: `refs/remotes/origin/${row.name}`, quiet: true },
+            );
+          },
+        }
       : {}),
     consoleUrl: (branch) => branchConsoleUrl(region, ctx.repository, branch),
   };

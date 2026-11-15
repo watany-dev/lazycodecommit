@@ -137,7 +137,11 @@ export function createGit(cwd: string): Git {
 
   return {
     topLevel: () => value(["rev-parse", "--show-toplevel"]),
-    currentBranch: () => value(["symbolic-ref", "--short", "-q", "HEAD"]),
+    async currentBranch() {
+      // Not --short: it prints "heads/<branch>" when a tag has the same name.
+      const ref = await value(["symbolic-ref", "-q", "HEAD"]);
+      return ref?.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : null;
+    },
     remoteUrl: (remote) => value(["remote", "get-url", remote]),
     resolveCommit: (ref) => value(["rev-parse", "--verify", "-q", `${ref}^{commit}`]),
 
@@ -153,6 +157,10 @@ export function createGit(cwd: string): Git {
       // message can hold any byte but NUL.
       const out = await required([
         "log",
+        // Whatever the user's config: log.showSignature would print gpg's
+        // verdict into the output, i18n.logOutputEncoding re-encode it.
+        "--no-show-signature",
+        "--encoding=UTF-8",
         "-z",
         "--reverse",
         "--format=%s%x00%b",
@@ -167,7 +175,9 @@ export function createGit(cwd: string): Git {
       return commits;
     },
 
-    push: (branch) => streamed(["push", "-u", "origin", branch]),
+    // Full refs: a bare name is refused when a tag has the same name.
+    push: (branch) =>
+      streamed(["push", "-u", "origin", `refs/heads/${branch}:refs/heads/${branch}`]),
     async fetch(refspecs, opts) {
       const args = ["fetch", "origin", ...refspecs];
       if (opts?.quiet) await required(["-c", "advice.fetchShowForcedUpdates=false", ...args]);
@@ -245,6 +255,8 @@ export function createGit(cwd: string): Git {
       // NUL-separated like commits(): names and subjects can hold any byte but NUL.
       const out = await required([
         "log",
+        "--no-show-signature",
+        "--encoding=UTF-8",
         "-z",
         "--first-parent",
         `--max-count=${max}`,

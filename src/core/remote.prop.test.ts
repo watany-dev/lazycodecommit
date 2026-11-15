@@ -23,8 +23,12 @@ describe("parseRemoteUrl, generated", () => {
         region,
         repo,
         fc.boolean(),
-        (scheme, user, fips, r, name, slash) => {
-          const host = `git-codecommit${fips ? "-fips" : ""}.${r}.amazonaws.com${r.startsWith("cn-") ? ".cn" : ""}`;
+        // An interface VPC endpoint without private DNS: vpce-<id>.git-codecommit.<region>.vpce.amazonaws.com.
+        fc.option(fc.stringMatching(/^vpce-[0-9a-z]{4,17}(-[0-9a-z]{8})?(-[a-z0-9-]{4,15})?$/), {
+          nil: undefined,
+        }),
+        (scheme, user, fips, r, name, slash, vpce) => {
+          const host = `${vpce ? `${vpce}.` : ""}git-codecommit${fips ? "-fips" : ""}.${r}.${vpce ? "vpce." : ""}amazonaws.com${r.startsWith("cn-") ? ".cn" : ""}`;
           const url = `${scheme}://${user ? `${user}@` : ""}${host}/v1/repos/${name}${slash ? "/" : ""}`;
           expect(parseRemoteUrl(url)).toEqual({ repo: name, region: r });
         },
