@@ -122,7 +122,7 @@ describe("App", () => {
     vi.mocked(listPullRequests).mockRejectedValue(error);
     const { lastFrame } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("AWS authentication failed");
+      expect(lastFrame()).toContain("AWS credentials are missing or expired");
     });
   });
 
@@ -132,7 +132,7 @@ describe("App", () => {
     vi.mocked(listPullRequests).mockRejectedValue(error);
     const { lastFrame } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("AWS authentication failed");
+      expect(lastFrame()).toContain("AWS credentials are missing or expired");
     });
   });
 

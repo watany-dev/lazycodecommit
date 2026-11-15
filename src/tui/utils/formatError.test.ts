@@ -8,6 +8,9 @@ function makeError(name: string, message = "test"): Error {
   return err;
 }
 
+const SIGN_IN_AGAIN =
+  "AWS credentials are missing or expired. Sign in again, for example `aws sso login`, then retry.";
+
 describe("formatErrorMessage", () => {
   describe("non-Error input", () => {
     it("returns string representation with context", () => {
@@ -312,16 +315,16 @@ describe("formatErrorMessage", () => {
   });
 
   describe("general AWS errors", () => {
-    it("returns auth message for CredentialsProviderError", () => {
-      expect(formatErrorMessage(makeError("CredentialsProviderError"))).toBe(
-        "AWS authentication failed. Run `aws configure` to set up credentials.",
-      );
+    it("points to signing in again for CredentialsProviderError", () => {
+      expect(formatErrorMessage(makeError("CredentialsProviderError"))).toBe(SIGN_IN_AGAIN);
     });
 
-    it("returns auth message for CredentialError", () => {
-      expect(formatErrorMessage(makeError("CredentialError"))).toBe(
-        "AWS authentication failed. Run `aws configure` to set up credentials.",
-      );
+    it("points to signing in again for an expired token", () => {
+      expect(formatErrorMessage(makeError("ExpiredTokenException"), "merge")).toBe(SIGN_IN_AGAIN);
+    });
+
+    it("points to signing in again for CredentialError", () => {
+      expect(formatErrorMessage(makeError("CredentialError"))).toBe(SIGN_IN_AGAIN);
     });
 
     it("returns message for RepositoryDoesNotExistException", () => {
@@ -332,6 +335,16 @@ describe("formatErrorMessage", () => {
   });
 
   describe("access control errors", () => {
+    it("names the refused action when the message carries it", () => {
+      const err = makeError(
+        "AccessDeniedException",
+        "User: arn:aws:iam::1:user/a is not authorized to perform: codecommit:MergePullRequestBySquash on resource: arn",
+      );
+      expect(formatErrorMessage(err, "merge")).toBe(
+        "Access denied: your IAM policy does not allow codecommit:MergePullRequestBySquash.",
+      );
+    });
+
     it("returns comment-specific access denied for comment context", () => {
       expect(formatErrorMessage(makeError("AccessDeniedException"), "comment")).toBe(
         "Access denied. Check your IAM policy allows CodeCommit write access.",
