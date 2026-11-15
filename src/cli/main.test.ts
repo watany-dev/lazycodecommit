@@ -5,12 +5,12 @@ import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import { type FakeState, fakeApi, fakeGit, fakeState, pullRequest } from "../testing/fakes.js";
-import type { BranchesRequest, BrowseRequest, HomeRequest, ReviewRequest } from "../tui/index.js";
+import type { ReviewRequest, TopRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
 interface Setup {
   interactive?: boolean;
-  onBranches?: (request: BranchesRequest) => Promise<void>;
+  onTop?: (request: TopRequest) => Promise<void>;
   git?: Partial<Git>;
   api?: CodeCommitApi;
   config?: Config | Error;
@@ -26,9 +26,7 @@ async function cli(args: string[], setup: Setup = {}) {
   const confirms: string[] = [];
   const apiOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
-  const branchScreens: BranchesRequest[] = [];
-  const browseScreens: BrowseRequest[] = [];
-  const homes: HomeRequest[] = [];
+  const tops: TopRequest[] = [];
   const deps: Deps = {
     io: {
       out: (l) => out.push(l),
@@ -54,12 +52,10 @@ async function cli(args: string[], setup: Setup = {}) {
     },
     createState: () => setup.state ?? fakeState(),
     openReview: async (request) => void reviews.push(request),
-    openBranches: async (request) => {
-      branchScreens.push(request);
-      await setup.onBranches?.(request);
+    openTop: async (request) => {
+      tops.push(request);
+      await setup.onTop?.(request);
     },
-    openBrowse: async (request) => void browseScreens.push(request),
-    openHome: async (request) => void homes.push(request),
   };
   const code = await run(args, deps);
   return {
@@ -69,9 +65,7 @@ async function cli(args: string[], setup: Setup = {}) {
     confirms,
     apiOptions,
     reviews,
-    branchScreens,
-    browseScreens,
-    homes,
+    tops,
   };
 }
 
@@ -761,9 +755,23 @@ describe("browse", () => {
       interactive: true,
     });
     expect(r).toMatchObject({ code: 0, out: "" });
-    expect(r.browseScreens).toHaveLength(1);
-    expect(r.browseScreens[0]?.actions.startRef).toBe("dev");
-    expect(r.browseScreens[0]?.path).toBe("src/");
+    const [top] = r.tops;
+    expect(top).toMatchObject({ start: "browse", repository: "demo", browsePath: "src/" });
+    expect((await top?.views.browse("demo"))?.startRef).toBe("dev");
+    // --ref only applies to the repository browse starts on.
+    expect((await top?.views.browse("other"))?.startRef).not.toBe("dev");
+  });
+
+  it("opens the repository picker for browse outside a clone", async () => {
+    const r = await cli(["browse"], {
+      api: browseApi(),
+      interactive: true,
+      git: { topLevel: async () => null },
+    });
+    expect(r.code).toBe(0);
+    expect(r.tops[0]?.start).toBe("browse");
+    expect(r.tops[0]).not.toHaveProperty("repository");
+    expect(r.tops[0]).not.toHaveProperty("cloneRepository");
   });
 
   it("rejects --repo next to a repository argument", async () => {
@@ -908,16 +916,22 @@ describe("branch", () => {
       api: branchApi(),
       git,
       interactive: true,
-      onBranches: async (request) => {
-        outcomes.push(await request.createPullRequest("feature"));
-        outcomes.push(await request.createPullRequest("topic"));
-        outcomes.push(await request.createPullRequest("main"));
+      onTop: async (request) => {
+        const view = request.views.branches("demo");
+        outcomes.push(await view.createPullRequest("feature"));
+        outcomes.push(await view.createPullRequest("topic"));
+        outcomes.push(await view.createPullRequest("main"));
       },
     });
     expect(r.code).toBe(0);
     expect(r.out).toBe("");
-    expect(r.branchScreens[0]).toMatchObject({ region: "ap-northeast-1", git: expect.anything() });
-    expect(r.branchScreens[0]?.actions.repository).toBe("demo");
+    expect(r.tops[0]).toMatchObject({
+      start: "branches",
+      repository: "demo",
+      region: "ap-northeast-1",
+      git: expect.anything(),
+    });
+    expect(r.tops[0]?.views.branches("demo").actions.repository).toBe("demo");
     expect(outcomes).toEqual([
       { pullRequestId: "42" },
       { pullRequestId: "3" },
@@ -936,8 +950,8 @@ describe("branch", () => {
       api: failing,
       interactive: true,
       git: { topLevel: async () => null },
-      onBranches: async (request) => {
-        outcome = await request.createPullRequest("feature");
+      onTop: async (request) => {
+        outcome = await request.views.branches("demo").createPullRequest("feature");
       },
     });
     expect(outcome).toEqual({ message: expect.stringContaining("aws sso login --profile dev") });
@@ -1138,10 +1152,13 @@ describe("home", () => {
     const state = fakeState();
     const r = await cli([], { interactive: true, state });
     expect(r.code).toBe(0);
-    const [home] = r.homes;
-    expect(home).toMatchObject({ region: "ap-northeast-1", cloneRepository: "demo" });
-    expect(home?.git).toBeDefined();
-    expect(home?.actions).toMatchObject({ me: ME, region: "ap-northeast-1", initial: ["demo"] });
+    const [top] = r.tops;
+    expect(top).toMatchObject({ start: "home", region: "ap-northeast-1", cloneRepository: "demo" });
+    expect(top?.git).toBeDefined();
+    const home = await top?.views.home();
+    expect(home).toMatchObject({ me: ME, region: "ap-northeast-1", initial: ["demo"] });
+    // One STS call however often the home is opened.
+    expect(await top?.views.home()).toBe(home);
   });
 
   it("opens on the picker outside a clone with nothing watched, and takes flags", async () => {
@@ -1150,19 +1167,16 @@ describe("home", () => {
       git: { topLevel: async () => null },
     });
     expect(r.apiOptions).toEqual([{ profile: "p" }]);
-    expect(r.homes[0]?.actions.initial).toBeUndefined();
-    expect(r.homes[0]).not.toHaveProperty("cloneRepository");
+    expect((await r.tops[0]?.views.home())?.initial).toBeUndefined();
+    expect(r.tops[0]).not.toHaveProperty("cloneRepository");
   });
 
   it("uses the config's repos and -R", async () => {
     const config = { repos: ["a", "b"] };
-    expect((await cli([], { interactive: true, config })).homes[0]?.actions.initial).toEqual([
-      "a",
-      "b",
-    ]);
-    expect(
-      (await cli(["-R", "x"], { interactive: true, config })).homes[0]?.actions.initial,
-    ).toEqual(["x"]);
+    const initial = async (args: string[]) =>
+      (await (await cli(args, { interactive: true, config })).tops[0]?.views.home())?.initial;
+    expect(await initial([])).toEqual(["a", "b"]);
+    expect(await initial(["-R", "x"])).toEqual(["x"]);
   });
 
   it("rejects an unknown flag, and home as a command", async () => {
@@ -1177,7 +1191,7 @@ describe("home", () => {
     });
     expect(r.code).toBe(0);
     expect(r.out).toContain("Awaiting your approval (1)");
-    expect(r.homes).toEqual([]);
+    expect(r.tops).toEqual([]);
   });
 
   it("prints the whole usage for --help after a bare lazycc's flags", async () => {
@@ -1199,9 +1213,9 @@ describe("home", () => {
     const view = await cli(["pr", "view", "3"], { interactive: true, api, config });
     expect(view.reviews[0]?.mergeStrategy).toBe("fast-forward");
     const branch = await cli(["branch"], { interactive: true, config });
-    expect(branch.branchScreens[0]?.mergeStrategy).toBe("fast-forward");
+    expect(branch.tops[0]?.mergeStrategy).toBe("fast-forward");
     const home = await cli([], { interactive: true, config: { ...config, repos: ["demo"] } });
-    expect(home.homes[0]?.mergeStrategy).toBe("fast-forward");
+    expect(home.tops[0]?.mergeStrategy).toBe("fast-forward");
     const none = await cli(["pr", "view", "3"], { interactive: true, api });
     expect(none.reviews[0]).not.toHaveProperty("mergeStrategy");
   });
@@ -1217,7 +1231,7 @@ describe("home", () => {
     await state.flush();
     expect([...state.seenAt.keys()]).toEqual(["ap-northeast-1/3"]);
     const b = await cli(["branch"], { interactive: true });
-    expect(b.branchScreens[0]?.markSeen).toBeTypeOf("function");
+    expect(b.tops[0]?.markSeen).toBeTypeOf("function");
   });
 
   it("keeps quiet when a read mark cannot be saved", async () => {
