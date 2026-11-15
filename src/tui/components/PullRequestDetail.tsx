@@ -1052,13 +1052,14 @@ function ChecksLines({ checks }: { checks: Checks }) {
       {checks.runs.map((r) => (
         <Text key={`${r.provider}:${r.name}`} wrap="truncate">
           {"  "}
-          <Text color={CHECK_COLOR[r.state]}>{CHECK_MARK[r.state]}</Text> {r.provider} {r.name}{" "}
+          <Text color={CHECK_COLOR[r.state]}>{CHECK_MARK[r.state]}</Text> {r.provider}{" "}
+          {printable(r.name)}{" "}
           <Text dimColor>
             {r.state === "error"
               ? printable(r.message ?? "")
               : r.state === "none"
                 ? `no run on ${checks.commit.slice(0, 7)}`
-                : `${r.status} ${r.url ?? ""}`}
+                : printable(`${r.status} ${r.url ?? ""}`)}
           </Text>
         </Text>
       ))}
