@@ -176,13 +176,15 @@ export function createGit(cwd: string): Git {
       else await streamed(args);
     },
     async switchBranch(branch, opts) {
+      // Ref names may start with "-": --end-of-options keeps one someone pushed
+      // (say "--orphan=x") from being read as an option.
       const args = opts?.track
         ? ["switch", "-c", branch, "--track", opts.track]
-        : ["switch", branch];
+        : ["switch", "--end-of-options", branch];
       if (opts?.quiet) await required(args);
       else await streamed(args);
     },
-    fastForward: (ref) => streamed(["merge", "--ff-only", ref]),
+    fastForward: (ref) => streamed(["merge", "--ff-only", "--end-of-options", ref]),
     clone: (url, args) => streamed(["clone", url, ...args]),
     mergeBase: (a, b) => value(["merge-base", a, b]),
 
