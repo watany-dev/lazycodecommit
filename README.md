@@ -26,7 +26,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it (fast-forwarding an existing local branch) |
 | `lazycc pr comment [id]` | Comment on a PR with `-b text`, `-F file`, or the editor on a terminal |
 | `lazycc pr approve [id]` | Approve a PR; `--revoke` takes your approval back |
-| `lazycc pr merge [id]` | Merge with one of `--ff`, `--squash`, `--three-way`; refuses if the source branch moved since it was read |
+| `lazycc pr merge [id]` | Merge with one of `--ff`, `--squash`, `--three-way` (or the config's `pr.mergeOption`); refuses if the source branch moved since it was read |
 | `lazycc pr close [id]` | Close a PR without merging |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc browse [repo]` | Read a repository's tree and files through the API, no clone needed. `--ref` picks a branch or commit (default: the default branch), `--path` where to start. On a terminal it opens the browse screen; otherwise it prints the folder listing or the file |
@@ -60,7 +60,7 @@ your ARN, what you have opened, and its last result under
 `~/.local/state/lazycc/` (`XDG_STATE_HOME`).
 Exit codes: 0 success, 1 error, 2 bad arguments. Optional settings live in
 `~/.config/lazycc/config.json` (`profile`, `region`, `repos`, `pr.template`,
-`concurrency`, `branch.closedPrLookback`).
+`pr.mergeOption`, `concurrency`, `branch.closedPrLookback`).
 
 ## Development
 
