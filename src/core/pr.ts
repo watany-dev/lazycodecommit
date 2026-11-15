@@ -338,7 +338,8 @@ export async function checkoutPullRequest(
     throw new UserError(`git fetch origin ${branch} failed: ${(error as Error).message}${hint}`);
   }
   if ((await git.resolveCommit(`refs/heads/${branch}`)) === null) {
-    await git.switchBranch(branch, { track: `origin/${branch}` });
+    // The full ref: "origin/<branch>" would pick a local branch of that name.
+    await git.switchBranch(branch, { track: remote });
     return { pr, branch, created: true };
   }
   if ((await git.currentBranch()) !== branch) await git.switchBranch(branch);

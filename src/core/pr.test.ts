@@ -1,6 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CodeCommitApi } from "../aws/codecommit.js";
-import type { Git } from "../git/git.js";
+import { createGit, type Git } from "../git/git.js";
 import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
 import type { RepoContext } from "./context.js";
 import { UsageError, UserError } from "./errors.js";
@@ -453,6 +457,9 @@ describe("pullRequestStatus", () => {
   });
 });
 
+const sh = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+
 const checkoutApi = () => fakeApi([pullRequest({ id: "9", sourceBranch: "feature/x" })]);
 
 describe("checkoutPullRequest", () => {
@@ -472,7 +479,7 @@ describe("checkoutPullRequest", () => {
     });
     expect(calls).toEqual([
       "fetch +refs/heads/feature/x:refs/remotes/origin/feature/x",
-      "switch feature/x origin/feature/x",
+      "switch feature/x refs/remotes/origin/feature/x",
     ]);
   });
 
@@ -513,6 +520,37 @@ describe("checkoutPullRequest", () => {
       git: fail,
     }).d;
     await expect(checkoutPullRequest("9", closed)).rejects.toThrow(/may have been deleted/);
+  });
+
+  it("tracks origin's branch even when a local branch is named origin/<branch>", async () => {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "lazycc-checkout-")));
+    const work = join(dir, "work");
+    try {
+      sh(dir, "init", "-q", "--bare", "-b", "main", "origin.git");
+      sh(dir, "init", "-q", "-b", "main", work);
+      sh(work, "config", "user.name", "t");
+      sh(work, "config", "user.email", "t@example.com");
+      sh(work, "config", "commit.gpgsign", "false");
+      sh(work, "remote", "add", "origin", join(dir, "origin.git"));
+      sh(work, "commit", "-q", "--allow-empty", "-m", "initial");
+      sh(work, "push", "-q", "origin", "main");
+      sh(work, "switch", "-q", "-c", "feature/x");
+      sh(work, "commit", "-q", "--allow-empty", "-m", "theirs");
+      const tip = sh(work, "rev-parse", "HEAD");
+      sh(work, "push", "-q", "origin", "feature/x");
+      sh(work, "switch", "-q", "main");
+      sh(work, "branch", "-q", "-D", "feature/x");
+      sh(work, "update-ref", "-d", "refs/remotes/origin/feature/x");
+      // A common slip: a local branch called origin/<name>, here at an older commit.
+      sh(work, "branch", "-q", "origin/feature/x", "main");
+      const { d } = deps({ api: checkoutApi() });
+      const result = await checkoutPullRequest("9", { ...d, git: createGit(work) });
+      expect(result).toMatchObject({ branch: "feature/x", created: true });
+      expect(sh(work, "rev-parse", "HEAD")).toBe(tip);
+      expect(sh(work, "config", "branch.feature/x.remote")).toBe("origin");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("works only inside a clone", async () => {
