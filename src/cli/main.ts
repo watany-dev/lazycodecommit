@@ -32,6 +32,7 @@ import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
 import type { LocalState } from "../state/local.js";
 import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
+import { completionScript, SHELLS, type Shell } from "./completion.js";
 import {
   branchJson,
   branchLines,
@@ -82,6 +83,7 @@ Usage:
   lazycc pr close [<id>]
   lazycc branch
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
+  lazycc completion bash|zsh|fish
   lazycc --version
 
 Flags for every command:
@@ -165,6 +167,7 @@ function mergeStrategy(values: Values): MergeStrategy {
 for (const spec of Object.values(COMMANDS)) Object.assign(spec.options, REPO);
 // The repository is the positional argument, and `--` passes the rest to git clone.
 COMMANDS["clone"] = { positionals: 2, options: { protocol: { type: "string" } } };
+COMMANDS["completion"] = { positionals: 1, options: {} };
 
 type Values = Record<string, string | boolean | undefined>;
 
@@ -194,7 +197,8 @@ function parse(
 const str = (v: Values, key: string) =>
   typeof v[key] === "string" ? (v[key] as string) : undefined;
 
-export async function run(args: readonly string[], deps: Deps): Promise<number> {
+export async function run(args: readonly string[], rawDeps: Deps): Promise<number> {
+  const deps = { ...rawDeps, io: printableIo(rawDeps.io) };
   const { io } = deps;
   const [noun, verb, ...rest] = args;
   let profile: string | undefined;
@@ -237,6 +241,16 @@ export async function run(args: readonly string[], deps: Deps): Promise<number> 
       if (positionals[0] === undefined) throw new UsageError("clone needs a repository name");
       values["repo"] = positionals[0];
       positionals.push(...passthrough);
+    }
+    if (command === "completion") {
+      const shell = positionals[0];
+      if (!SHELLS.includes(shell as Shell))
+        throw new UsageError(`completion needs a shell: ${SHELLS.join(", ")}`);
+      const table = Object.fromEntries(
+        Object.entries(COMMANDS).map(([name, spec]) => [name, { ...COMMON, ...spec.options }]),
+      );
+      io.out(completionScript(shell as Shell, table).trimEnd());
+      return 0;
     }
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
@@ -296,7 +310,7 @@ async function runCommand(
     readFile: io.readFile,
     note: io.err,
   };
-  const print = (value: unknown) => io.out(JSON.stringify(value, null, 2));
+  const print = (value: unknown) => printJson(io, value);
   const done = (line: string, pr: PullRequest) => {
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
@@ -547,7 +561,7 @@ async function runStatus(
   });
   const inbox = { ...listed, items: await loadAllDetails(listed.items, api, limit) };
   const items = inbox.items.filter((i) => isPending(i, me));
-  if (json) io.out(JSON.stringify(inboxJson(inbox, items, region), null, 2));
+  if (json) printJson(io, inboxJson(inbox, items, region));
   else for (const line of inboxLines(items)) io.out(line);
   for (const { repository, error } of inbox.errors) {
     io.err(`lazycc: ${repository}: ${explainAwsError(error, ctx.profile) ?? error.message}`);
@@ -559,6 +573,31 @@ async function runStatus(
   // The cache only speeds up the next TUI start; failing to write it is not an error.
   await state.cache.set("home", toCache(inbox, region)).catch(() => {});
   return inbox.errors.length > 0 || incomplete.length > 0 ? 1 : 0;
+}
+
+/**
+ * Every line we print carries text from elsewhere (titles, branch names, commit
+ * messages, git's and the SDK's errors), so none may reach the terminal as an
+ * escape sequence. Our own output has no control characters but \n and \t.
+ */
+function printableIo(io: Io): Io {
+  return {
+    ...io,
+    out: (line) => io.out(printable(line, true)),
+    err: (line) => io.err(printable(line, true)),
+    confirm: (question) => io.confirm(printable(question)),
+  };
+}
+
+// JSON.stringify escapes C0 controls but not C1 (U+0080-U+009F); \u escapes
+// keep the data exact and the terminal safe.
+function printJson(io: Io, value: unknown): void {
+  io.out(
+    JSON.stringify(value, null, 2).replace(
+      /[\u0080-\u009f]/g,
+      (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+    ),
+  );
 }
 
 function optional<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {

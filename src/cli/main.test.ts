@@ -23,6 +23,7 @@ interface Setup {
 async function cli(args: string[], setup: Setup = {}) {
   const out: string[] = [];
   const err: string[] = [];
+  const confirms: string[] = [];
   const apiOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
   const branchScreens: BranchesRequest[] = [];
@@ -33,7 +34,10 @@ async function cli(args: string[], setup: Setup = {}) {
       env: setup.env ?? {},
       cwd: "/work",
       interactive: setup.interactive ?? false,
-      confirm: async () => true,
+      confirm: async (question) => {
+        confirms.push(question);
+        return true;
+      },
       edit: setup.edit ?? (async (t) => t),
       readFile: async (path) => setup.files?.[path] ?? null,
     },
@@ -54,7 +58,15 @@ async function cli(args: string[], setup: Setup = {}) {
     },
   };
   const code = await run(args, deps);
-  return { code, out: out.join("\n"), err: err.join("\n"), apiOptions, reviews, branchScreens };
+  return {
+    code,
+    out: out.join("\n"),
+    err: err.join("\n"),
+    confirms,
+    apiOptions,
+    reviews,
+    branchScreens,
+  };
 }
 
 const json = (s: string) => JSON.parse(s);
@@ -607,6 +619,24 @@ describe("writes to a PR that is no longer open", () => {
   });
 });
 
+describe("completion", () => {
+  it("prints a script for each shell without touching config or AWS", async () => {
+    for (const shell of ["bash", "zsh", "fish"]) {
+      const r = await cli(["completion", shell], { config: new Error("not read") });
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("lazycc");
+      expect(r.apiOptions).toEqual([]);
+    }
+    expect((await cli(["completion", "bash"])).out).toContain('"pr merge") flags="');
+  });
+
+  it.each([[["completion"]], [["completion", "tcsh"]]])("exits 2 for %j", async (args) => {
+    const r = await cli(args);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("completion needs a shell: bash, zsh, fish");
+  });
+});
+
 describe("clone", () => {
   it("clones by repository name, passing a directory and git flags through", async () => {
     const cloned: unknown[] = [];
@@ -905,5 +935,55 @@ describe("status", () => {
       },
     };
     expect((await cli(["status"], { api: api(), state: broken })).code).toBe(0);
+  });
+});
+
+describe("terminal safety", () => {
+  // Any C0 or C1 control but \n and \t: what a terminal would act on.
+  // oxlint-disable-next-line no-control-regex -- finding them is the point
+  const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+  const hostile = "x\x1b]52;c;aGk=\x07\u009b2Jy";
+
+  it("keeps other people's text from reaching the terminal as escape sequences", async () => {
+    const api = fakeApi([
+      pullRequest({ id: "3", title: hostile, sourceBranch: hostile, destinationBranch: hostile }),
+    ]);
+    for (const args of [
+      ["pr", "view"],
+      ["pr", "view", "3"],
+      ["pr", "list"],
+      ["pr", "status"],
+    ]) {
+      const r = await cli(args, { api });
+      expect(r.out + r.err, args.join(" ")).not.toMatch(CONTROL);
+    }
+    const git = { commits: async () => [{ subject: hostile, body: hostile }] };
+    const plan = await cli(["pr", "create", "--fill", "--dry-run"], { git });
+    expect(plan.out + plan.err).not.toMatch(CONTROL);
+    // Git forbids C0 in ref names but not C1, so a local branch can hold CSI.
+    const push = await cli(["pr", "create", "--fill"], {
+      interactive: true,
+      git: { currentBranch: async () => "a\u009b2Jb", unpushedCount: async () => null },
+    });
+    expect(push.confirms).toEqual(["a^[[2Jb is not on origin. Push it to origin?"]);
+  });
+
+  it("makes error messages printable too", async () => {
+    const git = {
+      commits: async () => {
+        throw new GitError(["log"], `fatal: bad revision '${hostile}'`, 128);
+      },
+    };
+    const r = await cli(["pr", "create", "--fill"], { git });
+    expect(r.code).toBe(1);
+    expect(r.err).not.toMatch(CONTROL);
+    expect(r.err).toContain("x^[]52;c;aGk=^G^[[2Jy");
+  });
+
+  it("escapes C1 controls in JSON, which JSON.stringify leaves raw, without changing the data", async () => {
+    const api = fakeApi([pullRequest({ id: "3", title: hostile })]);
+    const r = await cli(["pr", "view", "3", "--json"], { api });
+    expect(r.out).not.toMatch(CONTROL);
+    expect(json(r.out).title).toBe(hostile);
   });
 });
