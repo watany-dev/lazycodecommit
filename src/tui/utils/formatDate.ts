@@ -1,5 +1,3 @@
-import { shortArn } from "../../core/text.js";
-
 export function formatRelativeDate(date: Date, now: Date = new Date()): string {
   const diffMs = now.getTime() - date.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
@@ -20,8 +18,4 @@ export function formatRelativeDate(date: Date, now: Date = new Date()): string {
     return `${diffDays}d ago`;
   }
   return date.toLocaleDateString();
-}
-
-export function extractAuthorName(authorArn: string): string {
-  return shortArn(authorArn);
 }

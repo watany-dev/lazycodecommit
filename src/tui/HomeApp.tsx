@@ -11,11 +11,11 @@ import {
   type Section,
 } from "../core/inbox.js";
 import type { ReviewService } from "../core/review.js";
-import { printable } from "../core/text.js";
+import { printable, shortArn } from "../core/text.js";
 import { RepoPicker } from "./components/RepoPicker.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
-import { extractAuthorName, formatRelativeDate } from "./utils/formatDate.js";
+import { formatRelativeDate } from "./utils/formatDate.js";
 import { formatErrorMessage } from "./utils/formatError.js";
 
 interface Props {
@@ -349,7 +349,7 @@ function InboxLine({
 
 function Detail({ item }: { item: InboxItem }) {
   if (item.section === "awaiting") {
-    return <Text wrap="truncate">{extractAuthorName(item.pr.authorArn)}</Text>;
+    return <Text wrap="truncate">{shortArn(item.pr.authorArn)}</Text>;
   }
   if (item.detailError) return <Text color="red">details failed</Text>;
   if (!item.rules) return <Text dimColor>…</Text>;
