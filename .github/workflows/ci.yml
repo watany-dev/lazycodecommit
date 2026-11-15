@@ -72,6 +72,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Vitest runs on Node.js, not Bun: pin it instead of taking the image's.
+      # 22 is the oldest Vitest supports; Node 20 is covered by the Node jobs.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
@@ -150,12 +156,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Same version as lint:workflows in package.json. The runner's
-      # shellcheck checks the run: scripts.
+      # Same version as lint:workflows in package.json; the official binary,
+      # checked against the release's checksum. The runner's shellcheck checks
+      # the run: scripts.
       - name: Install actionlint
-        run: python3 -m pip install actionlint-py==1.7.12.25
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          tgz="$RUNNER_TEMP/actionlint.tgz"
+          curl -sSfL -o "$tgz" "https://github.com/rhysd/actionlint/releases/download/v$VERSION/actionlint_${VERSION}_linux_amd64.tar.gz"
+          echo "$SHA256  $tgz" | sha256sum -c -
+          tar -xzf "$tgz" -C "$RUNNER_TEMP" actionlint
       - name: actionlint
-        run: actionlint -color
+        run: '"$RUNNER_TEMP/actionlint" -color'
 
   zizmor:
     name: Zizmor
@@ -193,7 +207,8 @@ jobs:
       # --error fails the job on findings, which are printed to the log; the
       # always() upload sends the SARIF copy to code scanning.
       # The image is pinned by digest (semgrep/semgrep:1.178.0) and dependabot
-      # does not track it: bump the tag and digest together by hand.
+      # does not track it: bump the tag and digest together by hand, with
+      # lint:semgrep in package.json.
       - name: Run Semgrep
         run: >-
           docker run --rm -v "$PWD:/src" -w /src

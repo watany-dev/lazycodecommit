@@ -178,11 +178,18 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write # create the release
+      id-token: write # sign the provenance attestation
+      attestations: write # store the attestation
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: package
           path: pkg
+      # `gh attestation verify <tgz> -R watany-dev/lazycodecommit` checks a
+      # downloaded asset came from this workflow.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: pkg/*.tgz
       # Every asset goes up in the create call, so immutable releases work.
       - name: Create release
         env:
