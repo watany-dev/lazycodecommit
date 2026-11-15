@@ -678,6 +678,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
                 confirm: io.confirm,
                 edit: io.edit,
                 readFile: io.readFile,
+                readStdin: io.readStdin,
                 note: io.err,
               },
             );
