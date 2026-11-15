@@ -2523,6 +2523,45 @@ describe("App", () => {
     });
   });
 
+  it("starts the merge dialog on the service's preselected strategy", async () => {
+    vi.mocked(listPullRequests).mockResolvedValue({
+      pullRequests: [
+        {
+          pullRequestId: "42",
+          title: "fix: login",
+          authorArn: "arn:aws:iam::123456789012:user/watany",
+          creationDate: new Date("2026-02-13T10:00:00Z"),
+          status: "OPEN" as const,
+        },
+      ],
+    });
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: {
+        pullRequestId: "42",
+        title: "fix: login",
+        pullRequestTargets: [
+          {
+            destinationReference: "refs/heads/main",
+            sourceReference: "refs/heads/fix",
+            destinationCommit: "def456",
+            sourceCommit: "abc123",
+          },
+        ],
+      },
+      differences: [],
+      commentThreads: [],
+    });
+    const preselected = { ...svc, mergeStrategy: "squash" as const };
+    const { lastFrame, stdin } = render(
+      <App service={preselected} repository="my-service" start={null} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("fix: login"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
+    stdin.write("m");
+    await vi.waitFor(() => expect(lastFrame()).toContain("> Squash"));
+  });
+
   // v0.6: Merge integration tests
   it("merges PR and returns to PR list", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({

@@ -89,7 +89,7 @@ Usage:
   lazycc pr checkout <id>
   lazycc pr comment [<id>] [-b body | -F file]
   lazycc pr approve [<id>] [--revoke]
-  lazycc pr merge [<id>] --ff | --squash | --three-way
+  lazycc pr merge [<id>] [--ff | --squash | --three-way]
   lazycc pr close [<id>]
   lazycc branch
   lazycc browse [<repo>] [--ref branch|commit] [--path path]
@@ -170,14 +170,24 @@ const MERGE_FLAGS: Record<string, MergeStrategy> = {
   "three-way": "three-way",
 };
 
-function mergeStrategy(values: Values): MergeStrategy {
+function preferredStrategy(config: Config): MergeStrategy | undefined {
+  const option = config.pr?.mergeOption;
+  return option && MERGE_FLAGS[option];
+}
+
+/** The one strategy flag given, else the config's pr.mergeOption (spec: pr merge). */
+function mergeStrategy(values: Values, config: Config): MergeStrategy {
   const picked = Object.keys(MERGE_FLAGS).filter((flag) => values[flag] === true);
-  if (picked.length !== 1) {
+  if (picked.length > 1) {
+    throw new UsageError("Pick one merge strategy: --ff, --squash or --three-way");
+  }
+  const strategy = picked[0] ? MERGE_FLAGS[picked[0]] : preferredStrategy(config);
+  if (!strategy) {
     throw new UsageError(
-      `Pick ${picked.length === 0 ? "a" : "one"} merge strategy: --ff, --squash or --three-way`,
+      "Pick a merge strategy: --ff, --squash or --three-way, or set pr.mergeOption",
     );
   }
-  return MERGE_FLAGS[picked[0] as string] as MergeStrategy;
+  return strategy;
 }
 
 for (const spec of Object.values(COMMANDS)) Object.assign(spec.options, REPO);
@@ -293,8 +303,6 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
     }
-    // Checked before any AWS call, so a typo cannot cost a round trip.
-    if (command === "pr merge") mergeStrategy(values);
     return await runCommand(command, values, positionals, deps, (ctx) => {
       profile = ctx.profile;
     });
@@ -313,6 +321,8 @@ async function runCommand(
   const { io } = deps;
   const json = values["json"] === true;
   const config = await deps.loadConfig(io.env);
+  // Checked before any AWS call, so a typo cannot cost a round trip.
+  if (command === "pr merge") mergeStrategy(values, config);
   const git = deps.createGit(io.cwd);
   const input = {
     ...optional("repo", str(values, "repo")),
@@ -385,6 +395,7 @@ async function runCommand(
       start,
       region,
       markSeen,
+      ...optional("mergeStrategy", preferredStrategy(config)),
       ...optional("profile", ctx.profile),
       ...(ctx.clone ? { git } : {}),
     });
@@ -547,7 +558,7 @@ async function runCommand(
       return 0;
     }
     case "pr merge": {
-      const strategy = mergeStrategy(values);
+      const strategy = mergeStrategy(values, config);
       const pr = await mergePullRequest(positionals[0], strategy, prDeps);
       if (json) print(prJson(pr, region));
       else
@@ -689,6 +700,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     markSeen: (id) => {
       state.seen.mark(seenKey(region, id), new Date()).catch(() => {});
     },
+    ...optional("mergeStrategy", preferredStrategy(config)),
     ...optional("profile", ctx.profile),
     ...(cloneRepo ? { git, cloneRepository: cloneRepo } : {}),
   });

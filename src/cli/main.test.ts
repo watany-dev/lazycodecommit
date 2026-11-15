@@ -550,7 +550,7 @@ describe("pr merge", () => {
   });
 
   it.each([
-    [[], "Pick a merge strategy: --ff, --squash or --three-way"],
+    [[], "Pick a merge strategy: --ff, --squash or --three-way, or set pr.mergeOption"],
     [["--ff", "--squash"], "Pick one merge strategy: --ff, --squash or --three-way"],
   ])("exits 2 for %j", async (flags, message) => {
     const a = fakeApi([pullRequest({ id: "6" })]);
@@ -569,6 +569,37 @@ describe("pr merge", () => {
       });
       expect(r.code).toBe(picked.length === 1 ? 0 : 2);
     }
+  });
+
+  it.each([
+    ["ff", "fast-forward"],
+    ["squash", "squash"],
+    ["three-way", "three-way"],
+  ] as const)("uses pr.mergeOption %s when no flag is given", async (option, strategy) => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6"], { api: a, config: { pr: { mergeOption: option } } });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual([`merge 6 ${strategy}`]);
+  });
+
+  it("prefers the flag over pr.mergeOption", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6", "--ff"], {
+      api: a,
+      config: { pr: { mergeOption: "squash" } },
+    });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual(["merge 6 fast-forward"]);
+  });
+
+  it("refuses two flags even with pr.mergeOption", async () => {
+    const a = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "merge", "6", "--ff", "--squash"], {
+      api: a,
+      config: { pr: { mergeOption: "squash" } },
+    });
+    expect(r.code).toBe(2);
+    expect(a.writes).toEqual([]);
   });
 
   it("explains a merge that needs a person", async () => {
@@ -1149,6 +1180,19 @@ describe("home", () => {
     expect(r.code).toBe(2);
     expect(r.err).toContain("needs a terminal; use lazycc status");
     expect(r.tops).toEqual([]);
+  });
+
+  it("hands pr.mergeOption to every review screen as the preselected strategy", async () => {
+    const config = { pr: { mergeOption: "ff" as const } };
+    const api = fakeApi([pullRequest({ id: "3" })]);
+    const view = await cli(["pr", "view", "3"], { interactive: true, api, config });
+    expect(view.reviews[0]?.mergeStrategy).toBe("fast-forward");
+    const branch = await cli(["branch"], { interactive: true, config });
+    expect(branch.tops[0]?.mergeStrategy).toBe("fast-forward");
+    const home = await cli([], { interactive: true, config: { ...config, repos: ["demo"] } });
+    expect(home.tops[0]?.mergeStrategy).toBe("fast-forward");
+    const none = await cli(["pr", "view", "3"], { interactive: true, api });
+    expect(none.reviews[0]).not.toHaveProperty("mergeStrategy");
   });
 
   it("marks PRs read from pr view and the branch table", async () => {

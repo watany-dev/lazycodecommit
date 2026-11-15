@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { BranchActions } from "../core/branch.js";
 import type { BrowseActions } from "../core/browse.js";
 import type { HomeActions } from "../core/home.js";
-import { openReviewService, type ReviewService } from "../core/review.js";
+import { type MergeStrategy, openReviewService, type ReviewService } from "../core/review.js";
 import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
@@ -21,6 +21,8 @@ interface ServiceRequest {
   readonly git?: Git;
   /** Called when a PR is opened or left, for the home screen's unread marks. */
   readonly markSeen?: (pullRequestId: string) => void;
+  /** The config's pr.mergeOption, preselected in the merge dialog. */
+  readonly mergeStrategy?: MergeStrategy;
 }
 
 export interface ReviewRequest extends ServiceRequest {
@@ -64,7 +66,11 @@ function service(request: ServiceRequest): ReviewService {
     },
     request.git,
   );
-  return request.markSeen ? { ...s, markSeen: request.markSeen } : s;
+  return {
+    ...s,
+    ...(request.markSeen ? { markSeen: request.markSeen } : {}),
+    ...(request.mergeStrategy ? { mergeStrategy: request.mergeStrategy } : {}),
+  };
 }
 
 export async function openReview(request: ReviewRequest): Promise<void> {

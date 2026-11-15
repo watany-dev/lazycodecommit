@@ -32,6 +32,16 @@ describe("openReview", () => {
   });
 });
 
+describe("the preselected merge strategy", () => {
+  it("is on the service", async () => {
+    render.mockClear();
+    await openReview({ repository: "demo", start: null, mergeStrategy: "squash" });
+    const props = (render.mock.calls[0]![0] as { props: { service: { mergeStrategy?: unknown } } })
+      .props;
+    expect(props.service.mergeStrategy).toBe("squash");
+  });
+});
+
 interface Node {
   type: unknown;
   props: {
