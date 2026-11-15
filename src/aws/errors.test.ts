@@ -14,6 +14,26 @@ describe("explainAwsError", () => {
     expect(out).toContain(message);
   });
 
+  it("reads CodeCommit's own refusals by name, whatever a repository is called", () => {
+    const fromService = (name: string, message: string) =>
+      Object.assign(err(name, message), { $fault: "client", $metadata: { httpStatusCode: 400 } });
+    expect(
+      explainAwsError(
+        fromService(
+          "AccessDeniedException",
+          "not authorized to perform: codecommit:GetRepository on resource: arn:aws:codecommit:us-east-1:123456789012:sso-token-service",
+        ),
+        undefined,
+      ),
+    ).toMatch(/^Access denied: /);
+    expect(
+      explainAwsError(
+        fromService("RepositoryDoesNotExistException", "sso-token-service does not exist"),
+        "dev",
+      ),
+    ).toContain("--region");
+  });
+
   it("omits --profile when none is known", () => {
     expect(explainAwsError(err("ExpiredToken", "x"), undefined)).toContain("`aws sso login`");
   });
