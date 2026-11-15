@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { press, render } from "../../testing/keys.js";
+import { press, render, settle } from "../../testing/keys.js";
 import { PullRequestList } from "./PullRequestList.js";
 
 describe("PullRequestList", () => {
@@ -447,5 +447,41 @@ describe("PullRequestList", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("> #42"));
     stdin.write("\r");
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("42"));
+  });
+
+  it("keeps the search and leaves search mode on Enter, as / filters do", async () => {
+    const onChangeSearchQuery = vi.fn();
+    const screen = render(
+      <PullRequestList
+        {...defaultProps}
+        searchQuery="login"
+        onChangeSearchQuery={onChangeSearchQuery}
+      />,
+    );
+    await press(screen, "/");
+    expect(screen.lastFrame()).toContain("Search:");
+    await press(screen, "\r");
+    expect(screen.lastFrame()).not.toContain("Search:");
+    expect(screen.lastFrame()).toContain('matching "login"');
+    expect(onChangeSearchQuery).not.toHaveBeenCalledWith("");
+  });
+
+  it("keeps the cursor row on a 24-row screen with a full page of 25 PRs", async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({
+      pullRequestId: String(i + 1),
+      title: `title ${i + 1}`,
+      authorArn: "arn:aws:iam::1:user/u",
+      creationDate: new Date("2026-02-13T10:00:00Z"),
+      status: "OPEN" as const,
+    }));
+    const screen = render(<PullRequestList {...defaultProps} pullRequests={many} />);
+    for (const step of [0, 12, 12]) {
+      for (let i = 0; i < step; i++) screen.stdin.write("j");
+      await settle();
+      const frame = screen.lastFrame()!;
+      expect(frame.split("\n").length).toBeLessThanOrEqual(24);
+      expect(frame).toMatch(/> #\d+/);
+    }
+    expect(screen.lastFrame()).toContain("> #25");
   });
 });

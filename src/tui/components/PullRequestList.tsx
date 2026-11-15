@@ -1,10 +1,11 @@
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import React, { useEffect, useMemo, useState } from "react";
 import type { PullRequestDisplayStatus, PullRequestSummary } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
+import { windowStart } from "./FilterLine.js";
 
 interface PaginationViewState {
   currentPage: number;
@@ -26,6 +27,9 @@ interface Props {
   onNextPage: () => void;
   onPreviousPage: () => void;
 }
+
+/** Padding, title, tabs, header, page line and footer, with their margins, and the search box. */
+const CHROME_LINES = 14;
 
 const STATUS_CYCLE: PullRequestDisplayStatus[] = ["OPEN", "CLOSED", "MERGED"];
 
@@ -70,6 +74,7 @@ export function PullRequestList({
   onNextPage,
   onPreviousPage,
 }: Props) {
+  const { stdout } = useStdout();
   const [isSearching, setIsSearching] = useState(false);
   const [cursor, setCursor] = useState(0);
 
@@ -92,7 +97,7 @@ export function PullRequestList({
       if (key.escape) {
         setIsSearching(false);
         onChangeSearchQuery("");
-      }
+      } else if (key.return) setIsSearching(false);
       return;
     }
 
@@ -137,6 +142,8 @@ export function PullRequestList({
   });
 
   const label = statusLabel(statusFilter);
+  const height = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
+  const top = windowStart(cursor, height, filteredPullRequests.length);
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -190,18 +197,21 @@ export function PullRequestList({
           </Text>
         </Box>
       ) : (
-        filteredPullRequests.map((pr, index) => (
-          <Box key={pr.pullRequestId}>
-            <Text {...(index === cursor ? { color: "green" as const } : {})}>
-              {index === cursor ? "> " : "  "}#{pr.pullRequestId} {statusBadge(pr.status)}
-              {pr.title}
-              {"  "}
-              <Text dimColor>
-                {shortArn(pr.authorArn)} {formatRelativeDate(pr.creationDate)}
+        filteredPullRequests.slice(top, top + height).map((pr, i) => {
+          const index = top + i;
+          return (
+            <Box key={pr.pullRequestId}>
+              <Text {...(index === cursor ? { color: "green" as const } : {})}>
+                {index === cursor ? "> " : "  "}#{pr.pullRequestId} {statusBadge(pr.status)}
+                {pr.title}
+                {"  "}
+                <Text dimColor>
+                  {shortArn(pr.authorArn)} {formatRelativeDate(pr.creationDate)}
+                </Text>
               </Text>
-            </Text>
-          </Box>
-        ))
+            </Box>
+          );
+        })
       )}
 
       {/* Pagination info */}
@@ -217,7 +227,7 @@ export function PullRequestList({
       <Box marginTop={0}>
         <Text dimColor>
           {isSearching
-            ? "Enter select  Esc clear search"
+            ? "Enter keep search  Esc clear search"
             : "↑↓ navigate  Enter view  f filter  / search  n next  p prev  q back  ? help"}
         </Text>
       </Box>
