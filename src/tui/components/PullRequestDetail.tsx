@@ -773,6 +773,7 @@ export function PullRequestDetail({
       {conflictSummary && !conflictSummary.mergeable && (
         <ConflictDisplay
           conflictSummary={conflictSummary}
+          strategy={selectedStrategy}
           onDismiss={() => {
             setConflictSummary(null);
             setMergeStep(null);
