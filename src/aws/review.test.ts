@@ -659,6 +659,9 @@ describe("posting: what was never sent", () => {
   });
 });
 
+/** An hour of 2026-02-14, for comment dates. */
+const at = (h: number) => new Date(`2026-02-14T${String(h).padStart(2, "0")}:00:00Z`);
+
 describe("getComments", () => {
   it("returns comment threads from API response", async () => {
     mockSend.mockResolvedValueOnce({
@@ -859,7 +862,6 @@ describe("getComments", () => {
 
   it("splits two comments on one line, each with its replies, into two threads", async () => {
     // CodeCommit groups comments by location and commits, not by thread.
-    const at = (h: number) => new Date(`2026-02-14T${String(h).padStart(2, "0")}:00:00Z`);
     mockSend.mockResolvedValueOnce({
       commentsForPullRequestData: [
         {

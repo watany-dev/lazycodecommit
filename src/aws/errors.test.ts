@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { explainAwsError } from "./errors.js";
 
 const err = (name: string, message: string) => Object.assign(new Error(message), { name });
+const fromService = (name: string, message: string) =>
+  Object.assign(err(name, message), { $fault: "client", $metadata: { httpStatusCode: 400 } });
 
 describe("explainAwsError", () => {
   it.each([
@@ -15,8 +17,6 @@ describe("explainAwsError", () => {
   });
 
   it("reads CodeCommit's own refusals by name, whatever a repository is called", () => {
-    const fromService = (name: string, message: string) =>
-      Object.assign(err(name, message), { $fault: "client", $metadata: { httpStatusCode: 400 } });
     expect(
       explainAwsError(
         fromService(

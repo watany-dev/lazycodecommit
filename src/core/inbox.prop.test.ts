@@ -83,7 +83,7 @@ describe("fetchInbox against a model of the region", () => {
             },
           });
           const deps = { api, me: ME_ARN, region: "r", seen: new Map(), concurrency };
-          const reachable = new Set(watched.filter((r) => !broken.includes(r)));
+          const reachable = new Set<string>(watched.filter((r) => !broken.includes(r)));
           if (reachable.size === 0) {
             await expect(fetchInbox(watched, deps)).rejects.toThrow();
             return;
