@@ -232,6 +232,35 @@ describe("createGit", () => {
     await expect(git.firstParentLog("nope", "topic", 1)).rejects.toBeInstanceOf(GitError);
   });
 
+  it("lists origin's branches with their last commit, and counts ahead/behind", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("one");
+    await commit("two");
+    sh(work, "push", "-q", "origin", "topic");
+    sh(work, "switch", "-q", "main");
+    await commit("main moves");
+    sh(work, "push", "-q", "origin", "main");
+    sh(work, "remote", "set-head", "origin", "main");
+    const git = createGit(work);
+    const branches = await git.remoteBranches();
+    expect(branches.map((b) => b.name)).toEqual(["main", "topic"]);
+    expect(branches[1]).toMatchObject({ tip: sh(work, "rev-parse", "origin/topic"), author: "t" });
+    expect(branches[1]?.date).toBeInstanceOf(Date);
+    expect(await git.aheadBehind("origin/main", "origin/topic")).toEqual({ ahead: 2, behind: 1 });
+    await expect(git.aheadBehind("origin/main", "origin/nope")).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("switches quietly when asked", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    sh(work, "push", "-q", "origin", "topic");
+    sh(work, "switch", "-q", "main");
+    sh(work, "branch", "-q", "-D", "topic");
+    const git = createGit(work);
+    await git.switchBranch("topic", { quiet: true });
+    expect(await git.currentBranch()).toBe("topic");
+    await expect(git.switchBranch("nope", { quiet: true })).rejects.toThrow(/nope/);
+  });
+
   it("rejects when git cannot start", async () => {
     await expect(createGit(join(dir, "gone")).topLevel()).rejects.toThrow();
     await expect(createGit(join(dir, "gone")).push("main")).rejects.toThrow();

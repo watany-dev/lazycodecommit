@@ -5,11 +5,12 @@ import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
 import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
-import type { ReviewRequest } from "../tui/index.js";
+import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
 interface Setup {
   interactive?: boolean;
+  onBranches?: (request: BranchesRequest) => Promise<void>;
   git?: Partial<Git>;
   api?: CodeCommitApi;
   config?: Config | Error;
@@ -21,6 +22,7 @@ async function cli(args: string[], setup: Setup = {}) {
   const err: string[] = [];
   const apiOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
+  const branchScreens: BranchesRequest[] = [];
   const deps: Deps = {
     io: {
       out: (l) => out.push(l),
@@ -42,9 +44,13 @@ async function cli(args: string[], setup: Setup = {}) {
       return setup.config ?? {};
     },
     openReview: async (request) => void reviews.push(request),
+    openBranches: async (request) => {
+      branchScreens.push(request);
+      await setup.onBranches?.(request);
+    },
   };
   const code = await run(args, deps);
-  return { code, out: out.join("\n"), err: err.join("\n"), apiOptions, reviews };
+  return { code, out: out.join("\n"), err: err.join("\n"), apiOptions, reviews, branchScreens };
 }
 
 const json = (s: string) => JSON.parse(s);
@@ -504,5 +510,110 @@ describe("the review screen on a terminal", () => {
     const r = await cli(args, { api, interactive: true });
     expect(r.reviews).toEqual([]);
     expect(r.out).not.toBe("");
+  });
+});
+
+const branchApi = () => fakeApi([pullRequest({ id: "3", title: "Topic \x1b[31mwork" })]);
+
+describe("branch", () => {
+  const git = {
+    remoteBranches: async () => [
+      { name: "main", tip: "m1", date: new Date("2026-11-01T00:00:00Z"), author: "alice" },
+      { name: "topic", tip: "s1", date: new Date("2026-11-03T00:00:00Z"), author: "bob" },
+    ],
+    aheadBehind: async () => ({ ahead: 2, behind: 0 }),
+  };
+
+  it("prints the table", async () => {
+    const r = await cli(["branch"], { api: branchApi(), git });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")).toEqual([
+      "* main   -          2026-11-01T00:00:00Z alice",
+      "  topic  PR  ↑2 ↓0  2026-11-03T00:00:00Z bob    #3 Topic ^[[31mwork  ✗ 1/2 rules",
+    ]);
+  });
+
+  it("prints JSON", async () => {
+    const r = await cli(["branch", "--json"], { api: branchApi(), git });
+    expect(json(r.out)).toMatchObject({
+      repository: "demo",
+      defaultBranch: "main",
+      branches: [
+        { name: "main", default: true, state: "none", pullRequest: null, ahead: null },
+        {
+          name: "topic",
+          state: "open",
+          pullRequest: { id: "3" },
+          ahead: 2,
+          behind: 0,
+          lastCommit: { date: "2026-11-03T00:00:00Z", author: "bob" },
+        },
+      ],
+    });
+  });
+
+  it("opens the branch screen on a terminal, creating PRs through pr create", async () => {
+    const outcomes: unknown[] = [];
+    const r = await cli(["branch"], {
+      api: branchApi(),
+      git,
+      interactive: true,
+      onBranches: async (request) => {
+        outcomes.push(await request.createPullRequest("feature"));
+        outcomes.push(await request.createPullRequest("topic"));
+        outcomes.push(await request.createPullRequest("main"));
+      },
+    });
+    expect(r.code).toBe(0);
+    expect(r.out).toBe("");
+    expect(r.branchScreens[0]).toMatchObject({ region: "ap-northeast-1", git: expect.anything() });
+    expect(r.branchScreens[0]?.actions.repository).toBe("demo");
+    expect(outcomes).toEqual([
+      { pullRequestId: "42" },
+      { pullRequestId: "3" },
+      { message: expect.stringContaining("is the base branch") },
+    ]);
+  });
+
+  it("explains AWS errors from a create", async () => {
+    const failing = fakeApi([], {
+      createPullRequest: async () => {
+        throw Object.assign(new Error("expired"), { name: "ExpiredTokenException" });
+      },
+    });
+    let outcome: unknown;
+    await cli(["branch", "-R", "demo", "--profile", "dev"], {
+      api: failing,
+      interactive: true,
+      git: { topLevel: async () => null },
+      onBranches: async (request) => {
+        outcome = await request.createPullRequest("feature");
+      },
+    });
+    expect(outcome).toEqual({ message: expect.stringContaining("aws sso login --profile dev") });
+  });
+});
+
+describe("branch rules column", () => {
+  it.each([
+    [{ approved: true, overridden: true, satisfied: [], notSatisfied: [] }, "rules overridden"],
+    [{ approved: true, overridden: false, satisfied: ["a"], notSatisfied: [] }, "✓ 1/1 rules"],
+  ])("summarizes %j", async (rules, text) => {
+    const api = fakeApi([pullRequest({ id: "3" })], { evaluateApprovalRules: async () => rules });
+    const r = await cli(["branch", "-R", "demo"], { api, git: { topLevel: async () => null } });
+    expect(r.out).toContain(text);
+  });
+
+  it("leaves it empty without rules", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })], {
+      evaluateApprovalRules: async () => ({
+        approved: true,
+        overridden: false,
+        satisfied: [],
+        notSatisfied: [],
+      }),
+    });
+    const r = await cli(["branch", "-R", "demo"], { api, git: { topLevel: async () => null } });
+    expect(r.out).not.toContain("rules");
   });
 });

@@ -67,10 +67,13 @@ interface AppProps {
   service: ReviewService;
   repository: string;
   start: ReviewStart;
+  /** Called instead of exiting the app when the screen is left, for a parent screen. */
+  onExit?: () => void;
 }
 
-export function App({ service, repository, start }: AppProps) {
+export function App({ service, repository, start, onExit }: AppProps) {
   const { exit } = useApp();
+  const leave = onExit ?? exit;
   const [screen, setScreen] = useState<Screen>(start ? "detail" : "prs");
   // Started on one PR: q leaves the app until the list has been shown.
   const [hasList, setHasList] = useState(!start);
@@ -607,11 +610,18 @@ export function App({ service, repository, start }: AppProps) {
 
   function handleBack() {
     if (screen === "detail" && hasList) setScreen("prs");
-    else exit();
+    else leave();
   }
 
-  /** After a merge or close: back to the PR list, loading it if it was never shown. */
+  /**
+   * After a merge or close: back to the parent screen when there is one, else to
+   * the PR list, loading it if it was never shown.
+   */
   function leaveClosedPullRequest(pullRequestId: string) {
+    if (onExit && !hasList) {
+      onExit();
+      return;
+    }
     setScreen("prs");
     if (hasList) {
       setPullRequests((prev) => prev.filter((pr) => pr.pullRequestId !== pullRequestId));
