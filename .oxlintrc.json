@@ -51,7 +51,19 @@
     "no-prototype-builtins": "error",
     "react/no-danger": "error",
     "react/jsx-no-script-url": "error",
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "ink",
+            "importNames": ["useInput"],
+            "message": "Use useKeys from tui/hooks/useKeys.tsx: Ink's useInput hands a key to a stale handler until a passive effect runs."
+          }
+        ]
+      }
+    ]
   },
   "overrides": [
     {
@@ -74,6 +86,12 @@
       "files": ["src/tui/**/*.test.tsx"],
       "rules": {
         "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      "files": ["src/tui/hooks/useKeys.tsx"],
+      "rules": {
+        "no-restricted-imports": "off"
       }
     }
   ],

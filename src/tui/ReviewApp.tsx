@@ -1,5 +1,5 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import type { Checks } from "../core/checks.js";
@@ -30,6 +30,7 @@ import { Help } from "./components/Help.js";
 import { PullRequestDetail } from "./components/PullRequestDetail.js";
 import { PullRequestList } from "./components/PullRequestList.js";
 import { useAsyncAction } from "./hooks/useAsyncAction.js";
+import { useKeys } from "./hooks/useKeys.js";
 import { createBatcher } from "./utils/batchUpdates.js";
 import { formatErrorMessage } from "./utils/formatError.js";
 
@@ -925,7 +926,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 }
 
 function ErrorScreen({ error, onBack }: { error: string; onBack: (() => void) | undefined }) {
-  useInput(
+  useKeys(
     (input, key) => {
       if (input === "q" || key.escape) onBack?.();
     },

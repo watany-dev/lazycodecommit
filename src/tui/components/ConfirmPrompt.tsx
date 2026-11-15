@@ -1,5 +1,6 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
+import { useKeys } from "../hooks/useKeys.js";
 
 interface Props {
   message: string;
@@ -20,7 +21,7 @@ export function ConfirmPrompt({
   error,
   onClearError,
 }: Props) {
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (error) {
       onClearError();
       return;

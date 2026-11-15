@@ -1,7 +1,8 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 import { type CommentDraft, canEdit } from "../../core/commentDrafts.js";
 import { printable } from "../../core/text.js";
+import { useKeys } from "../hooks/useKeys.js";
 import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
 
@@ -49,7 +50,7 @@ export function DraftList({
     setCursor((c) => Math.max(0, Math.min(c, drafts.length - 1)));
   }, [drafts.length]);
 
-  useInput(
+  useKeys(
     (input, key) => {
       if (submit.error) {
         submit.clearError();

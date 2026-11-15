@@ -1,5 +1,6 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
+import { useKeys } from "../hooks/useKeys.js";
 
 interface Props {
   onClose: () => void;
@@ -27,7 +28,7 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 export function Help({ onClose }: Props) {
-  useInput((input, key) => {
+  useKeys((input, key) => {
     if (input === "?" || input === "q" || key.escape || key.return) {
       onClose();
     }

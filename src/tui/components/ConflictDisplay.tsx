@@ -1,6 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text } from "ink";
 import React from "react";
 import type { ConflictSummary } from "../../core/review.js";
+import { useKeys } from "../hooks/useKeys.js";
 
 export function ConflictDisplay({
   conflictSummary,
@@ -9,7 +10,7 @@ export function ConflictDisplay({
   conflictSummary: ConflictSummary;
   onDismiss: () => void;
 }) {
-  useInput(() => {
+  useKeys(() => {
     onDismiss();
   });
 
