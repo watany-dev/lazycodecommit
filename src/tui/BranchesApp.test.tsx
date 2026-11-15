@@ -52,6 +52,7 @@ const service = {
 async function setup(a = actions(), start: Parameters<typeof BranchesApp>[0]["start"] = null) {
   const onCreate = vi.fn();
   const r = render(<BranchesApp actions={a} service={service} start={start} onCreate={onCreate} />);
+  currentFrame = r.lastFrame;
   await vi.waitFor(() => expect(r.lastFrame()).toContain("wip"));
   return { ...r, onCreate, a };
 }
