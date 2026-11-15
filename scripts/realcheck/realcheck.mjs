@@ -49,6 +49,7 @@ const { values: opt } = parseArgs({
     lazycc: { type: "string" },
     out: { type: "string" },
     "mock-git-root": { type: "string" },
+    emulator: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -69,7 +70,8 @@ if (opt.help) {
   --no-pack                     skip npm pack / npx
   --no-tui                      skip the TUI start checks
   --lazycc <path>               cli.mjs to run (default: dist/cli.mjs)
-  --out <file>                  report path (default: ./lazycc-realcheck-<time>.md)`);
+  --out <file>                  report path (default: ./lazycc-realcheck-<time>.md)
+  --emulator                    run against AWS Emulator set up by scripts/emulator/env.sh`);
   process.exit(0);
 }
 
@@ -79,6 +81,15 @@ if (!region) {
   process.exit(2);
 }
 const mock = opt["mock-git-root"];
+// AWS Emulator announces http://127.0.0.1:<port>/v1/repos/<repo> as cloneUrlHttp,
+// which lazycc does not read as CodeCommit, so clones go through grc there
+// (scripts/emulator/env.sh routes it). A pass here is not a real-AWS check.
+const emulator = Boolean(opt.emulator);
+if (emulator && !process.env.AWS_ENDPOINT_URL) {
+  console.error('realcheck: --emulator needs eval "$(sh scripts/emulator/env.sh)" first');
+  process.exit(2);
+}
+const targetName = mock ? "mock" : emulator ? "AWS Emulator (not real AWS)" : "real AWS";
 const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "").replace("T", "-");
 const repoName = `${PREFIX}${stamp}`.toLowerCase();
 const work = mkdtempSync(join(tmpdir(), "lazycc-realcheck-"));
@@ -117,7 +128,11 @@ const has = (obj, path) =>
 
 // ---------------------------------------------------------------- environment
 
-const gitConfig = [];
+// Keep git config the caller passed the same way (scripts/emulator/env.sh does).
+const gitConfig = Array.from({ length: Number(process.env.GIT_CONFIG_COUNT ?? 0) }, (_, i) => [
+  process.env[`GIT_CONFIG_KEY_${i}`] ?? "",
+  process.env[`GIT_CONFIG_VALUE_${i}`] ?? "",
+]);
 const mockEnv = {};
 if (mock) {
   // lazycc reads origin's URL, so the URLs must stay CodeCommit's: swap the
@@ -292,7 +307,7 @@ async function environment() {
     "env.mode",
     "Target",
     "INFO",
-    mock ? `mock (${process.env.AWS_ENDPOINT_URL_CODECOMMIT})` : "real AWS",
+    mock ? `mock (${process.env.AWS_ENDPOINT_URL_CODECOMMIT})` : targetName,
   );
 
   const sts = new STSClient({ region, ...(opt.profile ? { profile: opt.profile } : {}) });
@@ -332,6 +347,7 @@ async function environment() {
     `https://git-codecommit.${region}.amazonaws.com/v1/repos/x`,
   );
   if (mock) state.helper = "mock (local transports)";
+  else if (emulator) state.helper = "AWS Emulator (scripts/emulator/env.sh)";
   // Only whether one exists: a helper's command line can hold a secret.
   else if (helper.stdout.includes("codecommit")) state.helper = "existing CodeCommit helper";
   else if (which("aws")) {
@@ -427,8 +443,15 @@ async function createRepository() {
 
 function seed() {
   const dir = join(work, "seed");
-  const c = lazy("clone https (empty repository)", ["clone", repoName, dir, "--protocol", "https"]);
-  expectRun("clone.https", "lazycc clone --protocol https (empty repository)", c);
+  const protocol = emulator ? "grc" : "https";
+  const c = lazy(`clone ${protocol} (empty repository)`, [
+    "clone",
+    repoName,
+    dir,
+    "--protocol",
+    protocol,
+  ]);
+  expectRun(`clone.${protocol}`, `lazycc clone --protocol ${protocol} (empty repository)`, c);
   if (c.exit !== 0) throw new Error("cannot clone the test repository");
   git(dir, "checkout", "-q", "-b", "main");
   mkdirSync(join(dir, "src"));
@@ -1100,12 +1123,18 @@ function clones() {
       head,
     );
   };
-  tryClone("https");
+  const notCodeCommit = "AWS Emulator's clone URL is not a CodeCommit URL (repo.cloneUrlHttp)";
+  tryClone("https", emulator ? notCodeCommit : undefined);
   tryClone(
     "grc",
-    mock || which("git-remote-codecommit") ? undefined : "pip install git-remote-codecommit",
+    mock || emulator || which("git-remote-codecommit")
+      ? undefined
+      : "pip install git-remote-codecommit",
   );
-  tryClone("ssh", opt.ssh ? undefined : "pass --ssh once an IAM SSH key is set up");
+  tryClone(
+    "ssh",
+    emulator ? notCodeCommit : opt.ssh ? undefined : "pass --ssh once an IAM SSH key is set up",
+  );
 }
 
 /** Starts a TUI under `script` (a real pty), presses q, and checks it drew and quit. */
@@ -1419,13 +1448,19 @@ function report() {
     "",
     `- Date: ${new Date().toISOString()}`,
     `- lazycc: ${sh(process.execPath, [cli, "--version"]).stdout.trim()} (${cli.replace(ROOT, ".")}), commit ${sh("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT }).stdout.trim()}`,
-    `- Target: ${mock ? "mock" : "real AWS"}, region ${region}, repository ${repoName}`,
+    `- Target: ${targetName}, region ${region}, repository ${repoName}`,
     `- Totals: ${Object.entries(counts)
       .map(([k, v]) => `${k} ${v}`)
       .join(", ")}`,
     "",
     "DIFF = CodeCommit answered differently from what lazycc's code assumes. FAIL = lazycc itself misbehaved.",
     "",
+    ...(emulator
+      ? [
+          "This run talked to AWS Emulator, not AWS: a DIFF or FAIL may come from AWS Emulator, and a PASS confirms nothing about real AWS.",
+          "",
+        ]
+      : []),
     "## Differences and failures",
     "",
     ...(results.some((r) => r.status === "DIFF" || r.status === "FAIL")

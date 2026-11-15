@@ -116,6 +116,11 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | 手で: トークンを何日覚えているか（自動では確かめない。日をまたいだ再試行で二重投稿しないかは使って確かめる） | ADR 0009 |
 | 手で: コンソール URL（PR、browse、短い ID）、BEFORE 側インラインコメントの行、GovCloud・中国リージョンの URL | #8、#10、#22、#23 |
 
+## AWS Emulator で試す
+
+AWS アカウントなしで通しで動かすなら [emulator.md](emulator.md)。Emulator は本物と
+違うところがあり、実機確認の代わりにはならない。
+
 ## モックで試す
 
 `bun run build` のあと `bun run realcheck:mock`。`mock-server.mjs` は lazycc が
