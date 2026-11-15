@@ -117,6 +117,31 @@ describe("keyStream", () => {
     app.unmount();
   });
 
+  it("reads the terminal again for the next screen after one has closed", async () => {
+    // The top-level views are one render each, all on the same process.stdin.
+    const t = terminal();
+    const options = { stdout: t.stdout as unknown as NodeJS.WriteStream, debug: true };
+    const first = render(
+      <KeysProvider>
+        <Counter />
+      </KeysProvider>,
+      { ...options, stdin: keyStream(t.source as unknown as NodeJS.ReadStream) },
+    );
+    t.source.write("j");
+    await vi.waitFor(() => expect(t.frame()).toContain("count=1"), { timeout: 2000 });
+    first.unmount();
+    const second = render(
+      <KeysProvider>
+        <Counter />
+      </KeysProvider>,
+      { ...options, stdin: keyStream(t.source as unknown as NodeJS.ReadStream) },
+    );
+    await vi.waitFor(() => expect(t.frame()).toContain("count=0"), { timeout: 2000 });
+    t.source.write("jj");
+    await vi.waitFor(() => expect(t.frame()).toContain("count=2"), { timeout: 2000 });
+    second.unmount();
+  });
+
   it("stops reading the terminal while no screen takes input", async () => {
     const t = terminal();
     const stdin = keyStream(t.source as unknown as NodeJS.ReadStream);

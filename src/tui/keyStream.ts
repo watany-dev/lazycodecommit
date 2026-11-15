@@ -69,6 +69,9 @@ export function keyStream(source: Source): Source {
     // so a prompt or editor run between screens keeps its input.
     ref() {
       source.on("data", onData);
+      // unref paused it, and a "data" listener does not undo an explicit pause:
+      // the next screen would read nothing, and Node would exit on an idle loop.
+      source.resume();
       source.ref();
       return this;
     },
