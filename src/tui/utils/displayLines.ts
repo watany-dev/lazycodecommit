@@ -19,6 +19,14 @@ export const FOLD_THRESHOLD = 4;
 const SEPARATOR_TEXT = "─".repeat(50);
 
 /**
+ * What `t` grows a file's shown lines under: two files can have the same
+ * contents, and so the same blob key, but each is shown in full on its own.
+ */
+export function diffLimitKey(filePath: string, diffKey: string): string {
+  return `${filePath}\0${diffKey}`;
+}
+
+/**
  * The lines of a file: a final newline ends the last line rather than starting
  * an empty one, and an empty file (or the missing side of an add or delete) has none.
  */
@@ -197,7 +205,7 @@ export function buildDisplayLines(
       const afterCount = countLines(texts.after);
       const totalLines = beforeCount + afterCount;
       const defaultLimit = totalLines > LARGE_DIFF_THRESHOLD ? DIFF_CHUNK_SIZE : totalLines;
-      const currentLimit = diffLineLimits.get(key) ?? defaultLimit;
+      const currentLimit = diffLineLimits.get(diffLimitKey(filePath, key)) ?? defaultLimit;
       const displayLimit = Math.min(currentLimit, totalLines);
       // Two files can share a blob key (e.g. two empty files added in one PR), so the
       // key must include the path: cached lines carry `filePath` for inline comments.

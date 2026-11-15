@@ -8059,4 +8059,50 @@ describe("PullRequestDetail", () => {
       expect(screen.lastFrame()).toMatch(/> +\[\+3 replies\]/);
     });
   });
+
+  describe("found by property and model checks", () => {
+    const renderDetail = (extra: Record<string, unknown>) =>
+      render(
+        <PullRequestDetail
+          pullRequest={pullRequest as any}
+          differences={[] as any}
+          commentThreads={[]}
+          diffTexts={new Map()}
+          onBack={vi.fn()}
+          onHelp={vi.fn()}
+          onShowActivity={vi.fn()}
+          comment={defaultCommentProps}
+          reply={defaultReplyProps}
+          approval={defaultApprovalProps}
+          merge={defaultMergeProps}
+          close={defaultCloseProps}
+          commitView={defaultCommitProps}
+          editComment={defaultEditCommentProps}
+          deleteComment={defaultDeleteCommentProps}
+          reaction={defaultReactionProps}
+          {...(extra as any)}
+        />,
+      );
+
+    it("t shows more of the file at the cursor only, when another file has the same contents", async () => {
+      const text = Array.from({ length: 1600 }, (_, i) => `line ${i + 1}`).join("\n");
+      const { stdin, lastFrame } = renderDetail({
+        differences: [
+          { afterBlob: { blobId: "same", path: "a.txt" } },
+          { afterBlob: { blobId: "same", path: "b.txt" } },
+        ],
+        diffTexts: new Map([[":same", { before: "", after: text }]]),
+      });
+      // a.txt: header, separator, 300 lines, truncate-context, truncation (row 303).
+      await press(stdin, "n", "k", "k");
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/> +\[t\] show next 300 lines/));
+      await press(stdin, "t");
+      await vi.waitFor(() => expect(lastFrame()).toContain("+line 302"));
+      await press(stdin, "G");
+      // The last rows are b.txt's.
+      await vi.waitFor(() => expect(lastFrame()).toContain("... truncated"));
+      expect(lastFrame()).toContain("... truncated 300/1600 lines");
+      expect(lastFrame()).not.toContain("... truncated 600/1600 lines");
+    });
+  });
 });

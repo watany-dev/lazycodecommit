@@ -1,7 +1,7 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
 import { describe, expect, it } from "vitest";
 import type { CommentThread, ReactionsByComment } from "../../core/review.js";
-import { buildDisplayLines } from "./displayLines.js";
+import { buildDisplayLines, diffLimitKey } from "./displayLines.js";
 
 const NO_REACTIONS: ReactionsByComment = new Map();
 
@@ -139,7 +139,7 @@ function buildTruncated(
     differences,
     new Map([[blobKey, { before, after }]]),
     new Map([[blobKey, "loaded"]]),
-    new Map([[blobKey, limit]]),
+    new Map([[diffLimitKey("f.ts", blobKey), limit]]),
     [],
     new Map(),
     NO_REACTIONS,

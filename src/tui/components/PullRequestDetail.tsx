@@ -19,6 +19,7 @@ import {
   COMMENT_LINE_TYPES,
   countLines,
   DIFF_CHUNK_SIZE,
+  diffLimitKey,
   FOLD_THRESHOLD,
   getThreadKey,
   LARGE_DIFF_THRESHOLD,
@@ -415,13 +416,14 @@ export function PullRequestDetail({
       if (!texts) return;
       const totalLines = countLines(texts.before) + countLines(texts.after);
       if (totalLines <= LARGE_DIFF_THRESHOLD) return;
-      const currentLimit = diffLineLimits.get(diffKey) ?? DIFF_CHUNK_SIZE;
+      const limitKey = diffLimitKey(currentLine.filePath ?? "", diffKey);
+      const currentLimit = diffLineLimits.get(limitKey) ?? DIFF_CHUNK_SIZE;
       /* v8 ignore next -- requires many t-presses to reach full expansion */
       if (currentLimit >= totalLines) return;
       const nextLimit = Math.min(currentLimit + DIFF_CHUNK_SIZE, totalLines);
       setDiffLineLimits((prev) => {
         const next = new Map(prev);
-        next.set(diffKey, nextLimit);
+        next.set(limitKey, nextLimit);
         return next;
       });
       return;
