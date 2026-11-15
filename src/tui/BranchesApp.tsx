@@ -1,5 +1,4 @@
 import { Box, Text, useApp, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import {
   type BranchActions,
@@ -10,6 +9,8 @@ import {
 } from "../core/branch.js";
 import type { ReviewService } from "../core/review.js";
 import { printable } from "../core/text.js";
+import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
+import { HelpScreen, type HelpSection } from "./components/Help.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
@@ -43,8 +44,8 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [cursor, setCursor] = useState(0);
-  const [filter, setFilter] = useState("");
-  const [filtering, setFiltering] = useState(false);
+  const filterBox = useFilter();
+  const { filter } = filterBox;
   const [confirmDelete, setConfirmDelete] = useState<BranchRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -101,13 +102,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
         if (input === "y") void act(() => actions.deleteBranch(row), `Deleted origin/${row.name}.`);
         return;
       }
-      if (filtering) {
-        if (key.escape) {
-          setFiltering(false);
-          setFilter("");
-        } else if (key.return) setFiltering(false);
-        return;
-      }
+      if (filterBox.handleKey(key)) return;
       if (busy) return;
       if (input === "q" || key.escape) {
         exit();
@@ -131,7 +126,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
         return;
       }
       if (input === "/") {
-        setFiltering(true);
+        filterBox.start();
         setCursor(0);
         return;
       }
@@ -190,10 +185,10 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
     );
   }
 
-  if (showHelp) return <BranchHelp />;
+  if (showHelp) return <HelpScreen title="Branches help" sections={[{ keys: BRANCH_HELP }]} />;
 
   const height = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
-  const top = Math.max(0, Math.min(index - height + 1, rows.length - height));
+  const top = windowStart(index, height, rows.length);
   const visible = rows.slice(top, top + height);
   const nameWidth = Math.min(Math.max(8, ...rows.map((r) => r.name.length)) + 2, 40);
 
@@ -202,16 +197,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
       <Text bold color="cyan">
         lazycc — branches of {actions.repository}
       </Text>
-      <Box>
-        {filtering ? (
-          <>
-            <Text>/</Text>
-            <TextInput value={filter} onChange={setFilter} />
-          </>
-        ) : (
-          <Text dimColor>{filter ? `filter: ${filter}` : " "}</Text>
-        )}
-      </Box>
+      <FilterLine state={filterBox} />
       {loading && !table ? (
         <Text color="cyan">Loading...</Text>
       ) : loadError ? (
@@ -292,34 +278,14 @@ const STATE_COLOR: Record<BranchRow["state"], string> = {
   none: "white",
 };
 
-function BranchHelp() {
-  const keys: [string, string][] = [
-    ["j / k, ↓ / ↑", "Move"],
-    ["Enter", "Review the branch's open PR"],
-    ["n", "Create a PR from the branch"],
-    ["d", "Delete the branch on CodeCommit (not the local one)"],
-    ["Space", "Switch to the branch (git switch, clone only)"],
-    ["/", "Filter by name"],
-    ["Ctrl+r", "git fetch origin and reload"],
-    ["u", "Show the branch's console URL"],
-    ["q / Esc", "Quit"],
-  ];
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        lazycc — Branches help
-      </Text>
-      {keys.map(([k, d]) => (
-        <Box key={k}>
-          <Box minWidth={16}>
-            <Text> {k}</Text>
-          </Box>
-          <Text>{d}</Text>
-        </Box>
-      ))}
-      <Box marginTop={1}>
-        <Text dimColor>Press any key to close</Text>
-      </Box>
-    </Box>
-  );
-}
+const BRANCH_HELP: HelpSection["keys"] = [
+  ["j / k, ↓ / ↑", "Move"],
+  ["Enter", "Review the branch's open PR"],
+  ["n", "Create a PR from the branch"],
+  ["d", "Delete the branch on CodeCommit (not the local one)"],
+  ["Space", "Switch to the branch (git switch, clone only)"],
+  ["/", "Filter by name"],
+  ["Ctrl+r", "git fetch origin and reload"],
+  ["u", "Show the branch's console URL"],
+  ["q / Esc", "Quit"],
+];

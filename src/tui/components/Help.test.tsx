@@ -1,7 +1,7 @@
 import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { Help } from "./Help.js";
+import { Help, HelpScreen } from "./Help.js";
 
 describe("Help", () => {
   it("renders key bindings grouped by category", () => {
@@ -162,5 +162,33 @@ describe("Help", () => {
   it("shows f File list keybinding", () => {
     const { lastFrame } = render(<Help onClose={vi.fn()} />);
     expect(lastFrame()).toContain("File list");
+  });
+});
+
+describe("HelpScreen", () => {
+  it("renders the title, note, untitled section rows and the close hint", () => {
+    const { lastFrame } = render(
+      <HelpScreen
+        title="Branches help"
+        note="A note."
+        sections={[
+          {
+            keys: [
+              ["Enter", "Open"],
+              ["Ctrl+d / Ctrl+u", "Half a page"],
+            ],
+          },
+        ]}
+      />,
+    );
+    const lines = lastFrame()!.split("\n");
+    expect(lines.join("\n")).toContain("lazycc — Branches help");
+    expect(lines.join("\n")).toContain("A note.");
+    expect(lines.join("\n")).not.toContain("===");
+    expect(lines.join("\n")).toContain("Press any key to close");
+    // descriptions line up in one column past the longest key
+    const col = (text: string) => lines.find((l) => l.includes(text))!.indexOf(text);
+    expect(col("Open")).toBe(col("Half a page"));
+    expect(col("Open")).toBeGreaterThan(" Ctrl+d / Ctrl+u".length);
   });
 });

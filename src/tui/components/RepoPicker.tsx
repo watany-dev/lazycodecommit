@@ -1,10 +1,10 @@
 import { Box, Text, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import type { HomeActions } from "../../core/home.js";
 import { printable } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
 import { formatErrorMessage } from "../utils/formatError.js";
+import { FilterLine, useFilter, windowStart } from "./FilterLine.js";
 
 interface Props {
   actions: Pick<HomeActions, "listRepositories" | "watched" | "toggleWatch">;
@@ -24,8 +24,8 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
   const [error, setError] = useState<string | null>(null);
   const [watched, setWatched] = useState(actions.watched());
   const [cursor, setCursor] = useState(0);
-  const [filter, setFilter] = useState("");
-  const [filtering, setFiltering] = useState(false);
+  const filterBox = useFilter();
+  const { filter } = filterBox;
   const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -51,20 +51,14 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
   }
 
   useKeys((input, key) => {
-    if (filtering) {
-      if (key.escape) {
-        setFiltering(false);
-        setFilter("");
-      } else if (key.return) setFiltering(false);
-      return;
-    }
+    if (filterBox.handleKey(key)) return;
     if (input === "q" || key.escape) {
       onBack();
       return;
     }
     setNote(null);
     if (input === "/") {
-      setFiltering(true);
+      filterBox.start();
       setCursor(0);
     } else if (input === "j" || key.downArrow) {
       setCursor(Math.min(index + 1, Math.max(rows.length - 1, 0)));
@@ -77,7 +71,7 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
   });
 
   const height = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
-  const top = Math.max(0, Math.min(index - height + 1, rows.length - height));
+  const top = windowStart(index, height, rows.length);
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -87,16 +81,7 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
           ({watched.length > 0 ? `${watched.length} watched` : "none watched yet: press w"})
         </Text>
       </Text>
-      <Box>
-        {filtering ? (
-          <>
-            <Text>/</Text>
-            <TextInput value={filter} onChange={setFilter} />
-          </>
-        ) : (
-          <Text dimColor>{filter ? `filter: ${filter}` : " "}</Text>
-        )}
-      </Box>
+      <FilterLine state={filterBox} />
       {error ? (
         <Text color="red">Error: {error}</Text>
       ) : !names ? (
