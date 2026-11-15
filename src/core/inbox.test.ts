@@ -65,16 +65,17 @@ describe("watchedRepositories", () => {
   });
 });
 
-describe("resolveMe", () => {
-  const apiFor = (accessKeyId: string) => {
-    const api = {
-      calls: 0,
-      credentialId: async () => accessKeyId,
-      callerArn: async () => (api.calls++, `${ME}-${accessKeyId}`),
-    };
-    return api;
+/** An API whose credentials have `accessKeyId`, counting STS calls. */
+function apiFor(accessKeyId: string) {
+  const api = {
+    calls: 0,
+    credentialId: async () => accessKeyId,
+    callerArn: async () => (api.calls++, `${ME}-${accessKeyId}`),
   };
+  return api;
+}
 
+describe("resolveMe", () => {
   it("asks STS once per set of credentials and caches the answer", async () => {
     const s = store();
     const api = apiFor("AKIA1");
