@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { explainAwsError } from "./errors.js";
 
 const err = (name: string, message: string) => Object.assign(new Error(message), { name });
+const fromService = (name: string, message: string) =>
+  Object.assign(err(name, message), { $fault: "client", $metadata: { httpStatusCode: 400 } });
 
 describe("explainAwsError", () => {
   it.each([
@@ -12,6 +14,24 @@ describe("explainAwsError", () => {
     const out = explainAwsError(err(name, message), "dev");
     expect(out).toContain("aws sso login --profile dev");
     expect(out).toContain(message);
+  });
+
+  it("reads CodeCommit's own refusals by name, whatever a repository is called", () => {
+    expect(
+      explainAwsError(
+        fromService(
+          "AccessDeniedException",
+          "not authorized to perform: codecommit:GetRepository on resource: arn:aws:codecommit:us-east-1:123456789012:sso-token-service",
+        ),
+        undefined,
+      ),
+    ).toMatch(/^Access denied: /);
+    expect(
+      explainAwsError(
+        fromService("RepositoryDoesNotExistException", "sso-token-service does not exist"),
+        "dev",
+      ),
+    ).toContain("--region");
   });
 
   it("omits --profile when none is known", () => {

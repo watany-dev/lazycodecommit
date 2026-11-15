@@ -46,9 +46,10 @@ export function wasNotSent(error: unknown): boolean {
 
 /** Missing or expired credentials: the fix is to sign in again, not to change a policy. */
 export function isCredentialError(error: Error): boolean {
-  return (
-    CREDENTIAL_ERRORS.has(error.name) || /sso.*(expired|token)|token.*expired/i.test(error.message)
-  );
+  if (CREDENTIAL_ERRORS.has(error.name)) return true;
+  // A service's answer is known by its name: its message can quote a repository or branch name.
+  if ("$fault" in error) return false;
+  return /sso.*(expired|token)|token.*expired/i.test(error.message);
 }
 
 const ACCESS_DENIED = new Set(["AccessDeniedException", "AccessDenied"]);

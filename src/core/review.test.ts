@@ -117,6 +117,12 @@ describe("createReviewService in a clone", () => {
     expect(api.getAllDifferences).toHaveBeenCalledWith("demo", "dst", "src");
   });
 
+  it("falls back to the API diff from the same merge base git would have used", async () => {
+    const load = await loader(fakeGit({ resolveCommit: async () => null, fetch: fail }));
+    await load({ ...target, mergeBase: "mb" });
+    expect(api.getAllDifferences).toHaveBeenCalledWith("demo", "mb", "src");
+  });
+
   it("reads blobs, commit diffs and commits from git, falling back to the API", async () => {
     const ok = createReviewService(
       fakeApi(),

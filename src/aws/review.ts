@@ -65,18 +65,35 @@ export interface PullRequestDetail {
   commentThreads: CommentThread[];
 }
 
-function sortCommentsRootFirst(comments: Comment[]): Comment[] {
-  const root: Comment[] = [];
-  const replies: Comment[] = [];
-  for (const c of comments) {
-    if (c.inReplyTo) {
-      replies.push(c);
-    } else {
-      root.push(c);
+const byCreation = (a: Comment, b: Comment) =>
+  (a.creationDate?.getTime() ?? 0) - (b.creationDate?.getTime() ?? 0);
+
+/**
+ * CodeCommit groups comments by location and commits, so one group can hold
+ * several threads: each comment that answers nothing in the group starts one,
+ * and a reply joins the thread of the comment it answers. Root first, then
+ * the replies oldest first.
+ */
+function splitThreads(comments: Comment[]): Comment[][] {
+  const byId = new Map(comments.map((c) => [c.commentId, c]));
+  const rootOf = (c: Comment): Comment => {
+    const seen = new Set<Comment>();
+    let at = c;
+    while (at.inReplyTo && !seen.has(at)) {
+      seen.add(at);
+      const parent = byId.get(at.inReplyTo);
+      if (!parent) break;
+      at = parent;
     }
+    return at;
+  };
+  const threads = new Map<Comment, Comment[]>();
+  for (const c of comments) {
+    const root = rootOf(c);
+    if (!threads.has(root)) threads.set(root, []);
+    if (c !== root) threads.get(root)?.push(c);
   }
-  replies.sort((a, b) => (a.creationDate?.getTime() ?? 0) - (b.creationDate?.getTime() ?? 0));
-  return [...root, ...replies];
+  return [...threads].map(([root, replies]) => [root, ...replies.toSorted(byCreation)]);
 }
 
 /**
@@ -355,7 +372,9 @@ export function createReviewApi(client: CodeCommitClient) {
       beforeCommitId?: string;
     },
   ): Promise<CommentThread[]> {
-    const commentThreads: CommentThread[] = [];
+    // By location and commits: a page ends after maxResults comments, so one
+    // line's comments can go on over the next page.
+    const groups = new Map<string, { location: CommentThread["location"]; comments: Comment[] }>();
     const baseInput = {
       pullRequestId,
       ...(params?.repositoryName ? { repositoryName: params.repositoryName } : {}),
@@ -380,14 +399,16 @@ export function createReviewApi(client: CodeCommitClient) {
                 (thread.location.relativeFileVersion as "BEFORE" | "AFTER") ?? "AFTER",
             }
           : null;
-        commentThreads.push({
-          location,
-          comments: sortCommentsRootFirst(thread.comments ?? []),
-        });
+        const key = JSON.stringify([thread.beforeCommitId, thread.afterCommitId, location]);
+        let group = groups.get(key);
+        if (!group) groups.set(key, (group = { location, comments: [] }));
+        group.comments.push(...(thread.comments ?? []));
       }
       nextToken = commentsResponse.nextToken;
     } while (nextToken);
-    return commentThreads;
+    return [...groups.values()].flatMap(({ location, comments }) =>
+      splitThreads(comments).map((thread) => ({ location, comments: thread })),
+    );
   }
 
   async function postComment(params: {
@@ -478,21 +499,29 @@ export function createReviewApi(client: CodeCommitClient) {
     destinationCommitId: string;
     strategy: MergeStrategy;
   }): Promise<ConflictSummary> {
-    const response = await client.send(
-      new GetMergeConflictsCommand({
-        repositoryName: params.repositoryName,
-        sourceCommitSpecifier: params.sourceCommitId,
-        destinationCommitSpecifier: params.destinationCommitId,
-        mergeOption: MERGE_OPTIONS[params.strategy],
-      }),
-    );
+    // A page holds at most 100 files; a large conflict goes on over nextToken.
+    const conflicts: { filePath?: string | undefined }[] = [];
+    let mergeable = false;
+    let nextToken: string | undefined;
+    do {
+      const response = await client.send(
+        new GetMergeConflictsCommand({
+          repositoryName: params.repositoryName,
+          sourceCommitSpecifier: params.sourceCommitId,
+          destinationCommitSpecifier: params.destinationCommitId,
+          mergeOption: MERGE_OPTIONS[params.strategy],
+          ...(nextToken ? { nextToken } : {}),
+        }),
+      );
+      mergeable = response.mergeable ?? false;
+      conflicts.push(...(response.conflictMetadataList ?? []));
+      nextToken = response.nextToken;
+    } while (nextToken);
 
     return {
-      mergeable: response.mergeable ?? false,
-      conflictCount: response.conflictMetadataList?.length ?? 0,
-      conflictFiles: (response.conflictMetadataList ?? [])
-        .map((c) => c.filePath ?? "(unknown)")
-        .filter(Boolean),
+      mergeable,
+      conflictCount: conflicts.length,
+      conflictFiles: conflicts.map((c) => c.filePath ?? "(unknown)"),
     };
   }
 
@@ -524,13 +553,41 @@ export function createReviewApi(client: CodeCommitClient) {
     sourceCommit: string,
     mergeBase: string,
   ): Promise<CommitInfo[]> {
+    const read = new Map<string, Promise<CommitInfo>>();
+    const commitOf = (id: string) => {
+      let commit = read.get(id);
+      if (!commit) read.set(id, (commit = getCommit(repositoryName, id)));
+      return commit;
+    };
+    // Like git log mergeBase..source: past a merge (the destination merged
+    // into the source), the first-parent chain can reach the destination's
+    // older commits without passing mergeBase. Its ancestors are read only
+    // as far as a lookup needs, up to MAX_COMMITS of them.
+    const inBase = new Set([mergeBase]);
+    const frontier = [mergeBase];
+    let budget = MAX_COMMITS;
+    const isInBase = async (id: string) => {
+      while (!inBase.has(id) && frontier.length > 0 && budget-- > 0) {
+        for (const p of (await commitOf(frontier.shift() as string)).parentIds) {
+          if (!inBase.has(p)) frontier.push(p);
+          inBase.add(p);
+        }
+      }
+      return inBase.has(id);
+    };
+
     const commits: CommitInfo[] = [];
     let currentId = sourceCommit;
-
-    while (currentId !== mergeBase && commits.length < MAX_COMMITS) {
-      const commit = await getCommit(repositoryName, currentId);
+    let pastMerge = false;
+    while (
+      currentId !== mergeBase &&
+      commits.length < MAX_COMMITS &&
+      !(pastMerge && (await isInBase(currentId)))
+    ) {
+      const commit = await commitOf(currentId);
       commits.push(commit);
       if (commit.parentIds.length === 0) break;
+      if (commit.parentIds.length > 1) pastMerge = true;
       currentId = commit.parentIds[0]!;
     }
 
