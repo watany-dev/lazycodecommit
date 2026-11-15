@@ -12,6 +12,8 @@ interface Props {
   label?: string;
   postingMessage?: string;
   errorPrefix?: string;
+  /** Tab: keep the text as a draft instead of posting it (spec: コメントの下書き). */
+  onDraft?: ((content: string) => void) | undefined;
 }
 
 export const COMMENT_MAX_LENGTH = 10240;
@@ -26,6 +28,7 @@ export function CommentInput({
   label = "New Comment:",
   postingMessage = "Posting comment...",
   errorPrefix = "Failed to post comment:",
+  onDraft,
 }: Props) {
   const [value, setValue] = useState(initialValue);
 
@@ -36,6 +39,11 @@ export function CommentInput({
     }
     if (key.escape) {
       onCancel();
+      return;
+    }
+    if (key.tab && onDraft) {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) onDraft(trimmed);
     }
   });
 
@@ -78,7 +86,8 @@ export function CommentInput({
         <TextInput value={value} onChange={handleChange} onSubmit={handleSubmit} />
       </Box>
       <Text dimColor>
-        Enter submit Esc cancel ({value.trim().length}/{COMMENT_MAX_LENGTH})
+        Enter submit{onDraft ? " Tab save as draft" : ""} Esc cancel ({value.trim().length}/
+        {COMMENT_MAX_LENGTH})
       </Text>
     </Box>
   );

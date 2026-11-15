@@ -846,9 +846,23 @@ describe("the review screen on a terminal", () => {
         start: { pullRequestId: "3" },
         region: "ap-northeast-1",
         markSeen: expect.any(Function),
+        drafts: { load: expect.any(Function), save: expect.any(Function) },
         git: expect.anything(),
       },
     ]);
+  });
+
+  it("keeps the review screen's comment drafts in the state, per region and PR", async () => {
+    const state = fakeState();
+    const r = await cli(["pr", "view", "3"], {
+      interactive: true,
+      state,
+      api: fakeApi([pullRequest({ id: "3" })]),
+    });
+    await r.reviews[0]?.drafts?.save("3", []);
+    expect(await r.reviews[0]?.drafts?.load("3")).toEqual([]);
+    const b = await cli(["branch"], { interactive: true, state });
+    expect(b.tops[0]?.drafts).toBeDefined();
   });
 
   it("opens the PR list for a bare pr list, without git outside a clone", async () => {
@@ -863,6 +877,7 @@ describe("the review screen on a terminal", () => {
         region: "us-west-2",
         profile: "p",
         markSeen: expect.any(Function),
+        drafts: { load: expect.any(Function), save: expect.any(Function) },
       },
     ]);
   });

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { explainAwsError, isCredentialError } from "../aws/errors.js";
+import { type LocalState, seenKey } from "../state/local.js";
 
 /** The commits a comment is posted against: the PR's destination and source tips. */
 export interface Commits {
@@ -113,6 +114,40 @@ export function reanchor(
     }
     return { ...d, ...tip };
   });
+}
+
+type Blob = { readonly blobId?: string | undefined; readonly path?: string | undefined };
+interface ChangedFile {
+  readonly beforeBlob?: Blob | undefined;
+  readonly afterBlob?: Blob | undefined;
+}
+
+/**
+ * For reanchor: reads, on the new tip, the files that inline drafts written on
+ * an older tip point at. A file the PR no longer changes reads as gone, so its
+ * drafts are marked moved. Each blob is read once.
+ */
+export async function lineReader(
+  drafts: readonly CommentDraft[],
+  tip: Commits,
+  files: readonly ChangedFile[],
+  readBlob: (blobId: string) => Promise<string>,
+): Promise<(location: DraftLocation) => string | undefined> {
+  const blobOf = (l: DraftLocation) => {
+    const side = (f: ChangedFile) =>
+      l.relativeFileVersion === "BEFORE" ? f.beforeBlob : f.afterBlob;
+    return files.map(side).find((b) => b?.path === l.filePath)?.blobId;
+  };
+  const texts = new Map<string, string[]>();
+  for (const d of drafts) {
+    if (d.target.kind !== "inline" || sameCommits(d, tip)) continue;
+    const blobId = blobOf(d.target.location);
+    if (blobId && !texts.has(blobId)) texts.set(blobId, (await readBlob(blobId)).split("\n"));
+  }
+  return (l) => {
+    const blobId = blobOf(l);
+    return blobId ? texts.get(blobId)?.[l.filePosition - 1] : undefined;
+  };
 }
 
 /** Posts one draft: PostCommentForPullRequest, or PostCommentReply for a reply. */
@@ -287,5 +322,19 @@ function asDraft(v: unknown): CommentDraft | undefined {
     ...commits,
     ...(sent ? { sent } : {}),
     ...(problem ? { problem } : {}),
+  };
+}
+
+/** A PR's drafts on disk, by PR id, for the review screen. */
+export interface DraftStorage {
+  load(pullRequestId: string): Promise<CommentDraft[]>;
+  save(pullRequestId: string, drafts: readonly CommentDraft[]): Promise<void>;
+}
+
+/** drafts.json, keyed like seen.json: PR ids are unique per region. */
+export function draftStorage(store: LocalState["drafts"], region: string): DraftStorage {
+  return {
+    load: async (id) => parseDrafts(await store.get(seenKey(region, id))),
+    save: (id, drafts) => store.set(seenKey(region, id), drafts),
   };
 }
