@@ -31,8 +31,12 @@ function formatGutter(line: DisplayLine): string {
   return `${before} ${after} │ `;
 }
 
+const DIFF_COLOR = { add: "green", delete: "red", context: undefined } as const;
+
+/** Ink's color prop does not take undefined (exactOptionalPropertyTypes). */
+const colorProp = (color: string | undefined) => (color ? { color } : {});
+
 function renderDiffLine(line: DisplayLine, isCursor = false): React.ReactNode {
-  const bold = isCursor;
   switch (line.type) {
     case "header":
       return (
@@ -40,65 +44,28 @@ function renderDiffLine(line: DisplayLine, isCursor = false): React.ReactNode {
           {line.text}
         </Text>
       );
-    case "separator":
-      return <Text dimColor>{line.text}</Text>;
     case "add":
-      return (
-        <Text color="green" bold={bold}>
-          <Text dimColor>{formatGutter(line)}</Text>
-          {line.text}
-        </Text>
-      );
     case "delete":
-      return (
-        <Text color="red" bold={bold}>
-          <Text dimColor>{formatGutter(line)}</Text>
-          {line.text}
-        </Text>
-      );
     case "context":
       return (
-        <Text bold={bold}>
+        <Text {...colorProp(DIFF_COLOR[line.type])} bold={isCursor}>
           <Text dimColor>{formatGutter(line)}</Text>
           {line.text}
         </Text>
       );
+    case "separator":
     case "truncate-context":
-      return <Text dimColor>{line.text}</Text>;
     case "truncation":
       return <Text dimColor>{line.text}</Text>;
     case "comment-header":
       return <Text bold>{line.text}</Text>;
     case "comment":
-      return (
-        <Text>
-          {" "}
-          {line.text}
-          {line.reactionText ? <Text dimColor> {line.reactionText}</Text> : null}
-        </Text>
-      );
     case "inline-comment":
-      return (
-        <Text color="magenta">
-          {" "}
-          {line.text}
-          {/* v8 ignore next -- inline comments rendered without reactions in tests */}
-          {line.reactionText ? <Text dimColor> {line.reactionText}</Text> : null}
-        </Text>
-      );
+    case "comment-reply":
     case "inline-reply":
       return (
-        <Text color="magenta">
-          {"   "}
-          {line.text}
-          {/* v8 ignore next -- inline replies rendered without reactions in tests */}
-          {line.reactionText ? <Text dimColor> {line.reactionText}</Text> : null}
-        </Text>
-      );
-    case "comment-reply":
-      return (
-        <Text>
-          {"   "}
+        <Text {...colorProp(line.type.startsWith("inline") ? "magenta" : undefined)}>
+          {line.type.endsWith("reply") ? "   " : " "}
           {line.text}
           {line.reactionText ? <Text dimColor> {line.reactionText}</Text> : null}
         </Text>

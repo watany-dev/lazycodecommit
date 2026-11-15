@@ -40,7 +40,9 @@ export function countLines(text: string): number {
 }
 
 /** CodeCommit keeps a deleted comment with an empty body; say so rather than show nothing. */
-function commentText(comment: CommentThread["comments"][number]): string {
+type Comment = CommentThread["comments"][number];
+
+function commentText(comment: Comment): string {
   return comment.deleted ? "(deleted)" : (comment.content ?? "");
 }
 
@@ -74,27 +76,17 @@ function appendThreadLines(
   const shouldFold = comments.length >= FOLD_THRESHOLD;
   const isCollapsed = collapsedThreads.get(threadKey) ?? shouldFold;
 
-  const rootAuthor = shortArn(rootComment.authorArn ?? "unknown");
-  const rootContent = commentText(rootComment);
-  const rootReactionText = formatReactionBadge(reactionsByComment.get(rootComment.commentId ?? ""));
+  const inline = mode === "inline";
+  const push = (comment: Comment, type: DisplayLine["type"], prefix: string) =>
+    lines.push({
+      type,
+      text: `${prefix}${shortArn(comment.authorArn ?? "unknown")}: ${commentText(comment)}`,
+      threadIndex,
+      commentId: comment.commentId,
+      reactionText: formatReactionBadge(reactionsByComment.get(comment.commentId ?? "")),
+    });
 
-  if (mode === "inline") {
-    lines.push({
-      type: "inline-comment",
-      text: `💬 ${rootAuthor}: ${rootContent}`,
-      threadIndex,
-      commentId: rootComment.commentId,
-      reactionText: rootReactionText,
-    });
-  } else {
-    lines.push({
-      type: "comment",
-      text: `${rootAuthor}: ${rootContent}`,
-      threadIndex,
-      commentId: rootComment.commentId,
-      reactionText: rootReactionText,
-    });
-  }
+  push(rootComment, inline ? "inline-comment" : "comment", inline ? "💬 " : "");
 
   if (shouldFold && isCollapsed) {
     lines.push({
@@ -105,29 +97,7 @@ function appendThreadLines(
     return;
   }
 
-  for (const reply of replies) {
-    const author = shortArn(reply.authorArn ?? "unknown");
-    const content = commentText(reply);
-    const replyReactionText = formatReactionBadge(reactionsByComment.get(reply.commentId ?? ""));
-
-    if (mode === "inline") {
-      lines.push({
-        type: "inline-reply",
-        text: `└ ${author}: ${content}`,
-        threadIndex,
-        commentId: reply.commentId,
-        reactionText: replyReactionText,
-      });
-    } else {
-      lines.push({
-        type: "comment-reply",
-        text: `└ ${author}: ${content}`,
-        threadIndex,
-        commentId: reply.commentId,
-        reactionText: replyReactionText,
-      });
-    }
-  }
+  for (const reply of replies) push(reply, inline ? "inline-reply" : "comment-reply", "└ ");
 }
 
 function getSliceLimits(beforeCount: number, afterCount: number, totalLimit: number) {
