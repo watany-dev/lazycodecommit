@@ -22,7 +22,7 @@ describe("resolveContext", () => {
   it("puts flags first", async () => {
     const ctx = await resolveContext({
       repo: "demo",
-      region: "us-east-1",
+      region: "eu-west-1",
       profile: "flag",
       git: fakeGit({ remoteUrl: async () => GRC }),
       env: { AWS_REGION: "x", AWS_PROFILE: "y" },
@@ -30,7 +30,7 @@ describe("resolveContext", () => {
     });
     expect(ctx).toEqual({
       repository: "demo",
-      region: "us-east-1",
+      region: "eu-west-1",
       profile: "flag",
       clone: { root: "/work" },
     });
@@ -82,6 +82,12 @@ describe("resolveContext", () => {
   it("treats --repo naming another repository as outside the clone", async () => {
     const ctx = await resolveContext({ repo: "other", git: fakeGit(), env: {}, config: {} });
     expect(ctx).toEqual({ repository: "other" });
+  });
+
+  it("treats --region naming another region as outside the clone", async () => {
+    // Same name, other region: a different repository, so origin is not its remote.
+    const ctx = await resolveContext({ region: "us-east-1", git: fakeGit(), env: {}, config: {} });
+    expect(ctx).toEqual({ repository: "demo", region: "us-east-1" });
   });
 
   it.each([

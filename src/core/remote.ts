@@ -18,11 +18,22 @@ const GRC = /^codecommit:(?::([a-z0-9-]+):)?\/\/(?:([^@/]+)@)?([^@/]+)$/;
  */
 export function parseRemoteUrl(url: string): CodeCommitRemote | null {
   const hosted = HOSTED.exec(url.trim());
-  if (hosted) return { region: hosted[1] as string, repo: decodeURIComponent(hosted[2] as string) };
+  if (hosted) {
+    const repo = decodeOrNull(hosted[2] as string);
+    return repo === null ? null : { region: hosted[1] as string, repo };
+  }
   const grc = GRC.exec(url.trim());
   if (grc) {
     const [, region = "", profile, repo] = grc;
     return profile ? { repo: repo as string, region, profile } : { repo: repo as string, region };
   }
   return null;
+}
+
+function decodeOrNull(s: string): string | null {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return null;
+  }
 }

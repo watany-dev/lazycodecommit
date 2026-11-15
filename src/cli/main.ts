@@ -14,7 +14,7 @@ import {
 } from "../core/pr.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
-import { listLines, prJson, statusLines, viewLines } from "./format.js";
+import { listLines, printable, prJson, statusLines, viewLines } from "./format.js";
 
 export interface Io {
   out(line: string): void;
@@ -215,7 +215,7 @@ async function runPr(
       if (result.kind === "exists") {
         if (json) print({ existing: true, ...prJson(result.pr, region) });
         io.err(
-          `A pull request from ${result.pr.sourceBranch} into ${result.pr.destinationBranch} is already open: #${result.pr.id} ${result.pr.title}`,
+          `A pull request from ${result.pr.sourceBranch} into ${result.pr.destinationBranch} is already open: #${result.pr.id} ${printable(result.pr.title)}`,
         );
         if (!json) io.err(url);
         return 1;

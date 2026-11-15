@@ -95,6 +95,8 @@ remote URL は次の3形式を解釈し、リージョンとプロファイル�
 | SSH | ssh://git-codecommit.ap-northeast-1.amazonaws.com/v1/repos/my-repo |
 | git-remote-codecommit | codecommit::ap-northeast-1://profile@my-repo |
 
+--repo や --region が origin と別のリポジトリ(名前かリージョンが違う)を指すときは、clone 外として扱う。同じ名前でもリージョンが違えば別のリポジトリなので、origin への push やローカルのコミットからの下書きは行わない。
+
 ## PR 作成
 
 lazycc pr create は、clone 内なら引数なしで push から PR 作成まで終える。
@@ -413,6 +415,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 - CloudShell 同梱の Node.js で npx 起動できること。Bun を必須にしない。
 - API のスロットリングは SDK の再試行に任せ、並列数は設定値で抑える。
 - テストは aws/ を SDK のモックで、git/ を一時リポジトリで検証する。
+- 外から来る入力(remote URL、設定ファイル、コミットメッセージ、PR のタイトルと本文)を扱う処理と、フラグの組み合わせで分岐する処理は、fast-check のプロパティテスト(*.prop.test.ts)で入力を生成して確かめる。入力の組み合わせが有限で小さいもの(リポジトリの推定)は全組み合わせを仕様と突き合わせる。
 
 ## IAM 権限
 
