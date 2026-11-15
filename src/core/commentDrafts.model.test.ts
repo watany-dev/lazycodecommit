@@ -1,9 +1,11 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import type { LocalState } from "../state/local.js";
 import {
   type CommentDraft,
   type Commits,
   canEdit,
+  draftStorage,
   editDraft,
   newDraft,
   reanchor,
@@ -116,6 +118,75 @@ describe("submitting drafts, against a model of CodeCommit's request tokens", ()
         },
       ),
       { numRuns: 3000 },
+    );
+  });
+});
+
+/**
+ * Two lazycc processes on the same PR, each with the drafts it loaded at
+ * start. drafts.json is shared and each save is atomic (the lock in
+ * state/local.ts); the scheduler interleaves every save and post.
+ */
+describe("two screens submitting the same drafts at once", () => {
+  it("never posts a draft twice and never brings a posted one back", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.scheduler(),
+        fc.integer({ min: 1, max: 3 }),
+        fc.array(fc.constantFrom<Fault>("ok", "refuse", "lostBefore", "lostAfter"), {
+          maxLength: 6,
+        }),
+        fc.boolean(),
+        async (s, n, faults, pushFirst) => {
+          const cc = new FakeCodeCommit();
+          cc.faults = [...faults];
+          const files = new Map<string, unknown>();
+          const store: LocalState["drafts"] = {
+            get: async (k) => {
+              await s.schedule(Promise.resolve(), "read");
+              return structuredClone(files.get(k));
+            },
+            update: async (k, change) => {
+              await s.schedule(Promise.resolve(), "save");
+              const next = change(structuredClone(files.get(k)));
+              if (next.length === 0) files.delete(k);
+              else files.set(k, structuredClone(next));
+              return structuredClone([...next]);
+            },
+          };
+          files.set(
+            "r/7",
+            Array.from({ length: n }, (_, i) =>
+              newDraft(`comment ${i}`, { kind: "general" }, tipOf(0)),
+            ),
+          );
+          const post = async (d: CommentDraft, c: Commits, t: string) => {
+            await s.schedule(Promise.resolve(), `post ${d.content}`);
+            await cc.post(d, c, t);
+          };
+          // What the review screen does with the drafts it holds.
+          const screen = async (tip: Commits) => {
+            const storage = draftStorage(store, "r");
+            const held = await storage.load("7");
+            const anchored = await storage.save(
+              "7",
+              reanchor(held, tip, () => undefined),
+            );
+            await submitDrafts(anchored, { post, save: (list) => storage.save("7", list) });
+          };
+          const both = Promise.all([screen(tipOf(0)), screen(tipOf(pushFirst ? 1 : 0))]);
+          await s.waitFor(both);
+          // Then one screen opens again with the network behaving.
+          cc.faults = [];
+          const last = draftStorage(store, "r");
+          const left = await s.waitFor(last.load("7"));
+          await s.waitFor(submitDrafts(left, { post, save: (list) => last.save("7", list) }));
+          expect(files.has("r/7")).toBe(false);
+          for (const count of cc.created.values()) expect(count).toBe(1);
+          expect(cc.created.size).toBe(n);
+        },
+      ),
+      { numRuns: 1000 },
     );
   });
 });

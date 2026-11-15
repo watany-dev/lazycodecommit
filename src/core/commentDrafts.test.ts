@@ -1,4 +1,6 @@
+import * as fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
+import { markNotSent } from "../aws/errors.js";
 import { fakeState } from "../testing/fakes.js";
 import {
   type CommentDraft,
@@ -9,6 +11,7 @@ import {
   draftStorage,
   editDraft,
   lineReader,
+  mergeDrafts,
   newDraft,
   parseDrafts,
   postAnyway,
@@ -53,9 +56,11 @@ function harness(fail: Map<number, Error> = new Map()) {
     const err = fail.get(calls.length);
     if (err) throw err;
   });
-  const save = vi.fn(async (list: readonly CommentDraft[]) => {
-    saves.push(list);
-  });
+  const save = vi.fn(
+    async (list: readonly CommentDraft[]): Promise<readonly CommentDraft[] | void> => {
+      saves.push(list);
+    },
+  );
   return { calls, saves, deps: { post, save } };
 }
 
@@ -81,6 +86,17 @@ describe("submitDrafts", () => {
     expect(r).toEqual({ remaining: [], posted: 3 });
     expect(h.saves.at(-1)).toEqual([]);
     expect(progress).toHaveBeenLastCalledWith(3, 3);
+  });
+
+  it("leaves a draft that another lazycc posted or sent meanwhile", async () => {
+    const [a, b] = [general("a"), general("b")];
+    const h = harness();
+    // The save merges in the other process: it posted a, and is sending b.
+    const sentB = { ...b, sent: OLD };
+    h.deps.save.mockImplementationOnce(async () => [sentB]);
+    const r = await submitDrafts([a, b], h.deps);
+    expect(h.calls.map((c) => c.content)).toEqual(["b"]);
+    expect(r.posted).toBe(1);
   });
 
   it("saves the draft as sending before posting, so a crash keeps its token", async () => {
@@ -254,6 +270,13 @@ describe("describeFailure", () => {
     expect(describeFailure(awsError("CredentialsProviderError")).kind).toBe("failed");
   });
 
+  it("calls an error raised before the request left a refusal", () => {
+    const err = new Error("Region is missing");
+    expect(describeFailure(err).kind).toBe("unknown");
+    markNotSent(err);
+    expect(describeFailure(err).kind).toBe("failed");
+  });
+
   it("uses the explanation the CLI gives for known errors", () => {
     const p = describeFailure(awsError("AccessDeniedException", 400));
     expect(p).toEqual({ kind: "failed", message: "Access denied: AccessDeniedException message" });
@@ -303,6 +326,59 @@ describe("draftStorage", () => {
     state.draftLists.set("us-east-1/8", [{ broken: true }, d]);
     expect(await storage.load("8")).toEqual([d]);
     expect(await storage.load("9")).toEqual([]);
+  });
+
+  it("keeps what another lazycc saved to the same PR since this one read it", async () => {
+    const state = fakeState();
+    const here = draftStorage(state.drafts, "r");
+    const there = draftStorage(state.drafts, "r");
+    const [a, b] = [general("a"), general("b")];
+    await here.save("7", [a, b]);
+    expect(await there.load("7")).toEqual([a, b]);
+    // There posts a; here, still holding it, adds c.
+    await there.save("7", [b]);
+    const c = general("c");
+    expect(await here.save("7", [a, b, c])).toEqual([b, c]);
+  });
+});
+
+const byId = (l: readonly CommentDraft[]) => l.toSorted((x, y) => (x.id < y.id ? -1 : 1));
+
+describe("mergeDrafts", () => {
+  const a = general("a");
+  const sentA = { ...a, sent: OLD };
+  const editedA = editDraft(a, "a!");
+
+  it("takes the side that changed a draft, and the disk's when both did", () => {
+    expect(mergeDrafts([a], [editedA], [a])).toEqual([editedA]);
+    expect(mergeDrafts([a], [a], [sentA])).toEqual([sentA]);
+    expect(mergeDrafts([a], [editedA], [sentA])).toEqual([sentA]);
+  });
+
+  it("keeps a removal unless the other side changed the draft", () => {
+    expect(mergeDrafts([a], [], [a])).toEqual([]);
+    expect(mergeDrafts([a], [a], [])).toEqual([]);
+    expect(mergeDrafts([a], [editedA], [])).toEqual([]);
+    // Removed here, but there it was sent: it may be posted, so it stays.
+    expect(mergeDrafts([a], [], [sentA])).toEqual([sentA]);
+  });
+
+  it("keeps new drafts from both sides, ours last", () => {
+    const [b, c] = [general("b"), general("c")];
+    expect(mergeDrafts([a], [a, b], [a, c])).toEqual([a, c, b]);
+  });
+
+  it("is the disk when this side changed nothing, and ours when the disk did not change", () => {
+    const pool = [a, sentA, editedA, general("b"), reply(), inline()];
+    const list = fc
+      .subarray(pool.map((_, i) => i))
+      .map((ix) => [...new Map(ix.map((i) => [pool[i]!.id, pool[i]!])).values()]);
+    fc.assert(
+      fc.property(list, list, (base, other) => {
+        expect(mergeDrafts(base, base, other)).toEqual(other);
+        expect(byId(mergeDrafts(base, other, base))).toEqual(byId(other));
+      }),
+    );
   });
 });
 

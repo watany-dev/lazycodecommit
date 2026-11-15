@@ -27,6 +27,18 @@ const PULL_REQUEST_ERRORS = new Map(
   }),
 );
 
+const notSent = new WeakSet<object>();
+
+/** Records that this error was raised before the request left this process. */
+export function markNotSent(error: unknown): void {
+  if (typeof error === "object" && error !== null) notSent.add(error);
+}
+
+/** True only when the request certainly never left, so nothing was posted. */
+export function wasNotSent(error: unknown): boolean {
+  return typeof error === "object" && error !== null && notSent.has(error);
+}
+
 /** Missing or expired credentials: the fix is to sign in again, not to change a policy. */
 export function isCredentialError(error: Error): boolean {
   return (

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -168,14 +168,45 @@ describe("file modes", () => {
   });
 });
 
+describe("two lazycc processes saving at once", () => {
+  it("loses no write: each save reads, changes and writes under a lock", async () => {
+    const a = state();
+    const b = state();
+    const at = new Date("2026-01-01T00:00:00Z");
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) => [
+        a.seen.mark(`r/a/${i}`, at),
+        b.seen.mark(`r/b/${i}`, at),
+        a.drafts.update("r/1", (l) => [...(Array.isArray(l) ? l : []), `a${i}`]),
+        b.drafts.update("r/1", (l) => [...(Array.isArray(l) ? l : []), `b${i}`]),
+      ]).flat(),
+    );
+    expect((await a.seen.all()).size).toBe(40);
+    expect(await a.drafts.get("r/1")).toHaveLength(40);
+    expect(await readdir(dir)).toEqual(["drafts.json", "seen.json"]);
+  });
+
+  it("takes over a lock left by a process that died holding it", async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "seen.json.lock"), "");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(join(dir, "seen.json.lock"), old, old);
+    await state().seen.mark("r/a/1", new Date());
+    expect(await readdir(dir)).toEqual(["seen.json"]);
+  });
+});
+
 describe("drafts", () => {
   it("keeps each PR's list, removes an emptied one, and writes the file user-only", async () => {
     const s = state();
     expect(await s.drafts.get("r/1")).toBeUndefined();
-    await s.drafts.set("r/1", [{ id: "a" }]);
-    await s.drafts.set("r/2", [{ id: "b" }]);
+    expect(await s.drafts.update("r/1", () => [{ id: "a" }])).toEqual([{ id: "a" }]);
+    await s.drafts.update("r/2", () => [{ id: "b" }]);
     expect(await s.drafts.get("r/1")).toEqual([{ id: "a" }]);
-    await s.drafts.set("r/1", []);
+    await s.drafts.update("r/1", (current) => {
+      expect(current).toEqual([{ id: "a" }]);
+      return [];
+    });
     expect(JSON.parse(await readFile(join(dir, "drafts.json"), "utf8"))).toEqual({
       "r/2": [{ id: "b" }],
     });

@@ -37,6 +37,7 @@ function setup(stored: CommentDraft[] = [], threads: unknown[] = []) {
     load: vi.fn(async () => stored),
     save: vi.fn(async (_id, list) => {
       saved.push(list);
+      return [...list];
     }),
   };
   const service = {
@@ -83,7 +84,13 @@ async function type(t: { stdin: { write: (s: string) => void } }, ...keys: strin
 /** Writes an inline draft on the added line "y" with Tab. */
 async function draftOnAddedLine(t: ReturnType<typeof setup>, text: string) {
   await see(t, "+y");
-  await type(t, "]", "c", "C");
+  // Each key waits for the screen to take the one before: a slow runner can
+  // otherwise read "c" before "]" is in state and open a general comment.
+  await type(t, "]");
+  await see(t, "Press c for next change");
+  await type(t, "c");
+  await vi.waitFor(() => expect(frame(t)).not.toContain("Press c for next change"));
+  await type(t, "C");
   await see(t, "Inline comment on a.ts:2");
   await type(t, text, "\t");
   await see(t, "Drafts: 1");
