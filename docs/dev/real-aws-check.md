@@ -58,6 +58,7 @@ Bun が入っていれば `bun install && bun run build` のあと、同じく
 | `--other-profile <name>` | 他人のコメント・承認で `lastActivityDate` が動くか、承認待ちに出るか（ADR 0005, 0006） |
 | `--sso-expired-profile <name>` | `aws sso logout` 済みの SSO プロファイルで、サインインし直す案内が出るか |
 | `--limited-profile <name>` | CodeCommit の権限がない identity で、拒否されたアクション名が出るか |
+| `--ci-project <name>`、`--ci-pipeline <name>` | 既存の CodeBuild プロジェクトとパイプラインの直近の実行を読み、lazycc が一致に使うフィールドがあるか、`ci` を設定した `pr view` が動くか（ADR 0010）。読むだけで、ビルドの開始や設定の変更はしない。`codebuild:ListBuildsForProject`・`BatchGetBuilds`・`codepipeline:ListPipelineExecutions` が要る |
 | `--ssh` | SSH の clone（IAM の SSH 公開鍵と `~/.ssh/config` の `User` が必要） |
 | `--keep` | リポジトリと作業ディレクトリを残す（コンソールで見るときに使う） |
 | `--no-redact` | レポートのアカウント ID を伏せない |
@@ -106,6 +107,8 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | HTTPS・grc・SSH の clone と、その clone 内での `pr list` と `pr checkout` | #9、#10、#11 |
 | 期限切れの SSO、権限不足での案内 | #7、`aws/errors.ts` |
 | 同じ `clientRequestToken` での再投稿が最初のコメントを返すか（先端が進んだ後も）、内容を変えると拒否されるか、古い先端に投稿できるか | ADR 0009、`core/commentDrafts.ts` |
+| CodeBuild のビルドに `buildStatus`・アカウント入りの ARN・40 桁の `resolvedSourceVersion` があるか、CodePipeline の実行の `sourceRevisions` にコミット ID があるか、`ci` を設定した `pr view` が結果を読み、名前の誤りをエラー行にして終了コード 0 で終わるか | ADR 0010、`aws/ci.ts` |
+| 手で: `pr view` が出すビルド・実行の URL がその実行のページを開くか | ADR 0010 |
 | CloudShell の Node での npx 起動、起動時間（300 ms） | #2、#3、#7 |
 | 各 TUI（レビュー、PR 一覧、ブランチ、ブラウズ、ホーム）が描画され q で終わるか | #10、#11、#22、#27 |
 | clone URL が `core/remote.ts` の形にあうか、呼び出し元 ARN の形 | `core/remote.ts`、`core/inbox.ts` |

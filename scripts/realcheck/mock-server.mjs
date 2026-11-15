@@ -209,6 +209,44 @@ export function startMockServer(gitRoot) {
     GetRepository: ({ repositoryName }, c) => ({
       repositoryMetadata: repoOf(repositoryName, c.region),
     }),
+    // CodeBuild and CodePipeline (ADR 0010): one existing project and pipeline
+    // whose runs built commits from another repository.
+    ListBuildsForProject({ projectName }) {
+      if (projectName !== "rc-check")
+        throw new ApiError("ResourceNotFoundException", `Project cannot be found: ${projectName}`);
+      return { ids: ["rc-check:1"] };
+    },
+    BatchGetBuilds: ({ ids }, c) => ({
+      builds: ids.map((id) => ({
+        id,
+        arn: `arn:aws:codebuild:${c.region}:${ACCOUNT}:build/${id}`,
+        buildStatus: "SUCCEEDED",
+        resolvedSourceVersion: "0123456789abcdef0123456789abcdef01234567",
+        source: { type: "CODECOMMIT" },
+        initiator: "events.amazonaws.com",
+        startTime: now(),
+      })),
+    }),
+    ListPipelineExecutions({ pipelineName }) {
+      if (pipelineName !== "rc-release")
+        throw new ApiError(
+          "PipelineNotFoundException",
+          `Account '${ACCOUNT}' does not have a pipeline with name '${pipelineName}'`,
+        );
+      return {
+        pipelineExecutionSummaries: [
+          {
+            pipelineExecutionId: "e-1",
+            status: "Succeeded",
+            startTime: now(),
+            lastUpdateTime: now(),
+            sourceRevisions: [
+              { actionName: "Source", revisionId: "0123456789abcdef0123456789abcdef01234567" },
+            ],
+          },
+        ],
+      };
+    },
     ListRepositories: () => ({
       repositories: [...repos].map(([name, r]) => ({ repositoryName: name, repositoryId: r.id })),
     }),
@@ -497,7 +535,12 @@ export function startMockServer(gitRoot) {
         res.end(caller ? STS_IDENTITY.get(caller) : STS_DENIED);
         return;
       }
-      const op = target.split(".")[1];
+      const [prefix, op] = target.split(".");
+      const service = /^CodeBuild/.test(prefix)
+        ? "codebuild"
+        : /^CodePipeline/.test(prefix)
+          ? "codepipeline"
+          : "codecommit";
       try {
         if (!caller)
           throw new ApiError(
@@ -508,7 +551,7 @@ export function startMockServer(gitRoot) {
         if (caller.limited)
           throw new ApiError(
             "AccessDeniedException",
-            `User: ${caller.arn} is not authorized to perform: codecommit:${op} on resource: arn:aws:codecommit:${region}:${ACCOUNT}:${input.repositoryName ?? "*"} because no identity-based policy allows the codecommit:${op} action`,
+            `User: ${caller.arn} is not authorized to perform: ${service}:${op} on resource: arn:aws:${service}:${region}:${ACCOUNT}:${input.repositoryName ?? "*"} because no identity-based policy allows the ${service}:${op} action`,
           );
         const handler = ops[op];
         if (!handler)
