@@ -1,16 +1,22 @@
 import { CodeCommitClient } from "@aws-sdk/client-codecommit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { wasNotSent } from "./errors.js";
-import {
+import { createReviewApi } from "./review.js";
+
+const mockSend = vi.fn();
+
+const mockClient = {
+  send: mockSend,
+} as any;
+
+const {
   closePullRequest,
-  createClient,
   deleteComment,
   evaluateApprovalRules,
   getAllDifferences,
   getApprovalStates,
   getBlobContent,
   getComments,
-  getCommit,
   getCommitsForPR,
   getMergeConflicts,
   getPullRequestActivity,
@@ -23,24 +29,10 @@ import {
   putReaction,
   updateApprovalState,
   updateComment,
-} from "./review.js";
-
-const mockSend = vi.fn();
-
-const mockClient = {
-  send: mockSend,
-} as any;
+} = createReviewApi(mockClient);
 
 beforeEach(() => {
   mockSend.mockReset();
-});
-
-describe("createClient", () => {
-  it("returns a CodeCommitClient instance with provided config", () => {
-    const client = createClient({ profile: "dev", region: "ap-northeast-1" });
-    expect(client).toBeInstanceOf(Object);
-    expect(client.send).toBeDefined();
-  });
 });
 
 describe("listPullRequests", () => {
@@ -58,7 +50,7 @@ describe("listPullRequests", () => {
         creationDate: new Date("2026-02-13T10:00:00Z"),
       },
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.pullRequests).toHaveLength(1);
     expect(result.pullRequests[0]!.title).toBe("fix: login timeout");
     expect(result.pullRequests[0]!.status).toBe("OPEN");
@@ -88,28 +80,28 @@ describe("listPullRequests", () => {
         ],
       },
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.pullRequests).toHaveLength(1);
     expect(result.pullRequests[0]!.status).toBe("MERGED");
   });
 
   it("passes pullRequestStatus OPEN to API by default", async () => {
     mockSend.mockResolvedValueOnce({ pullRequestIds: [], nextToken: undefined });
-    await listPullRequests(mockClient, "my-service");
+    await listPullRequests("my-service");
     const sentCommand = mockSend.mock.calls[0]![0];
     expect(sentCommand.input.pullRequestStatus).toBe("OPEN");
   });
 
   it("passes pullRequestStatus CLOSED to API when specified", async () => {
     mockSend.mockResolvedValueOnce({ pullRequestIds: [], nextToken: undefined });
-    await listPullRequests(mockClient, "my-service", undefined, "CLOSED");
+    await listPullRequests("my-service", undefined, "CLOSED");
     const sentCommand = mockSend.mock.calls[0]![0];
     expect(sentCommand.input.pullRequestStatus).toBe("CLOSED");
   });
 
   it("passes pullRequestStatus OPEN to API when specified", async () => {
     mockSend.mockResolvedValueOnce({ pullRequestIds: [], nextToken: undefined });
-    await listPullRequests(mockClient, "my-service", undefined, "OPEN");
+    await listPullRequests("my-service", undefined, "OPEN");
     const sentCommand = mockSend.mock.calls[0]![0];
     expect(sentCommand.input.pullRequestStatus).toBe("OPEN");
   });
@@ -119,7 +111,7 @@ describe("listPullRequests", () => {
       pullRequestIds: [],
       nextToken: "next-page-token",
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.nextToken).toBe("next-page-token");
   });
 
@@ -128,7 +120,7 @@ describe("listPullRequests", () => {
       pullRequestIds: [],
       nextToken: undefined,
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.nextToken).toBeUndefined();
   });
 
@@ -153,7 +145,7 @@ describe("listPullRequests", () => {
         ],
       },
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.pullRequests).toHaveLength(1);
     expect(result.pullRequests[0]!.status).toBe("CLOSED");
   });
@@ -187,7 +179,7 @@ describe("listPullRequests", () => {
       });
     });
 
-    await listPullRequests(mockClient, "my-service");
+    await listPullRequests("my-service");
     expect(maxConcurrent).toBe(10);
   });
 });
@@ -227,7 +219,7 @@ describe("getPullRequestDetail", () => {
       ],
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.pullRequest.title).toBe("fix: login timeout");
     expect(detail.differences).toHaveLength(1);
     expect(detail.commentThreads).toHaveLength(1);
@@ -251,7 +243,7 @@ describe("getPullRequestDetail", () => {
     mockSend.mockResolvedValueOnce({ differences: [] });
     mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
 
-    await getPullRequestDetail(mockClient, "42", "my-service");
+    await getPullRequestDetail("42", "my-service");
 
     // Third call is GetCommentsForPullRequestCommand
     const commentsCall = mockSend.mock.calls[2]![0];
@@ -272,7 +264,7 @@ describe("listPullRequests edge cases", () => {
       pullRequestIds: undefined,
       nextToken: undefined,
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.pullRequests).toHaveLength(0);
   });
 
@@ -289,7 +281,7 @@ describe("listPullRequests edge cases", () => {
         creationDate: undefined,
       },
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.pullRequests).toHaveLength(1);
     expect(result.pullRequests[0]!.title).toBe("(no title)");
     expect(result.pullRequests[0]!.status).toBe("OPEN");
@@ -304,7 +296,7 @@ describe("listPullRequests edge cases", () => {
     mockSend.mockResolvedValueOnce({
       pullRequest: undefined,
     });
-    const result = await listPullRequests(mockClient, "my-service");
+    const result = await listPullRequests("my-service");
     expect(result.pullRequests).toHaveLength(0);
   });
 });
@@ -314,7 +306,7 @@ describe("getPullRequestDetail edge cases", () => {
     mockSend.mockResolvedValueOnce({
       pullRequest: undefined,
     });
-    await expect(getPullRequestDetail(mockClient, "42", "my-service")).rejects.toThrow(
+    await expect(getPullRequestDetail("42", "my-service")).rejects.toThrow(
       "Pull request 42 not found.",
     );
   });
@@ -331,7 +323,7 @@ describe("getPullRequestDetail edge cases", () => {
       commentsForPullRequestData: [],
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.differences).toHaveLength(0);
     expect(detail.commentThreads).toHaveLength(0);
   });
@@ -355,7 +347,7 @@ describe("getPullRequestDetail edge cases", () => {
       commentsForPullRequestData: [],
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.differences).toHaveLength(0);
   });
 
@@ -370,7 +362,7 @@ describe("getPullRequestDetail edge cases", () => {
       commentsForPullRequestData: undefined,
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.commentThreads).toHaveLength(0);
   });
 
@@ -385,7 +377,7 @@ describe("getPullRequestDetail edge cases", () => {
       commentsForPullRequestData: [{ comments: undefined }],
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.commentThreads).toHaveLength(1);
     expect(detail.commentThreads[0]!.comments).toHaveLength(0);
   });
@@ -410,7 +402,7 @@ describe("getPullRequestDetail edge cases", () => {
       ],
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.commentThreads[0]!.location).toEqual({
       filePath: "src/x.ts",
       filePosition: 0,
@@ -443,7 +435,7 @@ describe("getPullRequestDetail edge cases", () => {
       NextToken: undefined,
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.differences).toHaveLength(2);
   });
 
@@ -467,7 +459,7 @@ describe("getPullRequestDetail edge cases", () => {
       ],
     });
 
-    const detail = await getPullRequestDetail(mockClient, "42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.commentThreads).toHaveLength(1);
     expect(detail.commentThreads[0]!.location).toEqual({
       filePath: "src/index.ts",
@@ -487,7 +479,7 @@ describe("postComment", () => {
     };
     mockSend.mockResolvedValueOnce({ comment: mockComment });
 
-    const result = await postComment(mockClient, {
+    const result = await postComment({
       pullRequestId: "42",
       repositoryName: "my-service",
       beforeCommitId: "def456",
@@ -517,7 +509,7 @@ describe("postComment", () => {
     };
     mockSend.mockResolvedValueOnce({ comment: mockComment });
 
-    const result = await postComment(mockClient, {
+    const result = await postComment({
       pullRequestId: "42",
       repositoryName: "my-service",
       beforeCommitId: "def456",
@@ -556,7 +548,7 @@ describe("postComment", () => {
     };
     mockSend.mockResolvedValueOnce({ comment: mockComment });
 
-    await postComment(mockClient, {
+    await postComment({
       pullRequestId: "42",
       repositoryName: "my-service",
       beforeCommitId: "def456",
@@ -580,7 +572,7 @@ describe("postComment", () => {
 
   it("passes the client request token so a retry does not post twice", async () => {
     mockSend.mockResolvedValueOnce({ comment: { commentId: "c" } });
-    await postComment(mockClient, {
+    await postComment({
       pullRequestId: "42",
       repositoryName: "my-service",
       beforeCommitId: "def456",
@@ -597,7 +589,7 @@ describe("postComment", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      postComment(mockClient, {
+      postComment({
         pullRequestId: "42",
         repositoryName: "my-service",
         beforeCommitId: "def456",
@@ -611,7 +603,7 @@ describe("postComment", () => {
     mockSend.mockResolvedValueOnce({ comment: undefined });
 
     await expect(
-      postComment(mockClient, {
+      postComment({
         pullRequestId: "42",
         repositoryName: "my-service",
         beforeCommitId: "def456",
@@ -639,11 +631,13 @@ describe("posting: what was never sent", () => {
         throw new Error("Region is missing");
       },
     });
-    const err = await postComment(client, params).catch((e: unknown) => e);
+    const err = await createReviewApi(client)
+      .postComment(params)
+      .catch((e: unknown) => e);
     expect(wasNotSent(err)).toBe(true);
-    const reply = await postCommentReply(client, { inReplyTo: "c1", content: "x" }).catch(
-      (e: unknown) => e,
-    );
+    const reply = await createReviewApi(client)
+      .postCommentReply({ inReplyTo: "c1", content: "x" })
+      .catch((e: unknown) => e);
     expect(wasNotSent(reply)).toBe(true);
   });
 
@@ -658,7 +652,9 @@ describe("posting: what was never sent", () => {
         },
       },
     });
-    const err = await postComment(client, params).catch((e: unknown) => e);
+    const err = await createReviewApi(client)
+      .postComment(params)
+      .catch((e: unknown) => e);
     expect((err as Error).message).toBe("socket hang up");
     expect(wasNotSent(err)).toBe(false);
   });
@@ -687,7 +683,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(1);
     expect(threads[0]!.location).toBeNull();
     expect(threads[0]!.comments).toHaveLength(2);
@@ -700,7 +696,7 @@ describe("getComments", () => {
       commentsForPullRequestData: undefined,
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(0);
   });
 
@@ -709,7 +705,7 @@ describe("getComments", () => {
       commentsForPullRequestData: [{ comments: undefined }],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(1);
     expect(threads[0]!.comments).toHaveLength(0);
   });
@@ -731,7 +727,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(2);
     expect(threads[0]!.location).toEqual({
       filePath: "src/auth.ts",
@@ -755,7 +751,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(1);
     expect(threads[0]!.location).toEqual({
       filePath: "src/app.ts",
@@ -774,7 +770,7 @@ describe("getComments", () => {
       nextToken: undefined,
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(2);
     expect(threads[0]!.comments[0]!.content).toBe("first page");
     expect(threads[1]!.comments[0]!.content).toBe("second page");
@@ -791,7 +787,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(1);
     expect(threads[0]!.location).toBeNull();
   });
@@ -799,7 +795,7 @@ describe("getComments", () => {
   it("passes commit IDs and repositoryName when provided", async () => {
     mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
 
-    await getComments(mockClient, "42", {
+    await getComments("42", {
       repositoryName: "my-service",
       afterCommitId: "abc123",
       beforeCommitId: "def456",
@@ -820,7 +816,7 @@ describe("getComments", () => {
   it("omits commit IDs when only one is provided", async () => {
     mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
 
-    await getComments(mockClient, "42", {
+    await getComments("42", {
       repositoryName: "my-service",
       afterCommitId: "abc123",
     });
@@ -853,7 +849,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads).toHaveLength(1);
     expect(threads[0]!.comments[0]!.commentId).toBe("root-1");
     expect(threads[0]!.comments[0]!.inReplyTo).toBeUndefined();
@@ -888,7 +884,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads[0]!.comments[0]!.commentId).toBe("root-1");
     expect(threads[0]!.comments[1]!.commentId).toBe("reply-1");
     expect(threads[0]!.comments[2]!.commentId).toBe("reply-2");
@@ -924,7 +920,7 @@ describe("getComments", () => {
       ],
     });
 
-    const threads = await getComments(mockClient, "42");
+    const threads = await getComments("42");
     expect(threads[0]!.comments[0]!.commentId).toBe("root-1");
     // Replies without creationDate (epoch 0) come before those with dates
     expect(threads[0]!.comments[1]!.commentId).toBe("reply-1");
@@ -943,7 +939,7 @@ describe("postCommentReply", () => {
     };
     mockSend.mockResolvedValueOnce({ comment: mockReply });
 
-    const result = await postCommentReply(mockClient, {
+    const result = await postCommentReply({
       inReplyTo: "comment-1",
       content: "Will fix in next PR",
     });
@@ -961,7 +957,7 @@ describe("postCommentReply", () => {
 
   it("passes the client request token", async () => {
     mockSend.mockResolvedValueOnce({ comment: { commentId: "r" } });
-    await postCommentReply(mockClient, {
+    await postCommentReply({
       inReplyTo: "c1",
       content: "x",
       clientRequestToken: "tok-2",
@@ -975,7 +971,7 @@ describe("postCommentReply", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      postCommentReply(mockClient, {
+      postCommentReply({
         inReplyTo: "nonexistent",
         content: "reply",
       }),
@@ -986,7 +982,7 @@ describe("postCommentReply", () => {
     mockSend.mockResolvedValueOnce({ comment: undefined });
 
     await expect(
-      postCommentReply(mockClient, {
+      postCommentReply({
         inReplyTo: "comment-1",
         content: "reply",
       }),
@@ -997,7 +993,7 @@ describe("postCommentReply", () => {
 describe("updateApprovalState", () => {
   it("sends Approve command with correct parameters", async () => {
     mockSend.mockResolvedValueOnce({});
-    await updateApprovalState(mockClient, {
+    await updateApprovalState({
       pullRequestId: "42",
       revisionId: "rev-1",
       approvalState: "APPROVE",
@@ -1015,7 +1011,7 @@ describe("updateApprovalState", () => {
 
   it("sends Revoke command with correct parameters", async () => {
     mockSend.mockResolvedValueOnce({});
-    await updateApprovalState(mockClient, {
+    await updateApprovalState({
       pullRequestId: "42",
       revisionId: "rev-1",
       approvalState: "REVOKE",
@@ -1036,7 +1032,7 @@ describe("updateApprovalState", () => {
     error.name = "AccessDeniedException";
     mockSend.mockRejectedValueOnce(error);
     await expect(
-      updateApprovalState(mockClient, {
+      updateApprovalState({
         pullRequestId: "42",
         revisionId: "rev-1",
         approvalState: "APPROVE",
@@ -1050,7 +1046,7 @@ describe("getApprovalStates", () => {
     mockSend.mockResolvedValueOnce({
       approvals: [{ userArn: "arn:aws:iam::123456789012:user/taro", approvalState: "APPROVE" }],
     });
-    const result = await getApprovalStates(mockClient, {
+    const result = await getApprovalStates({
       pullRequestId: "42",
       revisionId: "rev-1",
     });
@@ -1060,7 +1056,7 @@ describe("getApprovalStates", () => {
 
   it("returns empty array when no approvals", async () => {
     mockSend.mockResolvedValueOnce({ approvals: undefined });
-    const result = await getApprovalStates(mockClient, {
+    const result = await getApprovalStates({
       pullRequestId: "42",
       revisionId: "rev-1",
     });
@@ -1072,7 +1068,7 @@ describe("getApprovalStates", () => {
     error.name = "PullRequestDoesNotExistException";
     mockSend.mockRejectedValueOnce(error);
     await expect(
-      getApprovalStates(mockClient, {
+      getApprovalStates({
         pullRequestId: "42",
         revisionId: "rev-1",
       }),
@@ -1090,7 +1086,7 @@ describe("evaluateApprovalRules", () => {
         approvalRulesNotSatisfied: [],
       },
     });
-    const result = await evaluateApprovalRules(mockClient, {
+    const result = await evaluateApprovalRules({
       pullRequestId: "42",
       revisionId: "rev-1",
     });
@@ -1108,7 +1104,7 @@ describe("evaluateApprovalRules", () => {
         approvalRulesNotSatisfied: ["RequireOneApproval"],
       },
     });
-    const result = await evaluateApprovalRules(mockClient, {
+    const result = await evaluateApprovalRules({
       pullRequestId: "42",
       revisionId: "rev-1",
     });
@@ -1118,7 +1114,7 @@ describe("evaluateApprovalRules", () => {
 
   it("returns null when evaluation is undefined", async () => {
     mockSend.mockResolvedValueOnce({ evaluation: undefined });
-    const result = await evaluateApprovalRules(mockClient, {
+    const result = await evaluateApprovalRules({
       pullRequestId: "42",
       revisionId: "rev-1",
     });
@@ -1129,7 +1125,7 @@ describe("evaluateApprovalRules", () => {
     const error = new Error("no rules");
     mockSend.mockRejectedValueOnce(error);
     await expect(
-      evaluateApprovalRules(mockClient, {
+      evaluateApprovalRules({
         pullRequestId: "42",
         revisionId: "rev-1",
       }),
@@ -1143,20 +1139,20 @@ describe("getBlobContent", () => {
     mockSend.mockResolvedValueOnce({
       content: encoder.encode("const x = 1;"),
     });
-    const content = await getBlobContent(mockClient, "my-service", "blob1");
+    const content = await getBlobContent("my-service", "blob1");
     expect(content).toBe("const x = 1;");
   });
 
   it("returns empty string when no content", async () => {
     mockSend.mockResolvedValueOnce({ content: undefined });
-    const content = await getBlobContent(mockClient, "my-service", "blob1");
+    const content = await getBlobContent("my-service", "blob1");
     expect(content).toBe("");
   });
 
   it("returns placeholder for oversized content (>1MB)", async () => {
     const largeContent = new Uint8Array(1024 * 1024 + 1);
     mockSend.mockResolvedValueOnce({ content: largeContent });
-    const content = await getBlobContent(mockClient, "my-service", "blob1");
+    const content = await getBlobContent("my-service", "blob1");
     expect(content).toBe("[File too large to display]");
   });
 });
@@ -1166,7 +1162,7 @@ describe("mergePullRequest", () => {
     const mockPR = { pullRequestId: "42", pullRequestStatus: "CLOSED" };
     mockSend.mockResolvedValueOnce({ pullRequest: mockPR });
 
-    const result = await mergePullRequest(mockClient, {
+    const result = await mergePullRequest({
       pullRequestId: "42",
       repositoryName: "my-service",
       strategy: "fast-forward",
@@ -1186,7 +1182,7 @@ describe("mergePullRequest", () => {
     const mockPR = { pullRequestId: "42", pullRequestStatus: "CLOSED" };
     mockSend.mockResolvedValueOnce({ pullRequest: mockPR });
 
-    const result = await mergePullRequest(mockClient, {
+    const result = await mergePullRequest({
       pullRequestId: "42",
       repositoryName: "my-service",
       strategy: "squash",
@@ -1201,7 +1197,7 @@ describe("mergePullRequest", () => {
     const mockPR = { pullRequestId: "42", pullRequestStatus: "CLOSED" };
     mockSend.mockResolvedValueOnce({ pullRequest: mockPR });
 
-    const result = await mergePullRequest(mockClient, {
+    const result = await mergePullRequest({
       pullRequestId: "42",
       repositoryName: "my-service",
       strategy: "three-way",
@@ -1215,7 +1211,7 @@ describe("mergePullRequest", () => {
   it("passes sourceCommitId when provided", async () => {
     mockSend.mockResolvedValueOnce({ pullRequest: { pullRequestId: "42" } });
 
-    await mergePullRequest(mockClient, {
+    await mergePullRequest({
       pullRequestId: "42",
       repositoryName: "my-service",
       sourceCommitId: "abc123",
@@ -1232,7 +1228,7 @@ describe("mergePullRequest", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      mergePullRequest(mockClient, {
+      mergePullRequest({
         pullRequestId: "42",
         repositoryName: "my-service",
         strategy: "fast-forward",
@@ -1244,7 +1240,7 @@ describe("mergePullRequest", () => {
     mockSend.mockResolvedValueOnce({ pullRequest: undefined });
 
     await expect(
-      mergePullRequest(mockClient, {
+      mergePullRequest({
         pullRequestId: "42",
         repositoryName: "my-service",
         strategy: "fast-forward",
@@ -1260,7 +1256,7 @@ describe("getMergeConflicts", () => {
       conflictMetadataList: [],
     });
 
-    const result = await getMergeConflicts(mockClient, {
+    const result = await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc123",
       destinationCommitId: "def456",
@@ -1283,7 +1279,7 @@ describe("getMergeConflicts", () => {
       ],
     });
 
-    const result = await getMergeConflicts(mockClient, {
+    const result = await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc123",
       destinationCommitId: "def456",
@@ -1303,7 +1299,7 @@ describe("getMergeConflicts", () => {
       conflictMetadataList: [{ filePath: undefined, numberOfConflicts: 1 }],
     });
 
-    const result = await getMergeConflicts(mockClient, {
+    const result = await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc123",
       destinationCommitId: "def456",
@@ -1315,7 +1311,7 @@ describe("getMergeConflicts", () => {
 
   it("maps merge strategy to correct mergeOption", async () => {
     mockSend.mockResolvedValueOnce({ mergeable: true, conflictMetadataList: [] });
-    await getMergeConflicts(mockClient, {
+    await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc",
       destinationCommitId: "def",
@@ -1324,7 +1320,7 @@ describe("getMergeConflicts", () => {
     expect(mockSend.mock.calls[0]![0]!.input.mergeOption).toBe("FAST_FORWARD_MERGE");
 
     mockSend.mockResolvedValueOnce({ mergeable: true, conflictMetadataList: [] });
-    await getMergeConflicts(mockClient, {
+    await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc",
       destinationCommitId: "def",
@@ -1333,7 +1329,7 @@ describe("getMergeConflicts", () => {
     expect(mockSend.mock.calls[1]![0]!.input.mergeOption).toBe("SQUASH_MERGE");
 
     mockSend.mockResolvedValueOnce({ mergeable: true, conflictMetadataList: [] });
-    await getMergeConflicts(mockClient, {
+    await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc",
       destinationCommitId: "def",
@@ -1348,7 +1344,7 @@ describe("getMergeConflicts", () => {
       conflictMetadataList: undefined,
     });
 
-    const result = await getMergeConflicts(mockClient, {
+    const result = await getMergeConflicts({
       repositoryName: "my-service",
       sourceCommitId: "abc",
       destinationCommitId: "def",
@@ -1368,7 +1364,7 @@ describe("getMergeConflicts", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      getMergeConflicts(mockClient, {
+      getMergeConflicts({
         repositoryName: "my-service",
         sourceCommitId: "abc",
         destinationCommitId: "def",
@@ -1383,7 +1379,7 @@ describe("closePullRequest", () => {
     const mockPR = { pullRequestId: "42", pullRequestStatus: "CLOSED" };
     mockSend.mockResolvedValueOnce({ pullRequest: mockPR });
 
-    const result = await closePullRequest(mockClient, {
+    const result = await closePullRequest({
       pullRequestId: "42",
     });
 
@@ -1404,7 +1400,7 @@ describe("closePullRequest", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      closePullRequest(mockClient, {
+      closePullRequest({
         pullRequestId: "42",
       }),
     ).rejects.toThrow("already closed");
@@ -1414,14 +1410,18 @@ describe("closePullRequest", () => {
     mockSend.mockResolvedValueOnce({ pullRequest: undefined });
 
     await expect(
-      closePullRequest(mockClient, {
+      closePullRequest({
         pullRequestId: "42",
       }),
     ).rejects.toThrow("Empty close response from CodeCommit API.");
   });
 });
 
-describe("getCommit", () => {
+// The walk stops at parent123 (the merge base) or at a root commit.
+const getCommit = async (repo: string, id: string) =>
+  (await getCommitsForPR(repo, id, "parent123"))[0]!;
+
+describe("getCommitsForPR reading one commit", () => {
   it("returns CommitInfo with correct fields", async () => {
     mockSend.mockResolvedValueOnce({
       commit: {
@@ -1436,7 +1436,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "abc1234567890");
+    const result = await getCommit("my-service", "abc1234567890");
     expect(result.commitId).toBe("abc1234567890");
     expect(result.shortId).toBe("abc1234");
     expect(result.message).toBe("Fix login timeout");
@@ -1447,7 +1447,7 @@ describe("getCommit", () => {
 
   it("throws when commit is undefined", async () => {
     mockSend.mockResolvedValueOnce({ commit: undefined });
-    await expect(getCommit(mockClient, "my-service", "nonexistent")).rejects.toThrow(
+    await expect(getCommit("my-service", "nonexistent")).rejects.toThrow(
       "Commit nonexistent not found.",
     );
   });
@@ -1462,7 +1462,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "abc1234");
+    const result = await getCommit("my-service", "abc1234");
     expect(result.message).toBe("First line");
   });
 
@@ -1476,7 +1476,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "abc1234");
+    const result = await getCommit("my-service", "abc1234");
     expect(result.authorName).toBe("unknown");
   });
 
@@ -1491,7 +1491,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "abc1234");
+    const result = await getCommit("my-service", "abc1234");
     expect(result.authorDate.getTime()).toBeGreaterThanOrEqual(before);
   });
 
@@ -1505,7 +1505,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "abc1234");
+    const result = await getCommit("my-service", "abc1234");
     expect(result.message).toBe("");
   });
 
@@ -1519,7 +1519,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "abc1234");
+    const result = await getCommit("my-service", "abc1234");
     expect(result.parentIds).toEqual([]);
   });
 
@@ -1533,7 +1533,7 @@ describe("getCommit", () => {
       },
     });
 
-    const result = await getCommit(mockClient, "my-service", "fallback123");
+    const result = await getCommit("my-service", "fallback123");
     expect(result.commitId).toBe("fallback123");
     expect(result.shortId).toBe("fallbac");
   });
@@ -1568,7 +1568,7 @@ describe("getCommitsForPR", () => {
       },
     });
 
-    const result = await getCommitsForPR(mockClient, "my-service", "commit3", "base");
+    const result = await getCommitsForPR("my-service", "commit3", "base");
     expect(result).toHaveLength(3);
     expect(result[0]!.commitId).toBe("commit1");
     expect(result[1]!.commitId).toBe("commit2");
@@ -1585,13 +1585,13 @@ describe("getCommitsForPR", () => {
       },
     });
 
-    const result = await getCommitsForPR(mockClient, "my-service", "commit1", "base");
+    const result = await getCommitsForPR("my-service", "commit1", "base");
     expect(result).toHaveLength(1);
     expect(result[0]!.commitId).toBe("commit1");
   });
 
   it("returns empty array when sourceCommit equals mergeBase", async () => {
-    const result = await getCommitsForPR(mockClient, "my-service", "base", "base");
+    const result = await getCommitsForPR("my-service", "base", "base");
     expect(result).toHaveLength(0);
     expect(mockSend).not.toHaveBeenCalled();
   });
@@ -1606,7 +1606,7 @@ describe("getCommitsForPR", () => {
       },
     });
 
-    const result = await getCommitsForPR(mockClient, "my-service", "orphan", "base");
+    const result = await getCommitsForPR("my-service", "orphan", "base");
     expect(result).toHaveLength(1);
     expect(result[0]!.commitId).toBe("orphan");
   });
@@ -1624,7 +1624,7 @@ describe("getCommitsForPR", () => {
       });
     }
 
-    const result = await getCommitsForPR(mockClient, "my-service", "commit-0", "unreachable");
+    const result = await getCommitsForPR("my-service", "commit-0", "unreachable");
     expect(result).toHaveLength(100);
   });
 });
@@ -1640,7 +1640,7 @@ describe("getAllDifferences", () => {
       ],
     });
 
-    const result = await getAllDifferences(mockClient, "my-service", "parent1", "commit1");
+    const result = await getAllDifferences("my-service", "parent1", "commit1");
     expect(result).toHaveLength(1);
     expect(result[0]!.afterBlob?.path).toBe("src/auth.ts");
   });
@@ -1648,14 +1648,14 @@ describe("getAllDifferences", () => {
   it("returns empty array when no differences", async () => {
     mockSend.mockResolvedValueOnce({ differences: undefined });
 
-    const result = await getAllDifferences(mockClient, "my-service", "parent1", "commit1");
+    const result = await getAllDifferences("my-service", "parent1", "commit1");
     expect(result).toHaveLength(0);
   });
 
   it("passes correct commit specifiers", async () => {
     mockSend.mockResolvedValueOnce({ differences: [] });
 
-    await getAllDifferences(mockClient, "my-service", "parentABC", "commitDEF");
+    await getAllDifferences("my-service", "parentABC", "commitDEF");
 
     const sentCommand = mockSend.mock.calls[0]![0];
     expect(sentCommand.input).toEqual(
@@ -1677,7 +1677,7 @@ describe("getAllDifferences", () => {
       NextToken: undefined,
     });
 
-    const result = await getAllDifferences(mockClient, "my-service", "parent1", "commit1");
+    const result = await getAllDifferences("my-service", "parent1", "commit1");
     expect(result).toHaveLength(2);
     expect(mockSend).toHaveBeenCalledTimes(2);
   });
@@ -1692,7 +1692,7 @@ describe("updateComment", () => {
     };
     mockSend.mockResolvedValueOnce({ comment: mockComment });
 
-    const result = await updateComment(mockClient, {
+    const result = await updateComment({
       commentId: "comment-1",
       content: "Updated content",
     });
@@ -1714,7 +1714,7 @@ describe("updateComment", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      updateComment(mockClient, {
+      updateComment({
         commentId: "comment-1",
         content: "New content",
       }),
@@ -1725,7 +1725,7 @@ describe("updateComment", () => {
     mockSend.mockResolvedValueOnce({ comment: undefined });
 
     await expect(
-      updateComment(mockClient, {
+      updateComment({
         commentId: "comment-1",
         content: "Updated",
       }),
@@ -1743,7 +1743,7 @@ describe("deleteComment", () => {
     };
     mockSend.mockResolvedValueOnce({ comment: mockComment });
 
-    const result = await deleteComment(mockClient, {
+    const result = await deleteComment({
       commentId: "comment-1",
     });
 
@@ -1764,7 +1764,7 @@ describe("deleteComment", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      deleteComment(mockClient, {
+      deleteComment({
         commentId: "comment-1",
       }),
     ).rejects.toThrow("already deleted");
@@ -1774,7 +1774,7 @@ describe("deleteComment", () => {
     mockSend.mockResolvedValueOnce({ comment: undefined });
 
     await expect(
-      deleteComment(mockClient, {
+      deleteComment({
         commentId: "comment-1",
       }),
     ).rejects.toThrow("Empty delete response from CodeCommit API.");
@@ -1785,7 +1785,7 @@ describe("putReaction", () => {
   it("sends PutCommentReactionCommand with correct parameters", async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await putReaction(mockClient, {
+    await putReaction({
       commentId: "comment-1",
       reactionValue: ":thumbsup:",
     });
@@ -1806,7 +1806,7 @@ describe("putReaction", () => {
     mockSend.mockRejectedValueOnce(error);
 
     await expect(
-      putReaction(mockClient, {
+      putReaction({
         commentId: "comment-1",
         reactionValue: ":thumbsup:",
       }),
@@ -1834,7 +1834,7 @@ describe("getReactionsForComments", () => {
       ],
     });
 
-    const result = await getReactionsForComments(mockClient, ["comment-1"]);
+    const result = await getReactionsForComments(["comment-1"]);
     expect(result.get("comment-1")).toEqual([
       {
         emoji: "👍",
@@ -1856,7 +1856,7 @@ describe("getReactionsForComments", () => {
       reactionsForComment: undefined,
     });
 
-    const result = await getReactionsForComments(mockClient, ["comment-1"]);
+    const result = await getReactionsForComments(["comment-1"]);
     expect(result.size).toBe(0);
   });
 
@@ -1871,7 +1871,7 @@ describe("getReactionsForComments", () => {
       ],
     });
 
-    const result = await getReactionsForComments(mockClient, ["comment-1"]);
+    const result = await getReactionsForComments(["comment-1"]);
     expect(result.get("comment-1")?.[0]!.count).toBe(4);
   });
 
@@ -1886,7 +1886,7 @@ describe("getReactionsForComments", () => {
       ],
     });
 
-    const result = await getReactionsForComments(mockClient, ["comment-1"]);
+    const result = await getReactionsForComments(["comment-1"]);
     expect(result.get("comment-1")).toEqual([
       {
         emoji: "",
@@ -1917,7 +1917,7 @@ describe("getReactionsForComments", () => {
       ],
     });
 
-    const result = await getReactionsForComments(mockClient, ["c1", "c2"]);
+    const result = await getReactionsForComments(["c1", "c2"]);
     expect(result.size).toBe(2);
     expect(result.get("c1")?.[0]!.emoji).toBe("👍");
     expect(result.get("c2")?.[0]!.emoji).toBe("🎉");
@@ -1935,14 +1935,14 @@ describe("getReactionsForComments", () => {
       ],
     });
 
-    const result = await getReactionsForComments(mockClient, ["c1", "c2"]);
+    const result = await getReactionsForComments(["c1", "c2"]);
     expect(result.size).toBe(1);
     expect(result.has("c1")).toBe(false);
     expect(result.get("c2")?.[0]!.emoji).toBe("👍");
   });
 
   it("returns empty Map for empty commentIds list", async () => {
-    const result = await getReactionsForComments(mockClient, []);
+    const result = await getReactionsForComments([]);
     expect(result.size).toBe(0);
     expect(mockSend).not.toHaveBeenCalled();
   });
@@ -1964,7 +1964,7 @@ describe("getReactionsForComments", () => {
         }),
     );
 
-    await getReactionsForComments(mockClient, ids);
+    await getReactionsForComments(ids);
     expect(maxConcurrent).toBe(15);
     expect(mockSend).toHaveBeenCalledTimes(30);
   });
@@ -1984,7 +1984,7 @@ describe("getPullRequestActivity", () => {
       nextToken: "token123",
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events).toHaveLength(1);
     expect(result.events[0]!.eventType).toBe("PULL_REQUEST_CREATED");
     expect(result.events[0]!.description).toBe("created this PR");
@@ -1998,7 +1998,7 @@ describe("getPullRequestActivity", () => {
       nextToken: undefined,
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events).toHaveLength(0);
     expect(result.nextToken).toBeUndefined();
   });
@@ -2009,7 +2009,7 @@ describe("getPullRequestActivity", () => {
       nextToken: undefined,
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events).toHaveLength(0);
   });
 
@@ -2024,14 +2024,14 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.eventType).toBe("UNKNOWN");
   });
 
   it("passes nextToken for pagination", async () => {
     mockSend.mockResolvedValueOnce({ pullRequestEvents: [], nextToken: undefined });
 
-    await getPullRequestActivity(mockClient, { pullRequestId: "42", nextToken: "prevToken" });
+    await getPullRequestActivity({ pullRequestId: "42", nextToken: "prevToken" });
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({ nextToken: "prevToken" }),
@@ -2041,7 +2041,7 @@ describe("getPullRequestActivity", () => {
 
   it("propagates API errors", async () => {
     mockSend.mockRejectedValueOnce(new Error("PullRequestDoesNotExistException"));
-    await expect(getPullRequestActivity(mockClient, { pullRequestId: "999" })).rejects.toThrow(
+    await expect(getPullRequestActivity({ pullRequestId: "999" })).rejects.toThrow(
       "PullRequestDoesNotExistException",
     );
   });
@@ -2058,7 +2058,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("closed this PR");
   });
 
@@ -2074,7 +2074,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("reopened this PR");
   });
 
@@ -2090,7 +2090,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("approved this PR");
   });
 
@@ -2106,7 +2106,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("revoked approval");
   });
 
@@ -2124,7 +2124,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("merged this PR");
   });
 
@@ -2139,7 +2139,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("PULL_REQUEST_UNKNOWN_FUTURE_TYPE");
   });
 
@@ -2154,7 +2154,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.actorArn).toBe("");
   });
 
@@ -2169,7 +2169,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("updated the source branch");
   });
 
@@ -2185,7 +2185,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe('created approval rule "2 approvers"');
   });
 
@@ -2201,7 +2201,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe('deleted approval rule "old-rule"');
   });
 
@@ -2217,7 +2217,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe('updated approval rule "my-rule"');
   });
 
@@ -2233,7 +2233,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("overrode approval rules");
   });
 
@@ -2249,7 +2249,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("revoked approval rule override");
   });
 
@@ -2264,7 +2264,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("approvals reset (source branch updated)");
   });
 
@@ -2280,7 +2280,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("changed PR status");
   });
 
@@ -2298,7 +2298,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("merge state changed");
   });
 
@@ -2314,7 +2314,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("changed approval rule override");
   });
 
@@ -2330,7 +2330,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe("changed approval state");
   });
 
@@ -2345,7 +2345,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.eventDate).toEqual(new Date(0));
   });
 
@@ -2361,7 +2361,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe('created approval rule ""');
   });
 
@@ -2377,7 +2377,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe('deleted approval rule ""');
   });
 
@@ -2393,7 +2393,7 @@ describe("getPullRequestActivity", () => {
       ],
     });
 
-    const result = await getPullRequestActivity(mockClient, { pullRequestId: "42" });
+    const result = await getPullRequestActivity({ pullRequestId: "42" });
     expect(result.events[0]!.description).toBe('updated approval rule ""');
   });
 });
