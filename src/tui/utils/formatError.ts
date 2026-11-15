@@ -108,6 +108,7 @@ export function formatErrorMessage(
 
   if (
     name === "NetworkingError" ||
+    name === "TimeoutError" ||
     err.message.includes("ECONNREFUSED") ||
     err.message.includes("ETIMEDOUT")
   ) {

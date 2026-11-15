@@ -81,13 +81,15 @@ describe("resolveContext", () => {
 
   it("treats --repo naming another repository as outside the clone", async () => {
     const ctx = await resolveContext({ repo: "other", git: fakeGit(), env: {}, config: {} });
-    expect(ctx).toEqual({ repository: "other" });
+    expect(ctx).toEqual({ repository: "other", otherClone: expect.stringContaining("of demo") });
   });
 
   it("treats --region naming another region as outside the clone", async () => {
     // Same name, other region: a different repository, so origin is not its remote.
     const ctx = await resolveContext({ region: "us-east-1", git: fakeGit(), env: {}, config: {} });
-    expect(ctx).toEqual({ repository: "demo", region: "us-east-1" });
+    expect(ctx).toMatchObject({ repository: "demo", region: "us-east-1" });
+    expect(ctx.clone).toBeUndefined();
+    expect(ctx.otherClone).toMatch(/^this clone is of demo in [a-z0-9-]+, and --repo or --region/);
   });
 
   it.each([

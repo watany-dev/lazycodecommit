@@ -154,12 +154,12 @@ describe("context and errors", () => {
   it("shows other errors by name, with a stack under LAZYCC_DEBUG", async () => {
     const api = fakeApi([], {
       listPullRequestIds: async () => {
-        throw Object.assign(new Error("no such repo"), { name: "RepositoryDoesNotExistException" });
+        throw Object.assign(new Error("no such repo"), { name: "InvalidRepositoryNameException" });
       },
     });
     expect(await cli(["pr", "list"], { api })).toMatchObject({
       code: 1,
-      err: "lazycc: RepositoryDoesNotExistException: no such repo",
+      err: "lazycc: InvalidRepositoryNameException: no such repo",
     });
     const debug = await cli(["pr", "list"], { api, env: { LAZYCC_DEBUG: "1" } });
     expect(debug.err).toContain("at ");
