@@ -55,7 +55,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc | ホーム(受信箱)の TUI を開く | 可 |
 | lazycc status | ホームと同じ内容をテキストで出す | 可 |
 | lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
-| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30) | 可 |
+| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30)。-L N は作成が新しい N 件を、最終更新の新しい順に並べて出す(gh pr list と同じく作成順で絞る) | 可 |
 | lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
 | lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |

@@ -84,7 +84,7 @@ Usage:
   lazycc                 home: PRs awaiting your approval and your own, across repositories
   lazycc status
   lazycc pr create [-B base] [-H head] [-t title] [-b body | -F file] [--fill] [--push | --no-push] [--dry-run]
-  lazycc pr list [--state open|closed] [-L limit]
+  lazycc pr list [--state open|closed] [-L limit]   the newest N created, most recently active first
   lazycc pr view [<id>]
   lazycc pr status
   lazycc pr checkout <id>
