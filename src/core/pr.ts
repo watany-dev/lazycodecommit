@@ -33,8 +33,11 @@ export interface PrDeps {
   readonly interactive: boolean;
   confirm(question: string): Promise<boolean>;
   edit(text: string): Promise<string>;
-  /** File contents, or null when the file does not exist. */
-  readFile(path: string): Promise<string | null>;
+  /**
+   * Null when the file does not exist. Rejects when `within` is given and the
+   * path, symlinks resolved, is not inside that directory.
+   */
+  readFile(path: string, within?: string): Promise<string | null>;
   /** Progress for the user, on stderr. */
   note(line: string): void;
 }
@@ -191,7 +194,12 @@ async function readBodyFile(path: string, deps: PrDeps): Promise<string> {
 
 async function readTemplate(root: string, deps: PrDeps): Promise<string | undefined> {
   const path = deps.config.pr?.template ?? DEFAULT_TEMPLATE;
-  return (await deps.readFile(isAbsolute(path) ? path : join(root, path))) ?? undefined;
+  // A repository-relative template comes from whoever can push: a symlink in it
+  // must not pull ~/.aws/credentials or /proc/self/environ into the PR body.
+  const text = isAbsolute(path)
+    ? await deps.readFile(path)
+    : await deps.readFile(join(root, path), root);
+  return text ?? undefined;
 }
 
 function shortRef(ref: string): string {

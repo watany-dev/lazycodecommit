@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +27,23 @@ describe("processIo", () => {
     expect(await io.readFile(join(dir, "a"))).toBe("hello");
     expect(await io.readFile(join(dir, "missing"))).toBeNull();
     await expect(io.readFile(dir)).rejects.toThrow();
+  });
+
+  it("refuses a file that resolves outside `within`, such as a symlink a repository ships", async () => {
+    const root = join(dir, "clone");
+    await mkdir(join(root, ".codecommit"), { recursive: true });
+    await writeFile(join(dir, "secret"), "AWS_SECRET_ACCESS_KEY=x");
+    await writeFile(join(root, "inside.md"), "ok");
+    await symlink(join(dir, "secret"), join(root, ".codecommit", "abs.md"));
+    await symlink("../../secret", join(root, ".codecommit", "rel.md"));
+    await symlink("../inside.md", join(root, ".codecommit", "inside.md"));
+    const io = processIo();
+    for (const name of ["abs.md", "rel.md"]) {
+      await expect(io.readFile(join(root, ".codecommit", name), root)).rejects.toThrow("outside");
+    }
+    expect(await io.readFile(join(root, ".codecommit", "inside.md"), root)).toBe("ok");
+    expect(await io.readFile(join(root, "missing.md"), root)).toBeNull();
+    expect(await io.readFile(join(dir, "secret"))).toBe("AWS_SECRET_ACCESS_KEY=x");
   });
 
   it("returns what the editor saved", async () => {
