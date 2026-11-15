@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 
 // One key: a CSI or SS3 sequence, Alt plus a key, a lone Esc, or one code point.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is control characters
+// oxlint-disable-next-line no-control-regex -- terminal input is control characters
 const KEY = /\u001b\[[0-?]*[ -/]*[@-~]|\u001bO.|\u001b[\s\S]|[\s\S]/gu;
 
 /** The keys in one chunk of terminal input, each as the terminal sent it. */
@@ -46,8 +47,9 @@ export function keyStream(source: Source): Source {
     }
     waiting = true;
     stream.push(key);
-    // A macrotask later: React has committed and useInput holds the new handler.
-    setTimeout(next, 16);
+    // About a frame: by then React has committed and useInput holds the new
+    // handler. Less than ~8 ms was measured too short.
+    setTimeout(next, KEY_GAP_MS);
   };
   const onData = (data: Buffer | string) => {
     queue.push(...deliveries(typeof data === "string" ? data : data.toString("utf8")));
@@ -56,7 +58,7 @@ export function keyStream(source: Source): Source {
   return Object.assign(stream, {
     isTTY: source.isTTY,
     setRawMode(mode: boolean) {
-      source.setRawMode?.(mode);
+      source.setRawMode(mode);
       return this;
     },
     setEncoding() {
@@ -66,13 +68,13 @@ export function keyStream(source: Source): Source {
     // so a prompt or editor run between screens keeps its input.
     ref() {
       source.on("data", onData);
-      source.ref?.();
+      source.ref();
       return this;
     },
     unref() {
       source.off("data", onData);
       source.pause();
-      source.unref?.();
+      source.unref();
       return this;
     },
   }) as unknown as Source;

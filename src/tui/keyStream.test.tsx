@@ -78,6 +78,10 @@ describe("keyStream", () => {
     });
     t.source.write("jjjjj\u001b[Ajjxy");
     await vi.waitFor(() => expect(t.frame()).toContain("count=107 typed=xy"), { timeout: 2000 });
+    // Input after the queue has drained starts it again.
+    await new Promise((r) => setTimeout(r, 50));
+    t.source.write(Buffer.from("j"));
+    await vi.waitFor(() => expect(t.frame()).toContain("count=108"), { timeout: 2000 });
     app.unmount();
     expect(t.source.setRawMode).toHaveBeenCalledWith(true);
     expect(t.source.unref).toHaveBeenCalled();
