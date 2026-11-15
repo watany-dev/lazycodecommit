@@ -17,6 +17,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 
 | Command | What it does |
 | --- | --- |
+| `lazycc status` | Your inbox across the watched repositories: open PRs awaiting your approval, and your own open PRs with their approval rules and conflicts. ● marks activity since you last opened the PR |
 | `lazycc pr create` | Push the current branch if needed and open a PR. The draft comes from the commits and `.codecommit/pull_request_template.md`; `--fill` skips the editor, `--dry-run` only shows it |
 | `lazycc pr list` | List PRs (`--state open\|closed`, `--limit`). On a terminal, a bare `pr list` opens the PR list screen |
 | `lazycc pr view [id]` | Show a PR; without an id, the current branch's. On a terminal it opens the review screen |
@@ -41,10 +42,17 @@ filters and Ctrl+r runs `git fetch --prune` and reloads. A branch counts as
 merged when a merged PR's source commit is its tip; the last
 `branch.closedPrLookback` closed PRs (default 100) are checked.
 
-Every command takes `--profile`, `--region` and `--json`; the `pr` commands
-and `branch` also take `-R/--repo`.
+Every command takes `--profile`, `--region` and `--json`; the `pr` commands,
+`branch` and `status` also take `-R/--repo`.
+
+`status` watches the repositories in the config's `repos`; without it, the
+clone you are in. "Awaiting your approval" means open, not yours, not yet
+approved by you, and either without approval rules or with you in a rule's
+approval pool ([ADR 0005](docs/adr/0005-awaiting-my-approval.md)). It saves
+your ARN, what you have opened, and its last result under
+`~/.local/state/lazycc/` (`XDG_STATE_HOME`).
 Exit codes: 0 success, 1 error, 2 bad arguments. Optional settings live in
-`~/.config/lazycc/config.json` (`profile`, `region`, `pr.template`,
+`~/.config/lazycc/config.json` (`profile`, `region`, `repos`, `pr.template`,
 `concurrency`, `branch.closedPrLookback`).
 
 ## Development
