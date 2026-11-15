@@ -200,8 +200,10 @@ jobs:
           semgrep/semgrep@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b
           semgrep scan --config p/default --error --sarif-output=semgrep.sarif
       # Fork PRs get a read-only token and cannot upload; their findings still
-      # fail the scan step above.
+      # fail the scan step above. The upload is reporting only, so a failure
+      # here (code scanning switched off) does not fail the job.
       - name: Upload SARIF to code scanning
+        continue-on-error: true
         if: >-
           ${{ always() && hashFiles('semgrep.sarif') != ''
           && (github.event_name != 'pull_request'

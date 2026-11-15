@@ -64,9 +64,10 @@ when a maintainer, workflow, or job name changes.
 do not allow Actions to create or approve pull requests; require actions to
 be pinned to a full-length commit SHA.
 
-**Security** (Settings → Advanced Security): private vulnerability reporting
-(SECURITY.md points to it), Dependabot alerts, secret scanning with push
-protection.
+**Security** (Settings → Advanced Security): code scanning on (Semgrep's
+SARIF upload is skipped with a warning while it is off), private
+vulnerability reporting (SECURITY.md points to it), Dependabot alerts,
+secret scanning with push protection.
 
 ## Releases
 

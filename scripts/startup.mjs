@@ -16,7 +16,11 @@ for (let i = 0; i < RUNS; i++) {
   const r = spawnSync(process.execPath, [bin, "--version"], { stdio: "ignore" });
   times.push(performance.now() - start);
   if (r.status !== 0) {
-    console.error(`startup: ${bin} --version failed:`, r.error ?? r.signal ?? `exit ${r.status}`);
+    console.error(
+      "startup: %s --version failed: %s",
+      bin,
+      r.error ?? r.signal ?? `exit ${r.status}`,
+    );
     process.exit(1);
   }
 }
