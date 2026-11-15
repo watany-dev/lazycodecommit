@@ -422,9 +422,9 @@ describe("cache", () => {
 
   it("does not take a mark for the same PR id in another account", () => {
     const other = new Map([["us-east-1/999999999999/1", new Date("2026-12-01T00:00:00Z")]]);
-    const unread = (seen: ReadonlyMap<string, Date>) =>
-      withUnread(inbox, "us-east-1", seen).items.map((i) => i.unread);
-    expect(unread(other)).toEqual(unread(new Map()));
-    expect(unread(new Map())[0]).toBe(true);
+    const marks = withUnread(inbox, "us-east-1", other).items.map((i) => i.unread);
+    const none = withUnread(inbox, "us-east-1", new Map()).items.map((i) => i.unread);
+    expect(marks).toEqual(none);
+    expect(none[0]).toBe(true);
   });
 });

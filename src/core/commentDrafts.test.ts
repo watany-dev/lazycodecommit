@@ -143,8 +143,7 @@ describe("submitDrafts", () => {
       throw new Error("killed");
     });
     await submitDrafts([d], first.deps);
-    const cut = { ...saved[0]!, problem: undefined };
-    delete (cut as { problem?: unknown }).problem;
+    const { problem: _problem, ...cut } = saved[0]!;
     expect(cut.sent).toEqual(OLD);
     expect(canEdit(cut)).toBe(false);
     expect(reanchor([cut], NEW, () => undefined)).toEqual([cut]);

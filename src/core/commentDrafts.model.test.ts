@@ -15,6 +15,10 @@ import {
  * parameters returns the first comment; with other parameters it is refused.
  * Each call can be refused, lost before it lands, or lost after it lands.
  */
+/** An answer from CodeCommit with this HTTP status. */
+const status = (code: number) =>
+  Object.assign(new Error(`HTTP ${code}`), { $metadata: { httpStatusCode: code } });
+
 type Fault = "ok" | "refuse" | "lostBefore" | "lostAfter" | "crashAfter";
 
 class FakeCodeCommit {
@@ -25,8 +29,6 @@ class FakeCodeCommit {
 
   async post(draft: CommentDraft, commits: Commits, token: string): Promise<void> {
     const fault = this.faults.shift() ?? "ok";
-    const status = (code: number) =>
-      Object.assign(new Error(`HTTP ${code}`), { $metadata: { httpStatusCode: code } });
     if (fault === "refuse") throw status(400);
     if (fault === "lostBefore")
       throw Object.assign(new Error("timed out"), { name: "TimeoutError" });
