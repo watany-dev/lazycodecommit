@@ -287,3 +287,36 @@ export async function pullRequestStatus(
   ]);
   return { branch, pr, approvers, rules, mergeable };
 }
+
+export interface CheckoutResult {
+  readonly pr: PullRequest;
+  readonly branch: string;
+  /** A local branch was created to track origin. */
+  readonly created: boolean;
+}
+
+/** Fetches the PR's source branch and switches to it, like `gh pr checkout`. */
+export async function checkoutPullRequest(
+  id: string,
+  deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
+): Promise<CheckoutResult> {
+  if (!deps.ctx.clone) throw new UsageError("pr checkout works inside a clone of the repository");
+  const { git } = deps;
+  const pr = await resolvePullRequest(id, deps);
+  const branch = pr.sourceBranch;
+  const remote = `refs/remotes/origin/${branch}`;
+  try {
+    await git.fetch([`+refs/heads/${branch}:${remote}`]);
+  } catch (error) {
+    const hint = pr.status === "CLOSED" ? " (the source branch may have been deleted)" : "";
+    throw new UserError(`git fetch origin ${branch} failed: ${(error as Error).message}${hint}`);
+  }
+  if ((await git.resolveCommit(`refs/heads/${branch}`)) === null) {
+    await git.switchBranch(branch, { track: `origin/${branch}` });
+    return { pr, branch, created: true };
+  }
+  if ((await git.currentBranch()) !== branch) await git.switchBranch(branch);
+  // Refuses, with git's own message, when the local branch has diverged.
+  await git.fastForward(remote);
+  return { pr, branch, created: false };
+}

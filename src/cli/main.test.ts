@@ -386,3 +386,81 @@ describe("pr status", () => {
     });
   });
 });
+
+describe("pr checkout", () => {
+  it("switches to the PR's branch and says so on stderr", async () => {
+    const api = fakeApi([pullRequest({ id: "6", sourceBranch: "feature/y" })]);
+    const switched: string[] = [];
+    const r = await cli(["pr", "checkout", "6"], {
+      api,
+      git: { resolveCommit: async () => null, switchBranch: async (b) => void switched.push(b) },
+    });
+    expect(r).toMatchObject({ code: 0, out: "" });
+    expect(r.err).toBe("Switched to a new branch feature/y tracking origin/feature/y (#6).");
+    expect(switched).toEqual(["feature/y"]);
+  });
+
+  it("prints JSON, and reports an updated existing branch", async () => {
+    const api = fakeApi([pullRequest({ id: "6" })]);
+    const r = await cli(["pr", "checkout", "6", "--json"], { api });
+    expect(json(r.out)).toMatchObject({
+      branch: "topic",
+      created: false,
+      pullRequest: { id: "6" },
+    });
+    expect((await cli(["pr", "checkout", "6"], { api })).err).toBe(
+      "Switched to topic, up to date with origin/topic (#6).",
+    );
+  });
+
+  it("needs an id", async () => {
+    const r = await cli(["pr", "checkout"]);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("pr checkout needs a pull request id");
+  });
+});
+
+describe("clone", () => {
+  it("clones by repository name, passing a directory and git flags through", async () => {
+    const cloned: unknown[] = [];
+    const r = await cli(["clone", "other", "dir", "--", "--depth", "1"], {
+      git: { clone: async (url, args) => void cloned.push([url, args]) },
+    });
+    expect(r.code).toBe(0);
+    expect(cloned).toEqual([
+      ["https://git-codecommit.us-west-2.amazonaws.com/v1/repos/other", ["dir", "--depth", "1"]],
+    ]);
+    expect(r.apiOptions).toEqual([{}]);
+  });
+
+  it("builds a git-remote-codecommit URL from the flags and prints JSON", async () => {
+    const r = await cli([
+      "clone",
+      "other",
+      "--protocol",
+      "grc",
+      "--profile",
+      "dev",
+      "--region",
+      "eu-west-1",
+      "--json",
+    ]);
+    expect(json(r.out)).toEqual({ repository: "other", url: "codecommit::eu-west-1://dev@other" });
+  });
+
+  it("needs a repository name and rejects --repo", async () => {
+    expect((await cli(["clone"])).err).toContain("clone needs a repository name");
+    expect((await cli(["clone", "a", "-R", "b"])).err).toContain("Unknown option '-R'");
+  });
+
+  it("reports a failed clone", async () => {
+    const r = await cli(["clone", "other"], {
+      git: {
+        clone: async () => {
+          throw new GitError(["clone"], "", 128);
+        },
+      },
+    });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: git clone failed" });
+  });
+});

@@ -116,6 +116,58 @@ describe("createGit", () => {
     await expect(createGit(work).push("main")).rejects.toBeInstanceOf(GitError);
   });
 
+  it("fetches a branch into its remote-tracking ref", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("topic work");
+    sh(work, "push", "-q", "origin", "topic");
+    const tip = sh(work, "rev-parse", "topic");
+    sh(work, "switch", "-q", "main");
+    sh(work, "branch", "-q", "-D", "topic");
+    sh(work, "update-ref", "-d", "refs/remotes/origin/topic");
+    const git = createGit(work);
+    await git.fetch(["+refs/heads/topic:refs/remotes/origin/topic"]);
+    expect(await git.resolveCommit("refs/remotes/origin/topic")).toBe(tip);
+    await expect(git.fetch(["refs/heads/nope:refs/remotes/origin/nope"])).rejects.toBeInstanceOf(
+      GitError,
+    );
+  });
+
+  it("creates a tracking branch, switches, and fast-forwards", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("one");
+    sh(work, "push", "-q", "-u", "origin", "topic");
+    sh(work, "switch", "-q", "main");
+    sh(work, "branch", "-q", "-D", "topic");
+    const git = createGit(work);
+    await git.switchBranch("topic", { track: "origin/topic" });
+    expect(await git.currentBranch()).toBe("topic");
+    expect(sh(work, "rev-parse", "--abbrev-ref", "topic@{upstream}")).toBe("origin/topic");
+
+    sh(work, "reset", "-q", "--hard", "HEAD~1");
+    await git.switchBranch("main");
+    await git.switchBranch("topic");
+    await git.fastForward("origin/topic");
+    expect(sh(work, "rev-parse", "topic")).toBe(sh(work, "rev-parse", "origin/topic"));
+
+    await expect(git.switchBranch("nope")).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("refuses a fast-forward when the branches diverged", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("mine");
+    sh(work, "switch", "-q", "main");
+    await commit("theirs");
+    sh(work, "switch", "-q", "topic");
+    await expect(createGit(work).fastForward("main")).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("clones into a directory", async () => {
+    const git = createGit(dir);
+    await git.clone(bare, ["copy"]);
+    expect(sh(join(dir, "copy"), "rev-parse", "HEAD")).toBe(sh(work, "rev-parse", "HEAD"));
+    await expect(git.clone(join(dir, "missing.git"), [])).rejects.toBeInstanceOf(GitError);
+  });
+
   it("rejects when git cannot start", async () => {
     await expect(createGit(join(dir, "gone")).topLevel()).rejects.toThrow();
     await expect(createGit(join(dir, "gone")).push("main")).rejects.toThrow();

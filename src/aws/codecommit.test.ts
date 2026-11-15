@@ -125,6 +125,17 @@ describe("createCodeCommitApi", () => {
     expect(await api.defaultBranch("demo")).toBeUndefined();
   });
 
+  it("reads the clone URLs", async () => {
+    cc.on(GetRepositoryCommand).resolves({
+      repositoryMetadata: { cloneUrlHttp: "https://h/demo", cloneUrlSsh: "ssh://h/demo" },
+    });
+    expect(await api.cloneUrls("demo")).toEqual({ https: "https://h/demo", ssh: "ssh://h/demo" });
+    cc.on(GetRepositoryCommand).resolves({
+      repositoryMetadata: { cloneUrlHttp: "https://h/demo" },
+    });
+    await expect(api.cloneUrls("demo")).rejects.toThrow("no clone URL for demo");
+  });
+
   it("reads a branch tip, or undefined when it does not exist", async () => {
     cc.on(GetBranchCommand, { branchName: "topic" }).resolves({ branch: { commitId: "c1" } });
     const missing = Object.assign(new Error("no"), { name: "BranchDoesNotExistException" });

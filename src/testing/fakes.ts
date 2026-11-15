@@ -10,6 +10,10 @@ export function fakeGit(overrides: Partial<Git> = {}): Git {
     unpushedCount: async () => 0,
     commits: async (): Promise<Commit[]> => [{ subject: "Add thing", body: "Because." }],
     push: async () => {},
+    fetch: async () => {},
+    switchBranch: async () => {},
+    fastForward: async () => {},
+    clone: async () => {},
     ...overrides,
   };
 }
@@ -44,6 +48,10 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     created,
     region: async () => "us-west-2",
     defaultBranch: async () => "main",
+    cloneUrls: async (repo) => ({
+      https: `https://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
+      ssh: `ssh://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
+    }),
     branchCommit: async (_repo, branch) => (branch === "missing" ? undefined : "r0ffee"),
     listPullRequestIds: async (_repo, status, limit) =>
       prs
