@@ -325,16 +325,30 @@ function asDraft(v: unknown): CommentDraft | undefined {
   };
 }
 
-/** A PR's drafts on disk, by PR id, for the review screen. */
+/** A PR's drafts on disk, by draftKey, for the review screen. */
 export interface DraftStorage {
-  load(pullRequestId: string): Promise<CommentDraft[]>;
-  save(pullRequestId: string, drafts: readonly CommentDraft[]): Promise<void>;
+  load(key: string): Promise<CommentDraft[]>;
+  save(key: string, drafts: readonly CommentDraft[]): Promise<void>;
+}
+
+/**
+ * What a PR's drafts are kept under, besides the region. PR ids are unique per
+ * account and region only, so without the account a user who reviews in two
+ * accounts would be offered, and could post, one PR's drafts on another's.
+ * The author's ARN names the account that owns the PR.
+ */
+export function draftKey(pr: {
+  readonly pullRequestId?: string | undefined;
+  readonly authorArn?: string | undefined;
+}): string {
+  const account = pr.authorArn?.split(":")[4] || "unknown";
+  return `${account}/${pr.pullRequestId ?? ""}`;
 }
 
 /** drafts.json, keyed like seen.json: PR ids are unique per region. */
 export function draftStorage(store: LocalState["drafts"], region: string): DraftStorage {
   return {
-    load: async (id) => parseDrafts(await store.get(seenKey(region, id))),
-    save: (id, drafts) => store.set(seenKey(region, id), drafts),
+    load: async (key) => parseDrafts(await store.get(seenKey(region, key))),
+    save: (key, drafts) => store.set(seenKey(region, key), drafts),
   };
 }
