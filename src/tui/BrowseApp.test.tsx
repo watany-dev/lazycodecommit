@@ -73,15 +73,26 @@ function actions(over: Partial<BrowseActions> = {}): BrowseActions {
 
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
+// The rendered app's frame, for press to wait on.
+let frame: () => string | undefined = () => undefined;
+
 async function setup(a = actions(), path = "", ready = "README.md") {
   const r = render(<BrowseApp actions={a} path={path} />);
+  frame = r.lastFrame;
   await vi.waitFor(() => expect(r.lastFrame()).toContain(ready));
   return { ...r, a };
 }
 
+/**
+ * Sends each key once the last one has redrawn the screen (or a key that
+ * changes nothing has had its moment): a key sent before the app re-renders
+ * reaches the previous render's handler, which a slow runner makes likely.
+ */
 async function press(stdin: { write: (s: string) => void }, ...keys: string[]) {
   for (const k of keys) {
+    const before = frame();
     stdin.write(k);
+    await vi.waitFor(() => expect(frame()).not.toBe(before), { timeout: 300 }).catch(() => {});
     await tick();
   }
 }
