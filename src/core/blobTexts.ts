@@ -1,5 +1,5 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
-import { mapLimit } from "../aws/codecommit.js";
+import { mapLimit } from "../aws/mapLimit.js";
 import type { ReviewService } from "./review.js";
 
 type Blobs = Pick<ReviewService, "getBlobContent">;

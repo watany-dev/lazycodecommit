@@ -2,7 +2,8 @@ import { CodeCommitClient, ListPullRequestsCommand } from "@aws-sdk/client-codec
 import { mockClient } from "aws-sdk-client-mock";
 import * as fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCodeCommitApi, mapLimit } from "./codecommit.js";
+import { createCodeCommitApi } from "./codecommit.js";
+import { mapLimit } from "./mapLimit.js";
 
 const cc = mockClient(CodeCommitClient);
 afterEach(() => cc.reset());

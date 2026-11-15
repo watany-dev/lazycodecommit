@@ -1,17 +1,20 @@
 import {
   CodeCommitClient,
   CreatePullRequestCommand,
+  DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
   GetBranchCommand,
   GetMergeConflictsCommand,
   GetPullRequestApprovalStatesCommand,
   GetPullRequestCommand,
   GetRepositoryCommand,
+  ListBranchesCommand,
   ListPullRequestsCommand,
 } from "@aws-sdk/client-codecommit";
 import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCodeCommitApi, mapLimit, type PullRequest, toPullRequest } from "./codecommit.js";
+import { createCodeCommitApi, type PullRequest, toPullRequest } from "./codecommit.js";
+import { mapLimit } from "./mapLimit.js";
 
 const cc = mockClient(CodeCommitClient);
 afterEach(() => cc.reset());
@@ -123,6 +126,26 @@ describe("createCodeCommitApi", () => {
   it("returns undefined for an empty repository", async () => {
     cc.on(GetRepositoryCommand).resolves({ repositoryMetadata: {} });
     expect(await api.defaultBranch("demo")).toBeUndefined();
+  });
+
+  it("lists every branch across pages", async () => {
+    cc.on(ListBranchesCommand, { nextToken: undefined }).resolves({
+      branches: ["a"],
+      nextToken: "t",
+    });
+    cc.on(ListBranchesCommand, { nextToken: "t" }).resolves({ branches: ["b"] });
+    expect(await api.listBranches("demo")).toEqual(["a", "b"]);
+    cc.on(ListBranchesCommand).resolves({});
+    expect(await api.listBranches("demo")).toEqual([]);
+  });
+
+  it("deletes a branch", async () => {
+    cc.on(DeleteBranchCommand).resolves({});
+    await api.deleteBranch("demo", "old");
+    expect(cc.commandCalls(DeleteBranchCommand)[0]?.args[0].input).toEqual({
+      repositoryName: "demo",
+      branchName: "old",
+    });
   });
 
   it("reads the clone URLs", async () => {

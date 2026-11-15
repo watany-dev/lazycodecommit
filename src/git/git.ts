@@ -33,6 +33,13 @@ interface LoggedCommit {
   readonly subject: string;
 }
 
+interface RemoteBranch {
+  readonly name: string;
+  readonly tip: string;
+  readonly date: Date;
+  readonly author: string;
+}
+
 /** The only door to git (spec: "git を呼ぶのはこの層だけ"). */
 export interface Git {
   /** Repository root, or null outside a work tree. */
@@ -55,8 +62,15 @@ export interface Git {
   push(branch: string): Promise<void>;
   /** `git fetch origin <refspec>...`, with git's output on stderr unless `quiet` (under the TUI). */
   fetch(refspecs: readonly string[], opts?: { readonly quiet: boolean }): Promise<void>;
-  /** `git switch <branch>`, or `git switch -c <branch> --track <track>` to create it. */
-  switchBranch(branch: string, opts?: { readonly track: string }): Promise<void>;
+  /**
+   * `git switch <branch>` (which creates a tracking branch for a branch only on
+   * origin), or `git switch -c <branch> --track <track>`. `quiet` keeps git's
+   * output off the terminal, for the TUI.
+   */
+  switchBranch(
+    branch: string,
+    opts?: { readonly track?: string; readonly quiet?: boolean },
+  ): Promise<void>;
   /** `git merge --ff-only <ref>` into the checked-out branch. */
   fastForward(ref: string): Promise<void>;
   /** `git clone <url> [args...]` in the working directory. */
@@ -69,6 +83,10 @@ export interface Git {
   blob(id: string): Promise<Buffer>;
   /** Up to `max` commits in `base..head` along first parents, oldest first. */
   firstParentLog(base: string, head: string, max: number): Promise<LoggedCommit[]>;
+  /** The remote-tracking branches of origin, by name, without origin/HEAD. */
+  remoteBranches(): Promise<RemoteBranch[]>;
+  /** Commits `head` has that `base` lacks (ahead) and the reverse (behind). */
+  aheadBehind(base: string, head: string): Promise<{ ahead: number; behind: number }>;
 }
 
 const FIELD = "\x1f";
@@ -157,8 +175,13 @@ export function createGit(cwd: string): Git {
       if (opts?.quiet) await required(["-c", "advice.fetchShowForcedUpdates=false", ...args]);
       else await streamed(args);
     },
-    switchBranch: (branch, opts) =>
-      streamed(opts ? ["switch", "-c", branch, "--track", opts.track] : ["switch", branch]),
+    async switchBranch(branch, opts) {
+      const args = opts?.track
+        ? ["switch", "-c", branch, "--track", opts.track]
+        : ["switch", branch];
+      if (opts?.quiet) await required(args);
+      else await streamed(args);
+    },
     fastForward: (ref) => streamed(["merge", "--ff-only", ref]),
     clone: (url, args) => streamed(["clone", url, ...args]),
     mergeBase: (a, b) => value(["merge-base", a, b]),
@@ -193,6 +216,28 @@ export function createGit(cwd: string): Git {
           },
         );
       });
+    },
+
+    async remoteBranches() {
+      const out = await required([
+        "for-each-ref",
+        `--format=%(refname:lstrip=3)${FIELD}%(objectname)${FIELD}%(committerdate:iso-strict)${FIELD}%(authorname)`,
+        "refs/remotes/origin",
+      ]);
+      return out
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => {
+          const [name = "", tip = "", date = "", author = ""] = line.split(FIELD);
+          return { name, tip, date: new Date(date), author };
+        })
+        .filter((b) => b.name !== "HEAD");
+    },
+
+    async aheadBehind(base, head) {
+      const out = await required(["rev-list", "--left-right", "--count", `${base}...${head}`]);
+      const [behind = 0, ahead = 0] = out.trim().split(/\s+/).map(Number);
+      return { ahead, behind };
     },
 
     async firstParentLog(base, head, max) {

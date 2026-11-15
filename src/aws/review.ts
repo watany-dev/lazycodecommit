@@ -29,7 +29,7 @@ import {
   UpdatePullRequestApprovalStateCommand,
   UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
-import { mapLimit } from "./codecommit.js";
+import { mapLimit } from "./mapLimit.js";
 
 const textDecoder = new TextDecoder();
 
