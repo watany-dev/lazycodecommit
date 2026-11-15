@@ -16,7 +16,13 @@ lazycc runs without any configuration. Everything here is optional.
     "mergeOption": "squash"
   },
   "branch": { "closedPrLookback": 100 },
-  "concurrency": 8
+  "concurrency": 8,
+  "ci": {
+    "my-service": {
+      "codebuild": ["my-service-pr-check"],
+      "codepipeline": ["my-service-release"]
+    }
+  }
 }
 ```
 
@@ -29,6 +35,7 @@ lazycc runs without any configuration. Everything here is optional.
 | `pr.mergeOption` | `"ff"`, `"squash"` or `"three-way"` | none | The merge strategy `pr merge` uses when given none of `--ff`, `--squash`, `--three-way`, and the one selected first in the review screen's merge picker. Without it, `pr merge` needs a flag |
 | `branch.closedPrLookback` | positive integer | 100 | How many recent closed PRs the branch table checks to tell whether a branch was merged |
 | `concurrency` | positive integer | 8 | How many API calls run at once when reading many repositories or PRs |
+| `ci.<repo>.codebuild`, `ci.<repo>.codepipeline` | arrays of strings | none | CodeBuild projects and CodePipeline pipelines whose runs are the repository's CI results. See [CI results](#ci-results) |
 
 A config file that is not valid JSON, or has a value of the wrong type, stops
 every command with an error naming the file and the key. Unknown keys are
@@ -36,6 +43,25 @@ ignored, so a config written for a newer lazycc still loads.
 
 When the repository picker saves `repos`, it rewrites the file with two-space
 indents and keeps the other keys.
+
+## CI results
+
+CodeCommit does not link a pull request to CodeBuild or CodePipeline, so
+lazycc links them by commit: for each project and pipeline listed under the
+repository in `ci`, it reads the 20 newest runs and shows the newest one that
+built the PR's source commit (a build's `resolvedSourceVersion`, an
+execution's source revision). `pr view` and `pr status` print one line per
+project and pipeline, and add `checks` to their `--json` output.
+
+The runs are read in the same region and with the same credentials as the
+repository, and need `codebuild:ListBuildsForProject`,
+`codebuild:BatchGetBuilds` and `codepipeline:ListPipelineExecutions`. A
+repository without an entry in `ci` calls none of them. A lookup that fails
+(a missing permission, a misspelt name) is shown on its line and does not
+stop the command.
+
+A pipeline that only builds the default branch has no run for an open PR's
+source commit, so its line says `no run`.
 
 ## Region and profile
 
