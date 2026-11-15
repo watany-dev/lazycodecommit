@@ -28,6 +28,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 | `lazycc pr close [id]` | Close a PR without merging |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc clone <repo> [dir]` | Clone by repository name. `--protocol https\|ssh\|grc` picks the URL (default `https`; `grc` is git-remote-codecommit); flags after `--` go to `git clone` |
+| `lazycc completion bash\|zsh\|fish` | Print a shell completion script, e.g. `source <(lazycc completion bash)` in `~/.bashrc`, or `lazycc completion fish > ~/.config/fish/completions/lazycc.fish` |
 
 The review screen is the one from
 [review-codecommit](https://github.com/watany-dev/review-codecommit), with the
