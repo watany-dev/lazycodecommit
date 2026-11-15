@@ -351,4 +351,18 @@ describe("ActivityTimeline", () => {
     await settle();
     expect(screen.lastFrame()).toMatch(/> .*event 9/);
   });
+
+  it("fits the screen in a short terminal, with the cursor on it", async () => {
+    const events = Array.from({ length: 50 }, (_, i) =>
+      makeEvent({ description: `event-${String(i).padStart(2, "0")}` }),
+    );
+    const screen = render(<ActivityTimeline {...defaultProps} events={events} />);
+    Object.defineProperty(screen.stdout, "rows", { value: 12, configurable: true });
+    screen.rerender(<ActivityTimeline {...defaultProps} events={[...events]} />);
+    await vi.waitFor(() => expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(12));
+    expect(screen.lastFrame()).toContain("> 📝");
+    for (let i = 0; i < 49; i++) screen.stdin.write("j");
+    await vi.waitFor(() => expect(screen.lastFrame()).toMatch(/> .*event-49/));
+    expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(12);
+  });
 });

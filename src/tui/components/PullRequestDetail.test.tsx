@@ -8104,5 +8104,21 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("... truncated 300/1600 lines");
       expect(lastFrame()).not.toContain("... truncated 600/1600 lines");
     });
+
+    it("fits the screen in a short terminal, with the cursor on it", async () => {
+      const text = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
+      const screen = renderDetail({
+        differences: [{ afterBlob: { blobId: "x", path: "a.txt" } }],
+        diffTexts: new Map([[":x", { before: "", after: text }]]),
+      });
+      Object.defineProperty(screen.stdout, "rows", { value: 24, configurable: true });
+      await press(screen, "j", "k");
+      const frame = () => screen.lastFrame()!.split("\n");
+      expect(frame().length).toBeLessThanOrEqual(24);
+      expect(frame().some((l) => /^ *> +a\.txt/.test(l))).toBe(true);
+      await press(screen, "G");
+      expect(frame().length).toBeLessThanOrEqual(24);
+      expect(frame().some((l) => /^ *>/.test(l))).toBe(true);
+    });
   });
 });

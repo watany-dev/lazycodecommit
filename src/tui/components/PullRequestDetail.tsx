@@ -1,5 +1,5 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CHECK_COLOR, CHECK_MARK, type Checks, noRun } from "../../core/checks.js";
 import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
@@ -315,7 +315,24 @@ export function PullRequestDetail({
       reactionTarget ||
       showDrafts,
   );
-  const visibleLineCount = dialogOpen || showFileList ? 20 : 30;
+  const { stdout } = useStdout();
+  const hasRules =
+    (approval.evaluation?.approvalRulesSatisfied?.length ?? 0) +
+      (approval.evaluation?.approvalRulesNotSatisfied?.length ?? 0) >
+    0;
+  // The rows around the diff: padding, the header lines, the key line (two
+  // rows when it wraps), and the optional rules, CI and commit lines.
+  const chromeLines =
+    10 +
+    (hasRules ? 2 : 0) +
+    (checks ? 2 + checks.runs.length : 0) +
+    (commits.length > 0 || commitsAvailable ? (viewIndex >= 0 ? 2 : 1) : 0) +
+    (isLoadingCommitDiff && viewIndex >= 0 ? 1 : 0);
+  // A box, prompt or list below the diff takes about ten more.
+  const visibleLineCount = Math.max(
+    (stdout.rows || 24) - chromeLines - (dialogOpen || showFileList ? 10 : 0),
+    3,
+  );
 
   useKeys((input, key) => {
     // File list mode: handle its own keys before the modal guard
