@@ -1,0 +1,72 @@
+# Configuration
+
+lazycc runs without any configuration. Everything here is optional.
+
+## Config file
+
+`~/.config/lazycc/config.json`, or `$XDG_CONFIG_HOME/lazycc/config.json`.
+
+```json
+{
+  "profile": "dev",
+  "region": "ap-northeast-1",
+  "repos": ["my-service", "my-infra"],
+  "pr": { "template": ".codecommit/pull_request_template.md" },
+  "branch": { "closedPrLookback": 100 },
+  "concurrency": 8
+}
+```
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `profile` | string | none | AWS profile, used when no flag, remote or `AWS_PROFILE` gives one |
+| `region` | string | none | AWS region, used when no flag, remote or `AWS_REGION` / `AWS_DEFAULT_REGION` gives one |
+| `repos` | array of strings | none | Repositories the home screen and `status` watch. Without it, the clone you are in. The repository picker's `w` edits this list |
+| `pr.template` | string | `.codecommit/pull_request_template.md` | PR body template for `pr create`, relative to the clone's root |
+| `pr.mergeOption` | `"ff"`, `"squash"` or `"three-way"` | none | Accepted and validated, but not used yet: `pr merge` still needs one of `--ff`, `--squash`, `--three-way` |
+| `branch.closedPrLookback` | positive integer | 100 | How many recent closed PRs the branch table checks to tell whether a branch was merged |
+| `concurrency` | positive integer | 8 | How many API calls run at once when reading many repositories or PRs |
+
+A config file that is not valid JSON, or has a value of the wrong type, stops
+every command with an error naming the file and the key. Unknown keys are
+ignored, so a config written for a newer lazycc still loads.
+
+When the repository picker saves `repos`, it rewrites the file with two-space
+indents and keeps the other keys.
+
+## Region and profile
+
+Taken from the first of:
+
+1. The `--region` / `--profile` flags
+2. Inside a clone, the `origin` remote URL
+3. `AWS_REGION`, then `AWS_DEFAULT_REGION` / `AWS_PROFILE`
+4. The config file
+5. The AWS SDK's defaults (`~/.aws/config` and so on)
+
+## Environment variables
+
+| Variable | Used for |
+| --- | --- |
+| `AWS_PROFILE`, `AWS_REGION`, `AWS_DEFAULT_REGION` | See above |
+| `VISUAL`, `EDITOR` | The editor for `pr create` and `pr comment` (default `vi`). Run through the shell, so `EDITOR="code --wait"` works |
+| `XDG_CONFIG_HOME` | Where the config file lives |
+| `XDG_STATE_HOME` | Where local state lives |
+
+Credentials themselves come from the SDK's default chain, so the usual
+`AWS_ACCESS_KEY_ID` and friends apply.
+
+## Local state
+
+lazycc keeps a few files under `~/.local/state/lazycc/`
+(`$XDG_STATE_HOME/lazycc/`):
+
+| File | Contents |
+| --- | --- |
+| `seen.json` | When you last opened each PR, for the unread marker |
+| `cache.json` | The home screen's last result, shown while it refreshes |
+| `identity.json` | Your ARN per profile, from `sts:GetCallerIdentity` |
+
+They are safe to delete. A damaged file is discarded and rebuilt rather than
+stopping lazycc. In CloudShell the home directory persists per region, so
+unread state survives between sessions in the same region.
