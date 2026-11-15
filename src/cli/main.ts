@@ -5,6 +5,7 @@ import { explainAwsError } from "../aws/errors.js";
 import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { cloneRepository } from "../core/clone.js";
+import { draftStorage } from "../core/commentDrafts.js";
 import {
   type AccountContext,
   type ContextInput,
@@ -402,6 +403,7 @@ async function runCommand(
       start,
       region,
       markSeen,
+      drafts: draftStorage(local.drafts, region),
       ...optional("mergeStrategy", preferredStrategy(config)),
       ...optional("profile", ctx.profile),
       ...(ctx.clone ? { git } : {}),
@@ -745,6 +747,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     markSeen: (id) => {
       state.seen.mark(seenKey(region, id), new Date()).catch(() => {});
     },
+    drafts: draftStorage(state.drafts, region),
     ...optional("mergeStrategy", preferredStrategy(config)),
     ...optional("profile", ctx.profile),
     ...(cloneRepo ? { git, cloneRepository: cloneRepo } : {}),

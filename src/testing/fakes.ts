@@ -137,6 +137,7 @@ export interface FakeState extends LocalState {
   readonly identities: Map<string, string>;
   readonly seenAt: Map<string, Date>;
   readonly sections: Map<string, unknown>;
+  readonly draftLists: Map<string, unknown>;
 }
 
 /** LocalState in memory. */
@@ -144,10 +145,12 @@ export function fakeState(): FakeState {
   const identities = new Map<string, string>();
   const seenAt = new Map<string, Date>();
   const sections = new Map<string, unknown>();
+  const draftLists = new Map<string, unknown>();
   return {
     identities,
     seenAt,
     sections,
+    draftLists,
     flush: async () => {},
     identity: {
       get: async (k) => identities.get(k),
@@ -156,6 +159,13 @@ export function fakeState(): FakeState {
     seen: {
       all: async () => new Map(seenAt),
       mark: async (k, at) => void seenAt.set(k, at),
+    },
+    drafts: {
+      get: async (k) => draftLists.get(k),
+      set: async (k, v) =>
+        void (v.length === 0
+          ? draftLists.delete(k)
+          : draftLists.set(k, JSON.parse(JSON.stringify(v)))),
     },
     cache: {
       get: async (k) => sections.get(k),

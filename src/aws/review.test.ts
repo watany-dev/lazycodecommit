@@ -576,6 +576,19 @@ describe("postComment", () => {
     );
   });
 
+  it("passes the client request token so a retry does not post twice", async () => {
+    mockSend.mockResolvedValueOnce({ comment: { commentId: "c" } });
+    await postComment(mockClient, {
+      pullRequestId: "42",
+      repositoryName: "my-service",
+      beforeCommitId: "def456",
+      afterCommitId: "abc123",
+      content: "x",
+      clientRequestToken: "tok-1",
+    });
+    expect(mockSend.mock.calls[0]![0].input.clientRequestToken).toBe("tok-1");
+  });
+
   it("propagates API errors", async () => {
     const error = new Error("Access denied");
     error.name = "AccessDeniedException";
@@ -900,6 +913,16 @@ describe("postCommentReply", () => {
         },
       }),
     );
+  });
+
+  it("passes the client request token", async () => {
+    mockSend.mockResolvedValueOnce({ comment: { commentId: "r" } });
+    await postCommentReply(mockClient, {
+      inReplyTo: "c1",
+      content: "x",
+      clientRequestToken: "tok-2",
+    });
+    expect(mockSend.mock.calls[0]![0].input.clientRequestToken).toBe("tok-2");
   });
 
   it("propagates API errors", async () => {

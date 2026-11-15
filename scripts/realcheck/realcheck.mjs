@@ -4,6 +4,7 @@
 // docs/dev/real-aws-check.md. It creates one repository named
 // lazycc-realcheck-<timestamp>, works only inside it, and deletes it at the end.
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -234,7 +235,8 @@ async function confirm() {
     `realcheck will, in ${region}${opt.profile ? ` as profile ${opt.profile}` : ""}:`,
     `  create CodeCommit repository ${repoName} (it must not exist yet),`,
     "  push branches main, feature/one, feature/two to it, open 2 pull requests,",
-    "  comment, approve, merge and close them, delete branch feature/two,",
+    "  comment (including retried posts with a client request token), approve,",
+    "  merge and close them, delete branch feature/two,",
     opt.keep
       ? "  and keep the repository (--keep)."
       : `  then delete repository ${repoName}. No other repository is touched.`,
@@ -790,6 +792,88 @@ async function approvals() {
     );
 }
 
+/** ADR 0009: drafts are posted one at a time with a clientRequestToken; a retry must not post twice. */
+async function draftTokens() {
+  const id = state.pr1;
+  const dir = state.seed;
+  const old = (await getPr(id))?.pullRequestTargets?.[0];
+  if (!old) return record("drafts", "Draft posting checks", "SKIP", "PR 1 unreadable");
+  const at = (t) => ({
+    pullRequestId: id,
+    repositoryName: repoName,
+    beforeCommitId: t.destinationCommit,
+    afterCommitId: t.sourceCommit,
+  });
+  const token = randomUUID();
+  const send = (t, content, tok = token) =>
+    api(
+      "PostCommentForPullRequest (token)",
+      new cc.PostCommentForPullRequestCommand({
+        ...at(t),
+        content,
+        location: { filePath: "src/a.txt", filePosition: 1, relativeFileVersion: "AFTER" },
+        clientRequestToken: tok,
+      }),
+    );
+  const first = await send(old, "realcheck: draft");
+  const again = await send(old, "realcheck: draft");
+  const firstId = first.out?.comment?.commentId;
+  record(
+    "drafts.token.same",
+    "Same token and parameters return the first comment (no second post)",
+    !first.ok ? "FAIL" : again.out?.comment?.commentId === firstId ? "PASS" : "DIFF",
+    !first.ok
+      ? ok(first)
+      : again.ok
+        ? `ids ${firstId} / ${again.out?.comment?.commentId}`
+        : ok(again),
+  );
+  expectError(
+    "drafts.token.changed",
+    "Same token, other content",
+    await send(old, "realcheck: draft (edited)"),
+    "IdempotencyParameterMismatchException",
+    "core/commentDrafts.ts editDraft",
+  );
+  const replyToken = randomUUID();
+  const reply = () =>
+    api(
+      "PostCommentReply (token)",
+      new cc.PostCommentReplyCommand({
+        inReplyTo: firstId,
+        content: "realcheck: draft reply",
+        clientRequestToken: replyToken,
+      }),
+    );
+  const r1 = await reply();
+  const r2 = await reply();
+  record(
+    "drafts.token.reply",
+    "Same reply token returns the first reply",
+    !r1.ok ? "FAIL" : r2.out?.comment?.commentId === r1.out?.comment?.commentId ? "PASS" : "DIFF",
+    r1.ok ? (r2.ok ? "" : ok(r2)) : ok(r1),
+  );
+
+  git(dir, "checkout", "-q", "feature/one");
+  commit(dir, "src/a.txt", "line 0\nline 1\nline 2 changed\nline 3\nline 4\n", "Add line 0");
+  git(dir, "push", "-q", "origin", "feature/one");
+  await sleep(2000);
+  const retried = await send(old, "realcheck: draft");
+  record(
+    "drafts.token.after-push",
+    "After the tip moves, retrying with the old token and commits returns the first comment",
+    retried.out?.comment?.commentId === firstId ? "PASS" : "DIFF",
+    retried.ok ? `id ${retried.out?.comment?.commentId}` : ok(retried),
+  );
+  const stale = await send(old, "realcheck: on the old tip", randomUUID());
+  record(
+    "drafts.stale-tip",
+    "Posting a new comment against the old source tip (ADR 0009 posts on the current tip)",
+    "INFO",
+    stale.ok ? `accepted, afterCommitId ${stale.out?.afterCommitId}` : ok(stale),
+  );
+}
+
 async function merges() {
   const dir = state.seed;
   if (!state.pr2) return record("merge", "Merge checks", "SKIP", "no second PR");
@@ -1278,6 +1362,7 @@ try {
   clones();
   await lastActivity();
   await approvals();
+  await draftTokens();
   await tui();
   await merges();
   await failures();

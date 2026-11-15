@@ -2,6 +2,7 @@ import { type Instance, render } from "ink";
 import type { ReactNode } from "react";
 import type { BranchActions } from "../core/branch.js";
 import type { BrowseActions } from "../core/browse.js";
+import type { DraftStorage } from "../core/commentDrafts.js";
 import type { HomeActions } from "../core/home.js";
 import { type MergeStrategy, openReviewService, type ReviewService } from "../core/review.js";
 import type { Git } from "../git/git.js";
@@ -23,6 +24,8 @@ interface ServiceRequest {
   readonly markSeen?: (pullRequestId: string) => void;
   /** The config's pr.mergeOption, preselected in the merge dialog. */
   readonly mergeStrategy?: MergeStrategy;
+  /** drafts.json: unposted review comments survive leaving the screen. */
+  readonly drafts?: DraftStorage;
 }
 
 export interface ReviewRequest extends ServiceRequest {
@@ -75,6 +78,7 @@ function service(request: ServiceRequest): ReviewService {
     ...s,
     ...(request.markSeen ? { markSeen: request.markSeen } : {}),
     ...(request.mergeStrategy ? { mergeStrategy: request.mergeStrategy } : {}),
+    ...(request.drafts ? { drafts: request.drafts } : {}),
   };
 }
 

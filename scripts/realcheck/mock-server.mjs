@@ -74,6 +74,45 @@ export function startMockServer(gitRoot) {
   const repos = new Map();
   const prs = new Map();
   const comments = [];
+  const postComment = (input, c) => {
+    const pr = prOf(input.pullRequestId);
+    const comment = newComment(input.content, c.caller.arn);
+    comments.push({ ...input, comment });
+    touch(pr, "PULL_REQUEST_COMMENT", c.caller.arn);
+    return {
+      repositoryName: input.repositoryName,
+      pullRequestId: input.pullRequestId,
+      beforeCommitId: input.beforeCommitId,
+      afterCommitId: input.afterCommitId,
+      ...(input.location ? { location: input.location } : {}),
+      comment,
+    };
+  };
+  const postReply = ({ inReplyTo, content }, c) => {
+    const parent = comments.find((x) => x.comment.commentId === inReplyTo);
+    if (!parent) throw new ApiError("CommentDoesNotExistException", "no such comment");
+    const comment = { ...newComment(content, c.caller.arn), inReplyTo };
+    comments.push({ ...parent, comment });
+    touch(prOf(parent.pullRequestId), "PULL_REQUEST_COMMENT", c.caller.arn);
+    return { comment };
+  };
+  // clientRequestToken → the first request's parameters and answer, as CodeCommit keeps them.
+  const tokens = new Map();
+  const idempotent = (input, post) => {
+    const { clientRequestToken: token, ...params } = input;
+    if (!token) return post();
+    const key = JSON.stringify(params);
+    const seen = tokens.get(token);
+    if (seen && seen.key !== key)
+      throw new ApiError(
+        "IdempotencyParameterMismatchException",
+        "token reused with other parameters",
+      );
+    if (seen) return seen.answer;
+    const answer = post();
+    tokens.set(token, { key, answer });
+    return answer;
+  };
   let nextPr = 1;
 
   const git = (repo, args, input) =>
@@ -266,28 +305,8 @@ export function startMockServer(gitRoot) {
         conflictMetadataList: [],
       };
     },
-    PostCommentForPullRequest(input, c) {
-      const pr = prOf(input.pullRequestId);
-      const comment = newComment(input.content, c.caller.arn);
-      comments.push({ ...input, comment });
-      touch(pr, "PULL_REQUEST_COMMENT", c.caller.arn);
-      return {
-        repositoryName: input.repositoryName,
-        pullRequestId: input.pullRequestId,
-        beforeCommitId: input.beforeCommitId,
-        afterCommitId: input.afterCommitId,
-        ...(input.location ? { location: input.location } : {}),
-        comment,
-      };
-    },
-    PostCommentReply({ inReplyTo, content }, c) {
-      const parent = comments.find((x) => x.comment.commentId === inReplyTo);
-      if (!parent) throw new ApiError("CommentDoesNotExistException", "no such comment");
-      const comment = { ...newComment(content, c.caller.arn), inReplyTo };
-      comments.push({ ...parent, comment });
-      touch(prOf(parent.pullRequestId), "PULL_REQUEST_COMMENT", c.caller.arn);
-      return { comment };
-    },
+    PostCommentForPullRequest: (input, c) => idempotent(input, () => postComment(input, c)),
+    PostCommentReply: (input, c) => idempotent(input, () => postReply(input, c)),
     PutCommentReaction({ commentId }, c) {
       const parent = comments.find((x) => x.comment.commentId === commentId);
       if (!parent) throw new ApiError("CommentDoesNotExistException", "no such comment");
@@ -450,7 +469,7 @@ export function startMockServer(gitRoot) {
               afterBlob: { blobId: meta.split(" ")[2], path, mode: "100644" },
               changeType: "A",
             };
-          const [, , , beforeId, afterId, change] = meta.split(" ");
+          const [, , beforeId, afterId, change] = meta.split(" ");
           const blob = (id) => ({ blobId: id, path, mode: "100644" });
           return {
             ...(change !== "A" ? { beforeBlob: blob(beforeId) } : {}),

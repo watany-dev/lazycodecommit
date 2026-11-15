@@ -105,9 +105,11 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | 7 文字のコミット ID を `GetFolder` / `GetCommit` が受けるか | #22、#23 |
 | HTTPS・grc・SSH の clone と、その clone 内での `pr list` と `pr checkout` | #9、#10、#11 |
 | 期限切れの SSO、権限不足での案内 | #7、`aws/errors.ts` |
+| 同じ `clientRequestToken` での再投稿が最初のコメントを返すか（先端が進んだ後も）、内容を変えると拒否されるか、古い先端に投稿できるか | ADR 0009、`core/commentDrafts.ts` |
 | CloudShell の Node での npx 起動、起動時間（300 ms） | #2、#3、#7 |
 | 各 TUI（レビュー、PR 一覧、ブランチ、ブラウズ、ホーム）が描画され q で終わるか | #10、#11、#22、#27 |
 | clone URL が `core/remote.ts` の形にあうか、呼び出し元 ARN の形 | `core/remote.ts`、`core/inbox.ts` |
+| 手で: トークンを何日覚えているか（自動では確かめない。日をまたいだ再試行で二重投稿しないかは使って確かめる） | ADR 0009 |
 | 手で: コンソール URL（PR、browse、短い ID）、BEFORE 側インラインコメントの行、GovCloud・中国リージョンの URL | #8、#10、#22、#23 |
 
 ## モックで試す
