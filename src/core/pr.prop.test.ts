@@ -94,6 +94,7 @@ async function runCreate(w: World) {
       return w.edited === "keep" ? text : w.edited;
     },
     readFile: async (path) => (path === "/body.md" ? "file body\n" : null),
+    readStdin: async () => "stdin body\n",
     note: () => {},
   };
   try {

@@ -92,7 +92,7 @@ is optional, the current branch's open PR is used.
 | `lazycc pr view [<id>]` | Show a PR. On a terminal it opens the review screen |
 | `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR. Needs a clone |
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it, fast-forwarding an existing local branch. Needs a clone |
-| `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file`, or the editor on a terminal. Closed PRs can be commented on too |
+| `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file` (`-F -` for stdin), or the editor on a terminal. Closed PRs can be commented on too |
 | `lazycc pr approve [<id>]` | Approve; `--revoke` takes the approval back |
 | `lazycc pr merge [<id>]` | Merge with one of `--ff`, `--squash`, `--three-way`, or without a flag by the config's `pr.mergeOption`. Refuses if the source branch moved since the PR was read |
 | `lazycc pr close [<id>]` | Close without merging |
@@ -124,7 +124,7 @@ lazycc pr create -R my-repo -H feature -B main --fill   # outside a clone
   starts from `.codecommit/pull_request_template.md` when the repository has
   one (`pr.template` in the config picks another path).
 - `-B/--base` defaults to the repository's default branch, `-H/--head` to the
-  current branch. `-F/--body-file` reads the body from a file.
+  current branch. `-F/--body-file` reads the body from a file, or from stdin with `-F -`.
 - If the branch has commits that are not on `origin`, a terminal asks before
   pushing. `--push` pushes without asking; `--no-push` stops instead. Without
   a terminal, give `--push`.

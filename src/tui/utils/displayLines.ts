@@ -39,6 +39,11 @@ export function countLines(text: string): number {
   return count;
 }
 
+/** CodeCommit keeps a deleted comment with an empty body; say so rather than show nothing. */
+function commentText(comment: CommentThread["comments"][number]): string {
+  return comment.deleted ? "(deleted)" : (comment.content ?? "");
+}
+
 export function getThreadKey(thread: CommentThread, index: number): string {
   const rootComment = thread.comments.find((comment) => !comment.inReplyTo) ?? thread.comments[0];
   return rootComment?.commentId ?? `thread-${index}`;
@@ -70,7 +75,7 @@ function appendThreadLines(
   const isCollapsed = collapsedThreads.get(threadKey) ?? shouldFold;
 
   const rootAuthor = shortArn(rootComment.authorArn ?? "unknown");
-  const rootContent = rootComment.content ?? "";
+  const rootContent = commentText(rootComment);
   const rootReactionText = formatReactionBadge(reactionsByComment.get(rootComment.commentId ?? ""));
 
   if (mode === "inline") {
@@ -102,7 +107,7 @@ function appendThreadLines(
 
   for (const reply of replies) {
     const author = shortArn(reply.authorArn ?? "unknown");
-    const content = reply.content ?? "";
+    const content = commentText(reply);
     const replyReactionText = formatReactionBadge(reactionsByComment.get(reply.commentId ?? ""));
 
     if (mode === "inline") {
