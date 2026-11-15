@@ -15,6 +15,7 @@ import {
   resolveMe,
   toCache,
   watchedRepositories,
+  withUnread,
 } from "./inbox.js";
 
 const ME = "arn:aws:iam::123456789012:user/me";
@@ -278,9 +279,17 @@ describe("loadDetails", () => {
     expect(await loadDetails(mine, api)).toEqual({ ...mine, detailError: "boom" });
   });
 
-  it("loads all rows in order", async () => {
-    const out = await loadAllDetails([awaiting, mine], fakeApi(), 2);
+  it("loads all rows in order and reports each", async () => {
+    const seen: string[] = [];
+    const out = await loadAllDetails(
+      [awaiting, mine],
+      (i) => loadDetails(i, fakeApi()),
+      2,
+      (i) => seen.push(i.section),
+    );
     expect(out.map((i) => i.section)).toEqual(["awaiting", "mine"]);
+    expect(seen.toSorted()).toEqual(["awaiting", "mine"]);
+    expect(await loadAllDetails([mine], (i) => loadDetails(i, fakeApi()), 1)).toHaveLength(1);
   });
 });
 
@@ -369,5 +378,11 @@ describe("cache", () => {
         JSON.stringify(bad),
       ).toBeUndefined();
     }
+  });
+
+  it("recomputes unread marks against seen.json", () => {
+    const seen = new Map([["us-east-1/1", new Date("2026-12-01T00:00:00Z")]]);
+    const fresh = withUnread(inbox, "us-east-1", seen);
+    expect(fresh.items.map((i) => i.unread)).toEqual([false, true]);
   });
 });

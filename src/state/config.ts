@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface Config {
   readonly profile?: string;
@@ -99,4 +99,23 @@ function validate(path: string, raw: unknown): Config {
   if (branch) posInt(branch, "closedPrLookback", "branch.closedPrLookback");
   // Unknown keys are left alone so a newer config still loads in an older lazycc.
   return raw as Config;
+}
+
+/**
+ * Sets `repos` in the config file (the repository picker's w), keeping every
+ * other key. JSON has no comments to lose; the file is rewritten with two-space
+ * indents. A file that does not load is left alone and the error is thrown.
+ */
+export async function saveRepos(
+  env: Readonly<Record<string, string | undefined>>,
+  repos: readonly string[],
+): Promise<void> {
+  const path = configPath(env);
+  const current = { ...(await loadConfig(env)) } as Record<string, unknown>;
+  if (repos.length > 0) current["repos"] = repos;
+  else delete current["repos"];
+  await mkdir(dirname(path), { recursive: true });
+  // In place, not write-and-rename: that would replace a symlinked config
+  // (dotfiles) with a plain file and drop its mode.
+  await writeFile(path, `${JSON.stringify(current, null, 2)}\n`);
 }

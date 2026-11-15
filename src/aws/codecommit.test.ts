@@ -12,6 +12,7 @@ import {
   GetRepositoryCommand,
   ListBranchesCommand,
   ListPullRequestsCommand,
+  ListRepositoriesCommand,
   MergePullRequestByFastForwardCommand,
   MergePullRequestBySquashCommand,
   MergePullRequestByThreeWayCommand,
@@ -154,6 +155,19 @@ describe("createCodeCommitApi", () => {
     expect(await api.callerArn()).toBe("arn:aws:iam::1:user/me");
     sts.on(GetCallerIdentityCommand).resolves({});
     await expect(api.callerArn()).rejects.toThrow("no ARN");
+  });
+
+  it("lists every repository across pages", async () => {
+    cc.on(ListRepositoriesCommand)
+      .resolvesOnce({ repositories: [{ repositoryName: "a" }, {}], nextToken: "t" })
+      .resolves({ repositories: [{ repositoryName: "b" }] });
+    expect(await api.listRepositories()).toEqual(["a", "b"]);
+    expect(cc.commandCalls(ListRepositoriesCommand).map((c) => c.args[0].input)).toEqual([
+      { sortBy: "repositoryName", order: "ascending" },
+      { sortBy: "repositoryName", order: "ascending", nextToken: "t" },
+    ]);
+    cc.on(ListRepositoriesCommand).resolves({});
+    expect(await api.listRepositories()).toEqual([]);
   });
 
   it("returns undefined for an empty repository", async () => {

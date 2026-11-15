@@ -7,7 +7,7 @@ vi.mock("ink", async (importOriginal) => ({
   render: (node: unknown) => render(node),
 }));
 
-const { openBranches, openReview } = await import("./index.js");
+const { openBranches, openHome, openReview } = await import("./index.js");
 
 describe("openReview", () => {
   it("renders the review app and waits for it to exit", async () => {
@@ -16,6 +16,15 @@ describe("openReview", () => {
     const props = render.mock.calls.map(([node]) => (node as { props: object }).props);
     expect(props[0]).toMatchObject({ repository: "demo", start: { pullRequestId: "4" } });
     expect(props[1]).toMatchObject({ start: null });
+  });
+
+  it("gives the service the read marker", async () => {
+    render.mockClear();
+    const markSeen = vi.fn();
+    await openReview({ repository: "demo", start: null, markSeen });
+    const props = (render.mock.calls[0]![0] as { props: { service: { markSeen?: unknown } } })
+      .props;
+    expect(props.service.markSeen).toBe(markSeen);
   });
 });
 
@@ -42,5 +51,33 @@ describe("openBranches", () => {
       ([node]) => (node as { props: { start: unknown } }).props.start,
     );
     expect(starts).toEqual([null, { reviewPullRequestId: "9" }, { message: "Aborted" }]);
+  });
+});
+
+describe("openHome", () => {
+  it("uses git diffs only for the clone's own repository", async () => {
+    render.mockReset();
+    render.mockImplementation(() => ({ waitUntilExit: async () => {} }));
+    const markSeen = vi.fn();
+    await openHome({
+      actions: { markSeen } as never,
+      region: "us-west-2",
+      git: fakeGit(),
+      cloneRepository: "demo",
+    });
+    const { reviewService } = (
+      render.mock.calls[0]![0] as {
+        props: { reviewService: (r: string) => { markSeen?: unknown } };
+      }
+    ).props;
+    expect(reviewService("demo")).not.toBe(reviewService("other"));
+    expect(reviewService("other")).toBe(reviewService("another"));
+    expect(reviewService("demo").markSeen).toBe(markSeen);
+
+    await openHome({ actions: { markSeen } as never });
+    const outside = (
+      render.mock.calls[1]![0] as { props: { reviewService: (r: string) => unknown } }
+    ).props.reviewService;
+    expect(outside("demo")).toBe(outside("other"));
   });
 });

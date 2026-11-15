@@ -7,10 +7,12 @@ import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { cloneRepository } from "../core/clone.js";
 import { type AccountContext, resolveAccountContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
+import { homeActions } from "../core/home.js";
 import {
   fetchInbox,
   isPending,
   loadAllDetails,
+  loadDetails,
   resolveMe,
   toCache,
   watchedRepositories,
@@ -32,8 +34,8 @@ import {
 import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
-import type { LocalState } from "../state/local.js";
-import type { BranchesRequest, BrowseRequest, ReviewRequest } from "../tui/index.js";
+import { type LocalState, seenKey } from "../state/local.js";
+import type { BranchesRequest, BrowseRequest, HomeRequest, ReviewRequest } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
 import {
   branchJson,
@@ -68,11 +70,13 @@ export interface Deps {
   openReview(request: ReviewRequest): Promise<void>;
   openBranches(request: BranchesRequest): Promise<void>;
   openBrowse(request: BrowseRequest): Promise<void>;
+  openHome(request: HomeRequest): Promise<void>;
 }
 
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
 
 Usage:
+  lazycc                 home: PRs awaiting your approval and your own, across repositories
   lazycc status
   lazycc pr create [-B base] [-H head] [-t title] [-b body | -F file] [--fill] [--push | --no-push] [--dry-run]
   lazycc pr list [--state open|closed] [-L limit]
@@ -153,6 +157,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     positionals: 1,
     options: { ref: { type: "string" }, path: { type: "string" } },
   },
+  home: { positionals: 0, options: {} },
 };
 
 const MERGE_FLAGS: Record<string, MergeStrategy> = {
@@ -214,13 +219,27 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
       io.out(version);
       return 0;
     }
-    if (noun === undefined || noun === "--help" || noun === "-h" || noun === "help") {
+    if (noun === "--help" || noun === "-h" || noun === "help") {
       io.out(USAGE);
       return 0;
     }
     let command: string;
     let commandArgs: readonly string[];
-    if (noun === "pr") {
+    if (noun === undefined || noun.startsWith("-")) {
+      // Bare lazycc (flags allowed) opens the home screen.
+      if (!io.interactive) {
+        if (noun === undefined) {
+          io.out(USAGE);
+          return 0;
+        }
+        parse("home", args);
+        throw new UsageError("lazycc without a command needs a terminal; use lazycc status.");
+      }
+      command = "home";
+      commandArgs = args;
+    } else if (noun === "home") {
+      throw new UsageError("Unknown command: home");
+    } else if (noun === "pr") {
       if (verb === undefined || verb === "--help" || verb === "-h") {
         io.out(USAGE);
         return verb === undefined ? 2 : 0;
@@ -254,7 +273,10 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
       if (!SHELLS.includes(shell as Shell))
         throw new UsageError(`completion needs a shell: ${SHELLS.join(", ")}`);
       const table = Object.fromEntries(
-        Object.entries(COMMANDS).map(([name, spec]) => [name, { ...COMMON, ...spec.options }]),
+        Object.entries(COMMANDS)
+          // Bare lazycc is the home screen; "home" is not a word to type.
+          .filter(([name]) => name !== "home")
+          .map(([name, spec]) => [name, { ...COMMON, ...spec.options }]),
       );
       io.out(completionScript(shell as Shell, table).trimEnd());
       return 0;
@@ -296,12 +318,14 @@ async function runCommand(
     env: io.env,
     config,
   };
-  if (command === "status") {
+  if (command === "status" || command === "home") {
     // The config's repos live in the config's region and profile, not the remote's.
     const fromConfig = !input.repo && Boolean(config.repos?.length);
     const account = await resolveAccountContext({ ...input, outsideClone: fromConfig });
     onContext(account);
-    return runStatus(str(values, "repo"), account, config, json, deps);
+    return command === "status"
+      ? runStatus(str(values, "repo"), account, config, json, deps)
+      : runHome(str(values, "repo"), account, config, git, deps);
   }
   const ctx = await resolveContext(input);
   onContext(ctx);
@@ -327,12 +351,18 @@ async function runCommand(
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
   };
+  const local = deps.createState(io.env);
+  // Opening a PR in any review screen counts as reading it on the home screen.
+  const markSeen = (id: string) => {
+    local.seen.mark(seenKey(region, id), new Date()).catch(() => {});
+  };
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
   const review = (start: ReviewRequest["start"]) =>
     deps.openReview({
       repository: ctx.repository,
       start,
       region,
+      markSeen,
       ...optional("profile", ctx.profile),
       ...(ctx.clone ? { git } : {}),
     });
@@ -344,6 +374,7 @@ async function runCommand(
         await deps.openBranches({
           actions: branchActions(branchDeps, region),
           region,
+          markSeen,
           ...optional("profile", ctx.profile),
           ...(ctx.clone ? { git } : {}),
           async createPullRequest(head) {
@@ -560,6 +591,43 @@ async function runCommand(
   }
 }
 
+/** Bare `lazycc`: the home screen (spec: ホーム). */
+async function runHome(
+  flagRepo: string | undefined,
+  ctx: AccountContext,
+  config: Config,
+  git: Git,
+  deps: Deps,
+): Promise<number> {
+  const { io } = deps;
+  const cloneRepo = ctx.clone ? ctx.repository : undefined;
+  const api = await deps.createApi({
+    ...optional("region", ctx.region),
+    ...optional("profile", ctx.profile),
+  });
+  const region = ctx.region ?? (await api.region());
+  const state = deps.createState(io.env);
+  const me = await resolveMe(api, state.identity, ctx.profile, io.env);
+  await deps.openHome({
+    actions: homeActions({
+      api,
+      state,
+      config,
+      env: io.env,
+      region,
+      me,
+      // Nothing to watch: the home opens on the repository picker.
+      initial: watchedRepositories(flagRepo, config, cloneRepo),
+    }),
+    region,
+    ...optional("profile", ctx.profile),
+    ...(cloneRepo ? { git, cloneRepository: cloneRepo } : {}),
+  });
+  // The PR read last (left on quitting) must be saved before the process ends.
+  await state.flush();
+  return 0;
+}
+
 /** `lazycc status`: the home screen as text (spec: ホーム). */
 async function runStatus(
   flagRepo: string | undefined,
@@ -594,7 +662,10 @@ async function runStatus(
     seen: await state.seen.all(),
     concurrency: limit,
   });
-  const inbox = { ...listed, items: await loadAllDetails(listed.items, api, limit) };
+  const inbox = {
+    ...listed,
+    items: await loadAllDetails(listed.items, (i) => loadDetails(i, api), limit),
+  };
   const items = inbox.items.filter((i) => isPending(i, me));
   if (json) printJson(io, inboxJson(inbox, items, region));
   else for (const line of inboxLines(items)) io.out(line);

@@ -5445,4 +5445,71 @@ describe("App", () => {
     expect(listPullRequests).not.toHaveBeenCalled();
     expect(exit).not.toHaveBeenCalled();
   });
+
+  it("marks the PR read when it opens and again when it is left", async () => {
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: { pullRequestId: "42", title: "fix: login", pullRequestTargets: [] },
+      differences: [],
+      commentThreads: [],
+    } as any);
+    const markSeen = vi.fn();
+    const onExit = vi.fn();
+    const { lastFrame, stdin, unmount } = render(
+      <App
+        service={{ ...svc, markSeen }}
+        repository="my-service"
+        start={{ pullRequestId: "42" }}
+        onExit={onExit}
+      />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
+    expect(markSeen).toHaveBeenCalledWith("42");
+    stdin.write("q");
+    await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
+    unmount();
+    expect(markSeen).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks the PR being opened, not the one opened before it", async () => {
+    vi.mocked(listPullRequests).mockResolvedValue({
+      pullRequests: [
+        {
+          pullRequestId: "1",
+          title: "first",
+          authorArn: "a",
+          creationDate: new Date(),
+          status: "OPEN",
+        },
+        {
+          pullRequestId: "2",
+          title: "second",
+          authorArn: "a",
+          creationDate: new Date(),
+          status: "OPEN",
+        },
+      ],
+    } as any);
+    vi.mocked(getPullRequestDetail).mockImplementation(
+      async (id: string) =>
+        ({
+          pullRequest: { pullRequestId: id, title: `pr ${id}`, pullRequestTargets: [] },
+          differences: [],
+          commentThreads: [],
+        }) as any,
+    );
+    const markSeen = vi.fn();
+    const { lastFrame, stdin } = render(
+      <App service={{ ...svc, markSeen }} repository="my-service" start={null} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("second"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("PR #1"));
+    stdin.write("q");
+    await vi.waitFor(() => expect(lastFrame()).toContain("second"));
+    stdin.write("j");
+    await new Promise((r) => setTimeout(r, 30));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("PR #2"));
+    expect(markSeen.mock.calls).toEqual([["1"], ["1"], ["2"]]);
+  });
 });

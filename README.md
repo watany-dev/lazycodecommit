@@ -17,6 +17,7 @@ remote (HTTPS, SSH or `codecommit::` URLs). Elsewhere, pass `--repo`.
 
 | Command | What it does |
 | --- | --- |
+| `lazycc` | The home screen: the same inbox as `status`, shown from the last result while it refreshes. `Tab` switches sections, `Enter` opens the review (which marks the PR read), `r` picks repositories (`w` watches one, `p` lists its PRs) |
 | `lazycc status` | Your inbox across the watched repositories: open PRs awaiting your approval, and your own open PRs with their approval rules and conflicts. ● marks activity since you last opened the PR |
 | `lazycc pr create` | Push the current branch if needed and open a PR. The draft comes from the commits and `.codecommit/pull_request_template.md`; `--fill` skips the editor, `--dry-run` only shows it |
 | `lazycc pr list` | List PRs (`--state open\|closed`, `--limit`). On a terminal, a bare `pr list` opens the PR list screen |

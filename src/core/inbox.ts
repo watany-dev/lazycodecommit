@@ -260,13 +260,18 @@ export async function loadDetails(
   }
 }
 
-/** Loads every row's details, `limit` at a time. */
+/** Loads every row's details, `limit` at a time, reporting each as it lands. */
 export function loadAllDetails(
   items: readonly InboxItem[],
-  api: Parameters<typeof loadDetails>[1],
+  load: (item: InboxItem) => Promise<InboxItem>,
   limit: number,
+  onItem: (item: InboxItem) => void = () => {},
 ): Promise<InboxItem[]> {
-  return mapLimit(items, limit, (item) => loadDetails(item, api));
+  return mapLimit(items, limit, async (item) => {
+    const loaded = await load(item);
+    onItem(loaded);
+    return loaded;
+  });
 }
 
 // ---- Cache (cache.json, section "home") ----
@@ -364,4 +369,15 @@ export function fromCache(
   const items = r["items"].map(parseItem);
   if (items.some((i) => i === undefined)) return undefined;
   return { me, repositories, items: items as InboxItem[], errors: [], fetchedAt };
+}
+
+/** Recomputes the unread marks of a cached inbox against the current seen.json. */
+export function withUnread(inbox: Inbox, region: string, seen: ReadonlyMap<string, Date>): Inbox {
+  return {
+    ...inbox,
+    items: inbox.items.map((item) => ({
+      ...item,
+      unread: isUnread(item.pr, seen.get(seenKey(region, item.pr.id)), inbox.me),
+    })),
+  };
 }

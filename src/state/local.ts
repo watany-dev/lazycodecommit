@@ -56,6 +56,8 @@ export interface LocalState {
   readonly identity: IdentityStore;
   readonly seen: SeenStore;
   readonly cache: CacheStore;
+  /** Resolves when every save started so far has landed. */
+  flush(): Promise<void>;
 }
 
 export function seenKey(region: string, id: string): string {
@@ -79,6 +81,7 @@ export function createLocalState(env: Env): LocalState {
     return run;
   };
   return {
+    flush: () => queue.then(() => {}),
     identity: {
       async get(key) {
         const v = (await readObject(path("identity.json")))[key];
@@ -91,6 +94,8 @@ export function createLocalState(env: Env): LocalState {
     },
     seen: {
       async all() {
+        // A mark just made (leaving a review) must be in what the home reads next.
+        await queue;
         const map = new Map<string, Date>();
         for (const [k, v] of Object.entries(await readObject(path("seen.json")))) {
           const d = typeof v === "string" ? new Date(v) : null;
