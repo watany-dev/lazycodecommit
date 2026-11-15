@@ -71,8 +71,6 @@ export interface Git {
   firstParentLog(base: string, head: string, max: number): Promise<LoggedCommit[]>;
 }
 
-const FIELD = "\x1f";
-const RECORD = "\x1e";
 const NO_BLOB = /^0+$/;
 
 export function createGit(cwd: string): Git {
@@ -196,29 +194,35 @@ export function createGit(cwd: string): Git {
     },
 
     async firstParentLog(base, head, max) {
+      // NUL-separated like commits(): names and subjects can hold any byte but NUL.
       const out = await required([
         "log",
+        "-z",
         "--first-parent",
         `--max-count=${max}`,
-        `--format=%H${FIELD}%P${FIELD}%an${FIELD}%aI${FIELD}%s${RECORD}`,
+        "--format=%H%x00%P%x00%an%x00%aI%x00%s",
         `${base}..${head}`,
         "--",
       ]);
-      return out
-        .split(RECORD)
-        .map((record) => record.trim())
-        .filter((record) => record !== "")
-        .map((record) => {
-          const [id = "", parents = "", author = "", date = "", subject = ""] = record.split(FIELD);
-          return {
-            id,
-            parents: parents ? parents.split(" ") : [],
-            author,
-            date: new Date(date),
-            subject,
-          };
-        })
-        .toReversed();
+      const fields = out.split("\0");
+      const commits: LoggedCommit[] = [];
+      for (let i = 0; i + 4 < fields.length; i += 5) {
+        const [id, parents, author, date, subject] = fields.slice(i, i + 5) as [
+          string,
+          string,
+          string,
+          string,
+          string,
+        ];
+        commits.push({
+          id,
+          parents: parents ? parents.split(" ") : [],
+          author,
+          date: new Date(date),
+          subject,
+        });
+      }
+      return commits.toReversed();
     },
   };
 }
