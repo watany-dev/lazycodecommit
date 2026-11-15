@@ -19,7 +19,8 @@ lazygit. The command is `lazycc`. It is the successor to
 - An inbox across repositories: PRs awaiting your approval and your own open
   PRs, with unread markers (`lazycc`, or `lazycc status` as text)
 - The review screen from review-codecommit: diffs, inline comments, replies,
-  reactions, approval, merge and close
+  reactions, approval, merge and close, plus comment drafts you post together
+  (`Tab` keeps a comment as a draft, `D` lists them, `S` posts them)
 - A branch table: every branch with its PR, ahead/behind counts and approval
   rules; open, create or delete from there
 - Read a repository's files without cloning it (`lazycc browse`), which suits
