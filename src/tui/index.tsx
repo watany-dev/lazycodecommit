@@ -9,6 +9,7 @@ import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
 import { HomeApp } from "./HomeApp.js";
+import { keyStream } from "./keyStream.js";
 import { PickScreen } from "./PickScreen.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
 import type { TopSwitch, TopView } from "./top.js";
@@ -85,6 +86,7 @@ function service(request: ServiceRequest): ReviewService {
 export async function openReview(request: ReviewRequest): Promise<void> {
   const app = render(
     <App service={service(request)} repository={request.repository} start={request.start} />,
+    { stdin: keyStream(process.stdin) },
   );
   await app.waitUntilExit();
 }
@@ -116,7 +118,7 @@ export async function openTop(request: TopRequest): Promise<void> {
   let previous: TopView | null = null;
   let screen: Instance | undefined;
   const run = async (node: ReactNode) => {
-    screen = render(node);
+    screen = render(node, { stdin: keyStream(process.stdin) });
     await screen.waitUntilExit();
   };
   // Ink leaves a view's last frame on exit; the next view replaces it instead.
