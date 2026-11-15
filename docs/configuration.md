@@ -63,6 +63,12 @@ stop the command.
 A pipeline that only builds the default branch has no run for an open PR's
 source commit, so its line says `no run`.
 
+The result is for information only: lazycc never uses it to approve or merge.
+A run counts when its commit matches, so anyone who can start a build in a
+listed project (`codebuild:StartBuild`, including with a buildspec override)
+or start a listed pipeline can put any result on a PR's commit. If people rely
+on what lazycc shows, limit those permissions in IAM.
+
 ## Region and profile
 
 Taken from the first of:
