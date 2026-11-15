@@ -373,26 +373,11 @@ async function runCommand(
   }
   const ctx = await resolveContext(input);
   onContext(ctx);
-  const api = await deps.createApi({
-    ...optional("region", ctx.region),
-    ...optional("profile", ctx.profile),
-  });
-  // For console URLs; also fails early, with advice, when no region is set anywhere.
-  const region = ctx.region ?? (await api.region());
-  const prDeps: PrDeps = {
-    git,
-    api,
-    ctx,
-    config,
-    interactive: io.interactive,
-    confirm: io.confirm,
-    edit: io.edit,
-    readFile: io.readFile,
-    readStdin: io.readStdin,
-    note: io.err,
-  };
+  // The region is for console URLs; resolving it also fails early, with advice, when none is set.
+  const { api, region } = await openAccount(deps, ctx);
+  const prDeps = prDepsFor(io, { git, api, ctx, config });
   const print = (value: unknown) => printJson(io, value);
-  const ci = lazyCiClient(() => deps.createCiApi({ region, ...optional("profile", ctx.profile) }));
+  const ci = ciClient(deps, region, ctx.profile);
   const loadChecks = (pr: { repository: string; sourceCommit: string }) =>
     pullRequestChecks(config, ci, pr);
   const done = (line: string, pr: PullRequest) => {
@@ -400,10 +385,7 @@ async function runCommand(
     io.out(consoleUrl(region, pr.repository, pr.id));
   };
   const local = deps.createState(io.env);
-  // Opening a PR in any review screen counts as reading it on the home screen.
-  const markSeen = (pr: SeenPr) => {
-    markSeenIn(local, region, pr, new Date()).catch(() => {});
-  };
+  const markSeen = markSeenFor(local, region);
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
   const review = (start: ReviewRequest["start"]) =>
     deps.openReview({
@@ -666,13 +648,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
   const { io } = deps;
   const { ctx, config, git } = top;
   const cloneRepo = ctx.clone ? ctx.repository : undefined;
-  const api =
-    top.api ??
-    (await deps.createApi({
-      ...optional("region", ctx.region),
-      ...optional("profile", ctx.profile),
-    }));
-  const region = ctx.region ?? (await api.region());
+  const { api, region } = await openAccount(deps, ctx, top.api);
   const state = deps.createState(io.env);
   // Home reads the config's repos in the config's account, which a clone of
   // another region or profile does not share.
@@ -680,26 +656,12 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     top.homeCtx && (top.homeCtx.region !== ctx.region || top.homeCtx.profile !== ctx.profile)
       ? top.homeCtx
       : undefined;
-  const homeAccount = homeCtx
-    ? (async () => {
-        const homeApi = await deps.createApi({
-          ...optional("region", homeCtx.region),
-          ...optional("profile", homeCtx.profile),
-        });
-        return { api: homeApi, region: homeCtx.region ?? (await homeApi.region()) };
-      })()
-    : Promise.resolve({ api, region });
+  const homeAccount = homeCtx ? openAccount(deps, homeCtx) : Promise.resolve({ api, region });
+  const homeRegion = homeAccount.then((a) => a.region);
   // A failure shows when home opens, not before the branch table or browse.
-  homeAccount.catch(() => {});
-  const ci = lazyCiClient(() => deps.createCiApi({ region, ...optional("profile", ctx.profile) }));
-  const homeCi = homeCtx
-    ? lazyCiClient(async () =>
-        deps.createCiApi({
-          region: (await homeAccount).region,
-          ...optional("profile", homeCtx.profile),
-        }),
-      )
-    : ci;
+  homeRegion.catch(() => {});
+  const ci = ciClient(deps, region, ctx.profile);
+  const homeCi = homeCtx ? ciClient(deps, homeRegion, homeCtx.profile) : ci;
   // Only home and the picker need "me" (one STS call, cached per profile).
   let home: Promise<HomeActions> | undefined;
   const repoContext = (repository: string): RepoContext => ({
@@ -732,18 +694,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
           try {
             const result = await createPullRequest(
               { head, fill: false, push: false, noPush: false, dryRun: false },
-              {
-                git,
-                api,
-                ctx: repoCtx,
-                config,
-                interactive: io.interactive,
-                confirm: io.confirm,
-                edit: io.edit,
-                readFile: io.readFile,
-                readStdin: io.readStdin,
-                note: io.err,
-              },
+              prDepsFor(io, { git, api, ctx: repoCtx, config }),
             );
             // dry-run is off, so the result is a PR, new or already open.
             return { pullRequestId: (result as { pr: { id: string } }).pr.id };
@@ -766,9 +717,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     ...optional("browsePath", top.path),
     views,
     region,
-    markSeen: (pr) => {
-      markSeenIn(state, region, pr, new Date()).catch(() => {});
-    },
+    markSeen: markSeenFor(state, region),
     drafts: draftStorage(state.drafts, region),
     checks: (pr) => pullRequestChecks(config, ci, pr),
     ...optional("mergeStrategy", preferredStrategy(config)),
@@ -781,11 +730,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
             ...optional("profile", homeCtx.profile),
             checks: (pr: { repository: string; sourceCommit: string }) =>
               pullRequestChecks(config, homeCi, pr),
-            markSeen: (pr: SeenPr) => {
-              void homeAccount
-                .then(({ region: r }) => markSeenIn(state, r, pr, new Date()))
-                .catch(() => {});
-            },
+            markSeen: markSeenFor(state, homeRegion),
           },
         }
       : {}),
@@ -814,11 +759,7 @@ async function runStatus(
       `No repositories to watch. Add "repos" to ${configPath(io.env)}, run inside a clone, or pass --repo.`,
     );
   }
-  const api = await deps.createApi({
-    ...optional("region", ctx.region),
-    ...optional("profile", ctx.profile),
-  });
-  const region = ctx.region ?? (await api.region());
+  const { api, region } = await openAccount(deps, ctx);
   const state = deps.createState(io.env);
   const me = await resolveMe(api, state.identity);
   const limit = concurrency(config);
@@ -829,10 +770,7 @@ async function runStatus(
     seen: await state.seen.all(),
     concurrency: limit,
   });
-  const runs = repositoryRuns(
-    config,
-    lazyCiClient(() => deps.createCiApi({ region, ...optional("profile", ctx.profile) })),
-  );
+  const runs = repositoryRuns(config, ciClient(deps, region, ctx.profile));
   const inbox = {
     ...listed,
     items: await loadAllDetails(listed.items, (i) => loadDetails(i, api, runs), limit),
@@ -860,6 +798,47 @@ async function runStatus(
   // The cache only speeds up the next TUI start; failing to write it is not an error.
   await state.cache.set("home", toCache(inbox, region)).catch(() => {});
   return inbox.errors.length > 0 || incomplete.length > 0 ? 1 : 0;
+}
+
+/** The CodeCommit client for an account, and its region (the SDK's own when none is set). */
+async function openAccount(
+  deps: Deps,
+  ctx: { region?: string; profile?: string },
+  created?: CodeCommitApi,
+) {
+  const api =
+    created ??
+    (await deps.createApi({
+      ...optional("region", ctx.region),
+      ...optional("profile", ctx.profile),
+    }));
+  return { api, region: ctx.region ?? (await api.region()) };
+}
+
+function ciClient(deps: Deps, region: string | Promise<string>, profile: string | undefined) {
+  return lazyCiClient(async () =>
+    deps.createCiApi({ region: await region, ...optional("profile", profile) }),
+  );
+}
+
+/** Opening a PR in any review screen counts as reading it on the home screen. */
+function markSeenFor(state: LocalState, region: string | Promise<string>) {
+  return (pr: SeenPr) => {
+    // The read mark only feeds home's ● marker; failing to save it is not an error.
+    void (async () => markSeenIn(state, await region, pr, new Date()))().catch(() => {});
+  };
+}
+
+function prDepsFor(io: Io, base: Pick<PrDeps, "git" | "api" | "ctx" | "config">): PrDeps {
+  return {
+    ...base,
+    interactive: io.interactive,
+    confirm: io.confirm,
+    edit: io.edit,
+    readFile: io.readFile,
+    readStdin: io.readStdin,
+    note: io.err,
+  };
 }
 
 /**
