@@ -52,6 +52,7 @@ export function Help({ onClose }: Props) {
         <KeyRow keyName="]c" description="Next change (add/delete line)" />
         <KeyRow keyName="[c" description="Previous change (add/delete line)" />
         <KeyRow keyName="f" description="File list" />
+        <KeyRow keyName="t" description="Show more of a large diff" />
         <KeyRow keyName="Enter" description="Select / confirm" />
         <KeyRow keyName="q / Esc" description="Back / quit" />
         <KeyRow keyName="Ctrl+C" description="Exit immediately" />

@@ -71,6 +71,12 @@ describe("consoleUrl", () => {
       /^https:\/\/cn-north-1\.console\.amazonaws\.cn\//,
     );
   });
+
+  it("uses the GovCloud console, which has no regional host names", () => {
+    expect(consoleUrl("us-gov-west-1", "r", "1")).toBe(
+      "https://console.amazonaws-us-gov.com/codesuite/codecommit/repositories/r/pull-requests/1/details?region=us-gov-west-1",
+    );
+  });
 });
 
 describe("createPullRequest in a clone", () => {
@@ -409,6 +415,13 @@ describe("resolvePullRequest", () => {
   it("needs an id outside a clone", async () => {
     await expect(resolvePullRequest(undefined, deps({ ctx: OUTSIDE }).d)).rejects.toThrow(
       "pass a pull request id",
+    );
+  });
+
+  it("says why the clone was not used when a flag ruled it out", async () => {
+    const ctx = { ...OUTSIDE, otherClone: "this clone is of demo in us-east-1" };
+    await expect(resolvePullRequest(undefined, deps({ ctx }).d)).rejects.toThrow(
+      "pass a pull request id (this clone is of demo in us-east-1)",
     );
   });
 

@@ -9,6 +9,8 @@ export interface RepoContext {
   readonly profile?: string;
   /** Set when the working directory is a clone of `repository`. */
   readonly clone?: { readonly root: string };
+  /** Why a CodeCommit clone we stand in is not used: a flag names another repository. */
+  readonly otherClone?: string;
 }
 
 export interface ContextInput {
@@ -77,5 +79,10 @@ async function resolveAccount(input: ContextInput): Promise<AccountContext & { w
     ...(region ? { region } : {}),
     ...(profile ? { profile } : {}),
     ...(inClone ? { clone: { root } } : {}),
+    ...(root !== null && remote !== null && !inClone
+      ? {
+          otherClone: `this clone is of ${remote.repo}${remote.region ? ` in ${remote.region}` : ""}, and --repo or --region names another repository`,
+        }
+      : {}),
   };
 }
