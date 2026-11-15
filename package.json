@@ -48,7 +48,7 @@
     "@vitest/coverage-v8": "5.1.0",
     "aws-sdk-client-mock": "^4.1.0",
     "fast-check": "^4.10.2",
-    "ink": "6.7.0",
+    "ink": "8.0.0",
     "ink-testing-library": "4.0.0",
     "ink-text-input": "6.0.0",
     "knip": "6.44.2",
