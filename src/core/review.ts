@@ -1,4 +1,5 @@
 import type { CodeCommitClient, Difference, PullRequestTarget } from "@aws-sdk/client-codecommit";
+import type { MergeStrategy } from "../aws/codecommit.js";
 import * as aws from "../aws/review.js";
 import type { Git, TreeChange } from "../git/git.js";
 import { printable } from "./text.js";
@@ -32,6 +33,8 @@ type Operation =
 export type ReviewService = { readonly [K in Operation]: WithoutClient<(typeof aws)[K]> } & {
   /** Records that the user opened a PR, for the home screen's unread marks. */
   readonly markSeen?: (pullRequestId: string) => void;
+  /** The config's pr.mergeOption: the merge dialog starts on it. */
+  readonly mergeStrategy?: MergeStrategy;
 };
 
 /** The service for the TUI, with its own client: the review screen needs more calls than CodeCommitApi has. */
