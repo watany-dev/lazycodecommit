@@ -5,12 +5,18 @@ import { inApprovalPool } from "./inbox.js";
 
 const ruleWith = (members: string[]) => ({
   name: "r",
-  content: JSON.stringify({ Version: "2018-11-08", Statements: [{ Type: "Approvers", NumberOfApprovalsNeeded: 1, ApprovalPoolMembers: members }] }),
+  content: JSON.stringify({
+    Version: "2018-11-08",
+    Statements: [{ Type: "Approvers", NumberOfApprovalsNeeded: 1, ApprovalPoolMembers: members }],
+  }),
 });
 
 // The oracle: the same wildcard rules through a RegExp built from escaped pieces.
 const asRegExp = (pattern: string) =>
-  new RegExp(`^${[...pattern].map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^${}()|[\]\\/]/g, "\\$&"))).join("")}$`, "s");
+  new RegExp(
+    `^${[...pattern].map((c) => (c === "*" ? ".*" : c === "?" ? "." : c.replace(/[.+^${}()|[\]\\/]/g, "\\$&"))).join("")}$`,
+    "s",
+  );
 
 describe("approval pool ARN patterns", () => {
   it("match exactly when * and ? as wildcards would", () => {
@@ -23,7 +29,9 @@ describe("approval pool ARN patterns", () => {
           const pattern = `arn:${tail}`;
           const me = `arn:${meTail}`;
           const pr = pullRequest({ approvalRules: [ruleWith([pattern])] });
-          expect(inApprovalPool(pr, me), JSON.stringify({ pattern, me })).toBe(asRegExp(pattern).test(me));
+          expect(inApprovalPool(pr, me), JSON.stringify({ pattern, me })).toBe(
+            asRegExp(pattern).test(me),
+          );
         },
       ),
       { numRuns: 5000 },
