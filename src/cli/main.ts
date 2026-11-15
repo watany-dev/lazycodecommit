@@ -385,6 +385,10 @@ async function runCommand(
   const ci = ciClient(deps, region, ctx.profile);
   const loadChecks = (pr: { repository: string; sourceCommit: string }) =>
     pullRequestChecks(config, ci, pr);
+  const viewJson = async (pr: PullRequest) => ({
+    ...prJson(pr, region),
+    checks: checksJson(await loadChecks(pr)),
+  });
   const done = (line: string, pr: PullRequest) => {
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
@@ -508,14 +512,15 @@ async function runCommand(
       }
       const url = consoleUrl(region, result.pr.repository, result.pr.id);
       if (result.kind === "exists") {
-        if (json) print({ existing: true, ...prJson(result.pr, region) });
+        // The shape of pr view --json (spec: PR 作成), CI results included.
+        if (json) print({ existing: true, ...(await viewJson(result.pr)) });
         io.err(
           `A pull request from ${result.pr.sourceBranch} into ${result.pr.destinationBranch} is already open: #${result.pr.id} ${printable(result.pr.title)}`,
         );
         if (!json) io.err(url);
         return 1;
       }
-      if (json) print(prJson(result.pr, region));
+      if (json) print(await viewJson(result.pr));
       else {
         io.out(`Created pull request #${result.pr.id}: ${result.pr.title}`);
         io.out(url);
@@ -594,9 +599,12 @@ async function runCommand(
         await review({ pullRequestId: pr.id });
         return 0;
       }
+      if (json) {
+        print(await viewJson(pr));
+        return 0;
+      }
       const checks = await loadChecks(pr);
-      if (json) print({ ...prJson(pr, region), checks: checksJson(checks) });
-      else for (const line of viewLines(pr, region, checks)) io.out(line);
+      for (const line of viewLines(pr, region, checks)) io.out(line);
       return 0;
     }
     default: {

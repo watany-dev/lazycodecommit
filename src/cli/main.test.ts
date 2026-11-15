@@ -243,6 +243,20 @@ describe("pr create", () => {
     });
   });
 
+  it("prints the same JSON shape as pr view, as the spec says, new or existing", async () => {
+    const keys = (s: string) => Object.keys(json(s)).toSorted();
+    const view = await cli(["pr", "view", "5", "--json"], {
+      api: fakeApi([pullRequest({ id: "5" })]),
+    });
+    const created = await cli(["pr", "create", "--fill", "--json"]);
+    expect(keys(created.out)).toEqual(keys(view.out));
+    expect(json(created.out).checks).toBeNull();
+    const existing = await cli(["pr", "create", "--fill", "--json"], {
+      api: fakeApi([pullRequest({ id: "5" })]),
+    });
+    expect(keys(existing.out)).toEqual([...keys(view.out), "existing"].toSorted());
+  });
+
   it("exits 1 and points at an existing PR", async () => {
     const api = fakeApi([pullRequest({ id: "5", title: "Old" })]);
     const r = await cli(["pr", "create", "--fill"], { api });
