@@ -55,7 +55,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc | ホーム(受信箱)の TUI を開く | 可 |
 | lazycc status | ホームと同じ内容をテキストで出す | 可 |
 | lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
-| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30) | 可 |
+| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30)。-L N は作成が新しい N 件を、最終更新の新しい順に並べて出す(gh pr list と同じく作成順で絞る) | 可 |
 | lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
 | lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
@@ -375,7 +375,7 @@ remote URL を環境変数より優先するのは、リポジトリのリージ
 
 ### 認証
 - AWS SDK の既定の認証チェーンを使う。CloudShell では追加設定なしで動く。
-- 自分の ARN は sts:GetCallerIdentity で取得し、プロファイルごとにキャッシュする。
+- 自分の ARN は sts:GetCallerIdentity で取得し、使っている認証情報ごとにキャッシュする(キーはアクセスキー ID のハッシュ。ロールやアカウントが変われば取り直す)。
 - 認証切れは API エラーから検出し、再認証のコマンドを案内する。
 
 ### ローカル状態
@@ -385,7 +385,7 @@ remote URL を環境変数より優先するのは、リポジトリのリージ
 |---|---|
 | seen.json | PR ごとの最終閲覧時刻 |
 | cache.json | ホームの前回取得結果 |
-| identity.json | プロファイルごとの ARN |
+| identity.json | 認証情報ごとの ARN(キーはアクセスキー ID のハッシュ) |
 | drafts.json | PR ごとのコメントの下書き(投稿するまで残す) |
 
 - 状態ファイルが壊れていても起動を止めず、破棄して作り直す。

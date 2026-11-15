@@ -65,28 +65,62 @@ describe("watchedRepositories", () => {
   });
 });
 
+/** An API whose credentials have `accessKeyId`, counting STS calls. */
+function apiFor(accessKeyId: string) {
+  const api = {
+    calls: 0,
+    credentialId: async () => accessKeyId,
+    callerArn: async () => (api.calls++, `${ME}-${accessKeyId}`),
+  };
+  return api;
+}
+
 describe("resolveMe", () => {
-  it("asks STS once per profile and caches the answer", async () => {
+  it("asks STS once per set of credentials and caches the answer", async () => {
     const s = store();
-    let calls = 0;
-    const api = { callerArn: async () => (calls++, ME) };
-    expect(await resolveMe(api, s, "dev", {})).toBe(ME);
-    expect(await resolveMe(api, s, "dev", {})).toBe(ME);
-    expect(calls).toBe(1);
-    await resolveMe(api, s, undefined, {});
-    await resolveMe(api, s, "dev", { AWS_ACCESS_KEY_ID: "AKIA1" });
-    expect([...s.m.keys()]).toEqual(["profile:dev", "profile:default", "key:AKIA1"]);
+    const api = apiFor("AKIA1");
+    expect(await resolveMe(api, s)).toBe(`${ME}-AKIA1`);
+    expect(await resolveMe(api, s)).toBe(`${ME}-AKIA1`);
+    expect(api.calls).toBe(1);
+  });
+
+  it("asks again when the credentials change, as when a profile's role changes", async () => {
+    const s = store();
+    await resolveMe(apiFor("AKIA1"), s);
+    const next = apiFor("ASIA2");
+    expect(await resolveMe(next, s)).toBe(`${ME}-ASIA2`);
+    expect(next.calls).toBe(1);
+  });
+
+  it("never writes the access key ID itself", async () => {
+    const s = store();
+    await resolveMe(apiFor("AKIAIOSFODNN7EXAMPLE"), s);
+    const [key] = [...s.m.keys()];
+    expect(key).toMatch(/^cred:[0-9a-f]{32}$/);
+    expect(key).not.toContain("AKIA");
+  });
+
+  it("asks STS, uncached, when the credentials cannot be read", async () => {
+    const s = store();
+    const api = {
+      credentialId: async () => {
+        throw new Error("no credentials");
+      },
+      callerArn: async () => ME,
+    };
+    expect(await resolveMe(api, s)).toBe(ME);
+    expect(s.m.size).toBe(0);
   });
 
   it("still answers when the cache cannot be written", async () => {
-    const api = { callerArn: async () => ME };
+    const api = apiFor("AKIA1");
     const broken = {
       get: async () => undefined,
       set: async () => {
         throw new Error("EROFS");
       },
     };
-    expect(await resolveMe(api, broken, undefined, {})).toBe(ME);
+    expect(await resolveMe(api, broken)).toBe(`${ME}-AKIA1`);
   });
 });
 

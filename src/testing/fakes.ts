@@ -69,6 +69,7 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     writes,
     region: async () => "us-west-2",
     callerArn: async () => "arn:aws:iam::123456789012:user/me",
+    credentialId: async () => "AKIAFAKE",
     listRepositories: async () => [...new Set(prs.map((p) => p.repository))].toSorted(),
     defaultBranch: async () => "main",
     cloneUrls: async (repo) => ({
