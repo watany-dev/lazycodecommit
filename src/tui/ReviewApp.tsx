@@ -267,12 +267,15 @@ export function App({ service, repository, start, onExit }: AppProps) {
   // approval made here do not mark the PR unread.
   // While a detail loads, prDetail still holds the PR opened before.
   const openId = screen === "prs" || loading ? undefined : prDetail?.pullRequestId;
+  // With the author: PR ids repeat across accounts, and the ARN names the account.
+  const openAuthor = prDetail?.authorArn;
   useEffect(() => {
     const markSeen = service.markSeen;
     if (!openId || !markSeen) return;
-    markSeen(openId);
-    return () => markSeen(openId);
-  }, [openId, service]);
+    const pr = { id: openId, authorArn: openAuthor };
+    markSeen(pr);
+    return () => markSeen(pr);
+  }, [openId, openAuthor, service]);
 
   const postCommentAction = useAsyncAction(
     async (content: string) => {

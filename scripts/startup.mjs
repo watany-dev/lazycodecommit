@@ -20,6 +20,8 @@ const LAZY_MARKERS = {
   React: 'Symbol.for("react.',
   Ink: '"ink-root"',
   "the AWS SDK": '"CodeCommit_20150413"',
+  "the CodeBuild client": '"CodeBuild_20161006"',
+  "the CodePipeline client": '"CodePipeline_20150709"',
 };
 const seen = new Set();
 const pending = [bin];

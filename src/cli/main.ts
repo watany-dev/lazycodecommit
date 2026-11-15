@@ -1,9 +1,11 @@
 import { type ParseArgsConfig, parseArgs } from "node:util";
 import { version } from "../../package.json" with { type: "json" };
+import type { CiApi } from "../aws/ci.js";
 import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
 import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
+import { type Checks, checksFor, ciTargets, loadTargetRuns } from "../core/checks.js";
 import { cloneRepository } from "../core/clone.js";
 import { draftStorage } from "../core/commentDrafts.js";
 import {
@@ -41,12 +43,13 @@ import {
 import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
-import { type LocalState, seenKey } from "../state/local.js";
+import { type LocalState, markSeen as markSeenIn, type SeenPr } from "../state/local.js";
 import type { ReviewRequest, TopRequest, TopViews } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
 import {
   branchJson,
   branchLines,
+  checksJson,
   inboxJson,
   inboxLines,
   listLines,
@@ -72,6 +75,8 @@ export interface Deps {
   readonly io: Io;
   createGit(cwd: string): Git;
   createApi(options: { region?: string; profile?: string }): Promise<CodeCommitApi>;
+  /** CodeBuild and CodePipeline; loaded only for a repository the config's ci lists (ADR 0010). */
+  createCiApi(options: { region?: string; profile?: string }): Promise<CiApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
   createState(env: Readonly<Record<string, string | undefined>>): LocalState;
   /** Open the TUI; cli.ts loads it lazily so other commands never load Ink. */
@@ -387,14 +392,20 @@ async function runCommand(
     note: io.err,
   };
   const print = (value: unknown) => printJson(io, value);
+  const loadChecks = async (pr: PullRequest): Promise<Checks | null> => {
+    const targets = ciTargets(config, pr.repository);
+    if (!targets) return null;
+    const ci = await deps.createCiApi({ region, ...optional("profile", ctx.profile) });
+    return checksFor(pr.sourceCommit, await loadTargetRuns(ci, targets));
+  };
   const done = (line: string, pr: PullRequest) => {
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
   };
   const local = deps.createState(io.env);
   // Opening a PR in any review screen counts as reading it on the home screen.
-  const markSeen = (id: string) => {
-    local.seen.mark(seenKey(region, id), new Date()).catch(() => {});
+  const markSeen = (pr: SeenPr) => {
+    markSeenIn(local, region, pr, new Date()).catch(() => {});
   };
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
   const review = (start: ReviewRequest["start"]) =>
@@ -597,12 +608,14 @@ async function runCommand(
         await review({ pullRequestId: pr.id });
         return 0;
       }
-      if (json) print(prJson(pr, region));
-      else for (const line of viewLines(pr, region)) io.out(line);
+      const checks = await loadChecks(pr);
+      if (json) print({ ...prJson(pr, region), checks: checksJson(checks) });
+      else for (const line of viewLines(pr, region, checks)) io.out(line);
       return 0;
     }
     default: {
       const status = await pullRequestStatus(prDeps);
+      const checks = status.pr ? await loadChecks(status.pr) : null;
       if (json) {
         print({
           branch: status.branch,
@@ -612,10 +625,11 @@ async function runCommand(
                 approvedBy: status.approvers,
                 approvalRules: status.rules,
                 mergeable: status.mergeable,
+                checks: checksJson(checks),
               }
             : {}),
         });
-      } else for (const line of statusLines(status, region)) io.out(line);
+      } else for (const line of statusLines(status, region, checks)) io.out(line);
       return 0;
     }
   }
@@ -744,8 +758,8 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     ...optional("browsePath", top.path),
     views,
     region,
-    markSeen: (id) => {
-      state.seen.mark(seenKey(region, id), new Date()).catch(() => {});
+    markSeen: (pr) => {
+      markSeenIn(state, region, pr, new Date()).catch(() => {});
     },
     drafts: draftStorage(state.drafts, region),
     ...optional("mergeStrategy", preferredStrategy(config)),
@@ -756,9 +770,9 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
           home: {
             ...optional("region", homeCtx.region),
             ...optional("profile", homeCtx.profile),
-            markSeen: (id: string) => {
+            markSeen: (pr: SeenPr) => {
               void homeAccount
-                .then(({ region: r }) => state.seen.mark(seenKey(r, id), new Date()))
+                .then(({ region: r }) => markSeenIn(state, r, pr, new Date()))
                 .catch(() => {});
             },
           },

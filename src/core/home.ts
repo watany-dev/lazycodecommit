@@ -1,6 +1,6 @@
 import type { CodeCommitApi, PullRequest } from "../aws/codecommit.js";
 import { type Config, saveRepos } from "../state/config.js";
-import { type LocalState, seenKey } from "../state/local.js";
+import { type LocalState, markSeen, type SeenPr } from "../state/local.js";
 import {
   fetchInbox,
   fromCache,
@@ -30,7 +30,7 @@ export interface HomeActions {
   /** Re-reads seen.json and returns what re-marks an inbox: back from a review. */
   unreadMarker(): Promise<(inbox: Inbox) => Inbox>;
   /** Marks a PR read now (spec: レビュー画面を開いた時点で既読). */
-  markSeen(pullRequestId: string): void;
+  markSeen(pr: SeenPr): void;
   listRepositories(): Promise<string[]>;
   /** Adds or removes `repository` in the config's repos; returns the new list. */
   toggleWatch(repository: string): Promise<readonly string[]>;
@@ -79,9 +79,9 @@ export function homeActions(deps: HomeDeps): HomeActions {
       const seen = await state.seen.all();
       return (inbox) => withUnread(inbox, region, seen);
     },
-    markSeen(pullRequestId) {
+    markSeen(pr) {
       // Losing one mark only leaves a PR marked unread.
-      state.seen.mark(seenKey(region, pullRequestId), new Date()).catch(() => {});
+      markSeen(state, region, pr, new Date()).catch(() => {});
     },
     listRepositories() {
       listing ??= api.listRepositories();

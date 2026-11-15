@@ -33,7 +33,12 @@ interface Props {
 type View =
   | { readonly kind: "home" }
   | { readonly kind: "picker" }
-  | { readonly kind: "review"; readonly repository: string; readonly pullRequestId: string | null };
+  | {
+      readonly kind: "review";
+      readonly repository: string;
+      readonly pullRequestId: string | null;
+      readonly authorArn?: string;
+    };
 
 const CHROME_LINES = 8;
 const SECTION_TITLE: Record<Section, string> = {
@@ -167,6 +172,7 @@ export function HomeApp({
           kind: "review",
           repository: selected.pr.repository,
           pullRequestId: selected.pr.id,
+          authorArn: selected.pr.authorArn,
         });
       } else if (selected && input === "u") {
         setNote(actions.consoleUrl(selected.pr));
@@ -188,7 +194,7 @@ export function HomeApp({
           }
           setView({ kind: "home" });
           // Mark it here too: the review's own mark on leaving lands after the reads below.
-          actions.markSeen(view.pullRequestId);
+          actions.markSeen({ id: view.pullRequestId, authorArn: view.authorArn });
           // Back with fresh unread marks at once; an approval or merge shows after the refresh.
           void actions.unreadMarker().then((mark) => setInbox((prev) => prev && mark(prev)));
           if (repos) void refresh(repos);

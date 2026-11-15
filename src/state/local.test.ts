@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createLocalState, seenKey, stateDir } from "./local.js";
+import { createLocalState, lastSeen, markSeen, seenKey, stateDir } from "./local.js";
 
 let home: string;
 let dir: string;
@@ -55,8 +55,8 @@ describe("identity", () => {
 describe("seen", () => {
   it("keeps the latest time per PR", async () => {
     const s = state();
-    const key = seenKey("us-east-1", "7");
-    expect(key).toBe("us-east-1/7");
+    const key = seenKey("us-east-1", { id: "7", authorArn: "arn:aws:iam::111122223333:user/a" });
+    expect(key).toBe("us-east-1/111122223333/7");
     await s.seen.mark(key, new Date("2026-11-02T00:00:00Z"));
     await s.seen.mark(key, new Date("2026-11-01T00:00:00Z"));
     expect((await s.seen.all()).get(key)).toEqual(new Date("2026-11-02T00:00:00Z"));
@@ -73,6 +73,32 @@ describe("seen", () => {
     await put("seen.json", '{"a/1": 5}');
     await state().seen.mark("a/1", new Date("2026-11-01T00:00:00Z"));
     expect((await state().seen.all()).get("a/1")).toEqual(new Date("2026-11-01T00:00:00Z"));
+  });
+});
+
+describe("seen across accounts", () => {
+  const A = { id: "7", authorArn: "arn:aws:iam::111111111111:user/a" };
+  const B = { id: "7", authorArn: "arn:aws:sts::222222222222:assumed-role/r/b" };
+
+  it("keeps the same PR id in two accounts apart", async () => {
+    const s = state();
+    await markSeen(s, "us-east-1", A, new Date("2026-11-01T00:00:00Z"));
+    const seen = await s.seen.all();
+    expect(lastSeen(seen, "us-east-1", A)).toEqual(new Date("2026-11-01T00:00:00Z"));
+    expect(lastSeen(seen, "us-east-1", B)).toBeUndefined();
+    expect(seenKey("us-east-1", { id: "7" })).toBe("us-east-1/unknown/7");
+  });
+
+  it("reads a mark from before accounts were kept, and replaces it when marking", async () => {
+    await put("seen.json", '{"us-east-1/7": "2026-10-01T00:00:00Z"}');
+    const s = state();
+    // Older versions keyed by region and id: still read, so an upgrade does not
+    // mark every PR unread.
+    expect(lastSeen(await s.seen.all(), "us-east-1", B)).toEqual(new Date("2026-10-01T00:00:00Z"));
+    await markSeen(s, "us-east-1", A, new Date("2026-11-01T00:00:00Z"));
+    const seen = await s.seen.all();
+    expect([...seen.keys()]).toEqual(["us-east-1/111111111111/7"]);
+    expect(lastSeen(seen, "us-east-1", B)).toBeUndefined();
   });
 });
 
@@ -133,7 +159,7 @@ describe("file modes", () => {
   it("keeps state readable by the user only: it holds private repositories' PR titles", async () => {
     const s = state();
     await s.cache.set("home", { title: "secret project" });
-    await s.seen.mark(seenKey("us-east-1", "1"), new Date());
+    await markSeen(s, "us-east-1", { id: "1" }, new Date());
     await s.identity.set("cred:a", "arn:aws:iam::1:user/me");
     expect((await stat(dir)).mode & 0o777).toBe(0o700);
     for (const name of ["cache.json", "seen.json", "identity.json"]) {

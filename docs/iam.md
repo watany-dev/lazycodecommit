@@ -29,6 +29,7 @@ permission.
 | `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `Ctrl+r` runs `git fetch`, which needs `GitPull` |
 | `browse` | `GetFolder`, `GetFile`, `ListBranches` (the `b` ref picker), `GetRepository` (without `--ref`) |
 | `clone` | `GetRepository`, `GitPull` |
+| CI results in `pr view` and `pr status`, only for repositories listed under `ci` in the config | `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codepipeline:ListPipelineExecutions` |
 | Review screen (writing) | `PostCommentForPullRequest`, `PostCommentReply`, `UpdateComment`, `DeleteCommentContent`, `PutCommentReaction`, `UpdatePullRequestApprovalState`, `UpdatePullRequestStatus`, `MergePullRequestByFastForward`, `MergePullRequestBySquash`, `MergePullRequestByThreeWay` |
 
 ## Example: read only

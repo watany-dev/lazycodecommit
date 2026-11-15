@@ -5538,7 +5538,12 @@ describe("App", () => {
 
   it("marks the PR read when it opens and again when it is left", async () => {
     vi.mocked(getPullRequestDetail).mockResolvedValue({
-      pullRequest: { pullRequestId: "42", title: "fix: login", pullRequestTargets: [] },
+      pullRequest: {
+        pullRequestId: "42",
+        title: "fix: login",
+        authorArn: "arn:aws:iam::111122223333:user/a",
+        pullRequestTargets: [],
+      },
       differences: [],
       commentThreads: [],
     } as any);
@@ -5553,7 +5558,11 @@ describe("App", () => {
       />,
     );
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
-    expect(markSeen).toHaveBeenCalledWith("42");
+    // With the author, whose ARN names the account: PR ids repeat across accounts.
+    expect(markSeen).toHaveBeenCalledWith({
+      id: "42",
+      authorArn: "arn:aws:iam::111122223333:user/a",
+    });
     stdin.write("q");
     await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
     unmount();
@@ -5600,6 +5609,6 @@ describe("App", () => {
     await new Promise((r) => setTimeout(r, 30));
     stdin.write("\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #2"));
-    expect(markSeen.mock.calls).toEqual([["1"], ["1"], ["2"]]);
+    expect(markSeen.mock.calls.map(([pr]) => pr.id)).toEqual(["1", "1", "2"]);
   });
 });
