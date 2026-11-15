@@ -70,6 +70,31 @@ beforeEach(() => {
 });
 
 describe("BranchesApp", () => {
+  it("leaves for another view or the picker on 1, 3 and r", async () => {
+    for (const [k, want] of [
+      ["1", { view: "home" }],
+      ["3", { view: "browse" }],
+      ["r", { pick: true }],
+    ] as const) {
+      exit.mockReset();
+      const onSwitch = vi.fn();
+      const r = render(
+        <BranchesApp
+          actions={actions()}
+          service={service}
+          start={null}
+          onCreate={vi.fn()}
+          onSwitch={onSwitch}
+        />,
+      );
+      await vi.waitFor(() => expect(r.lastFrame()).toContain("r repositories"));
+      await press(r.stdin, "2", k);
+      expect(onSwitch.mock.calls).toEqual([[want]]);
+      expect(exit).toHaveBeenCalledOnce();
+      r.unmount();
+    }
+  });
+
   it("lists branches with state, counts, PR and rules", async () => {
     const { lastFrame } = await setup();
     const frame = lastFrame() ?? "";

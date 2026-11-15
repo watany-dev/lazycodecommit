@@ -91,6 +91,23 @@ beforeEach(() => {
 });
 
 describe("BrowseApp folders", () => {
+  it("leaves for another view or the picker on 1, 2 and r", async () => {
+    for (const [k, want] of [
+      ["1", { view: "home" }],
+      ["2", { view: "branches" }],
+      ["r", { pick: true }],
+    ] as const) {
+      exit.mockReset();
+      const onSwitch = vi.fn();
+      const r = render(<BrowseApp actions={actions()} path="" onSwitch={onSwitch} />);
+      await vi.waitFor(() => expect(r.lastFrame()).toContain("1 home 2 branches"));
+      await press(r.stdin, "3", k);
+      expect(onSwitch.mock.calls).toEqual([[want]]);
+      expect(exit).toHaveBeenCalledOnce();
+      r.unmount();
+    }
+  });
+
   it("lists the root with marks, folders first", async () => {
     const { lastFrame } = await setup();
     const frame = lastFrame() ?? "";

@@ -49,6 +49,11 @@ filters and Ctrl+r runs `git fetch --prune` and reloads. A branch counts as
 merged when a merged PR's source commit is its tip; the last
 `branch.closedPrLookback` closed PRs (default 100) are checked.
 
+The home screen, the branch screen and the browse screen are one TUI: `1`,
+`2` and `3` switch between them, and `r` on the branch and browse screens
+picks the repository they show. Outside a clone, `lazycc browse` without a
+repository opens on that picker.
+
 Every command takes `--profile`, `--region` and `--json`; the `pr` commands,
 `branch` and `status` also take `-R/--repo`.
 

@@ -5,9 +5,14 @@ import { explainAwsError } from "../aws/errors.js";
 import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { cloneRepository } from "../core/clone.js";
-import { type AccountContext, resolveAccountContext, resolveContext } from "../core/context.js";
+import {
+  type AccountContext,
+  type RepoContext,
+  resolveAccountContext,
+  resolveContext,
+} from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
-import { homeActions } from "../core/home.js";
+import { type HomeActions, homeActions } from "../core/home.js";
 import {
   fetchInbox,
   isPending,
@@ -35,7 +40,7 @@ import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
 import { type LocalState, seenKey } from "../state/local.js";
-import type { BranchesRequest, BrowseRequest, HomeRequest, ReviewRequest } from "../tui/index.js";
+import type { ReviewRequest, TopRequest, TopViews } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
 import {
   branchJson,
@@ -68,9 +73,8 @@ export interface Deps {
   createState(env: Readonly<Record<string, string | undefined>>): LocalState;
   /** Open the TUI; cli.ts loads it lazily so other commands never load Ink. */
   openReview(request: ReviewRequest): Promise<void>;
-  openBranches(request: BranchesRequest): Promise<void>;
-  openBrowse(request: BrowseRequest): Promise<void>;
-  openHome(request: HomeRequest): Promise<void>;
+  /** Home, the branch table and browse, switched with 1/2/3 (spec: 画面遷移). */
+  openTop(request: TopRequest): Promise<void>;
 }
 
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
@@ -318,6 +322,7 @@ async function runCommand(
     env: io.env,
     config,
   };
+  const tui = io.interactive && !json;
   if (command === "status" || command === "home") {
     // The config's repos live in the config's region and profile, not the remote's.
     const fromConfig = !input.repo && Boolean(config.repos?.length);
@@ -325,7 +330,24 @@ async function runCommand(
     onContext(account);
     return command === "status"
       ? runStatus(str(values, "repo"), account, config, json, deps)
-      : runHome(str(values, "repo"), account, config, git, deps);
+      : runTop({ start: "home", flagRepo: str(values, "repo"), ctx: account, config, git }, deps);
+  }
+  if (command === "browse" && tui) {
+    // Outside a clone with no repository, browse opens on the repository picker.
+    const account = await resolveAccountContext(input);
+    onContext(account);
+    return runTop(
+      {
+        start: "browse",
+        flagRepo: str(values, "repo"),
+        ctx: account,
+        config,
+        git,
+        ...optional("ref", str(values, "ref")),
+        ...optional("path", str(values, "path")),
+      },
+      deps,
+    );
   }
   const ctx = await resolveContext(input);
   onContext(ctx);
@@ -370,27 +392,11 @@ async function runCommand(
   switch (command) {
     case "branch": {
       const branchDeps = { api, git, ctx, config };
-      if (io.interactive && !json) {
-        await deps.openBranches({
-          actions: branchActions(branchDeps, region),
-          region,
-          markSeen,
-          ...optional("profile", ctx.profile),
-          ...(ctx.clone ? { git } : {}),
-          async createPullRequest(head) {
-            try {
-              const result = await createPullRequest(
-                { head, fill: false, push: false, noPush: false, dryRun: false },
-                prDeps,
-              );
-              // dry-run is off, so the result is a PR, new or already open.
-              return { pullRequestId: (result as { pr: { id: string } }).pr.id };
-            } catch (error) {
-              return { message: describeError(error, ctx.profile) };
-            }
-          },
-        });
-        return 0;
+      if (tui) {
+        return runTop(
+          { start: "branches", flagRepo: str(values, "repo"), ctx, config, git, api },
+          deps,
+        );
       }
       const table = await loadBranchTable(branchDeps);
       if (json) print(branchJson(table));
@@ -400,10 +406,6 @@ async function runCommand(
     case "browse": {
       const actions = await browseActions({ api, ctx }, region, str(values, "ref"));
       const path = str(values, "path") ?? "";
-      if (io.interactive && !json) {
-        await deps.openBrowse({ actions, path });
-        return 0;
-      }
       const node = await actions.open(actions.startRef, path);
       const url = actions.consoleUrl(node.ref, node.path);
       if (json) print(browseJson(ctx.repository, node, url));
@@ -591,35 +593,102 @@ async function runCommand(
   }
 }
 
-/** Bare `lazycc`: the home screen (spec: ホーム). */
-async function runHome(
-  flagRepo: string | undefined,
-  ctx: AccountContext,
-  config: Config,
-  git: Git,
-  deps: Deps,
-): Promise<number> {
+interface TopStart {
+  readonly start: TopRequest["start"];
+  readonly flagRepo: string | undefined;
+  readonly ctx: AccountContext;
+  readonly config: Config;
+  readonly git: Git;
+  /** Already created for this context (lazycc branch). */
+  readonly api?: CodeCommitApi;
+  /** browse: --ref and --path, for the repository it starts on. */
+  readonly ref?: string;
+  readonly path?: string;
+}
+
+/**
+ * The TUI's top level (spec: 画面遷移): bare lazycc, lazycc branch and lazycc
+ * browse open it on their own view, and 1/2/3 switch between the three for the
+ * clone's repository or the one picked with r.
+ */
+async function runTop(top: TopStart, deps: Deps): Promise<number> {
   const { io } = deps;
+  const { ctx, config, git } = top;
   const cloneRepo = ctx.clone ? ctx.repository : undefined;
-  const api = await deps.createApi({
-    ...optional("region", ctx.region),
-    ...optional("profile", ctx.profile),
-  });
+  const api =
+    top.api ??
+    (await deps.createApi({
+      ...optional("region", ctx.region),
+      ...optional("profile", ctx.profile),
+    }));
   const region = ctx.region ?? (await api.region());
   const state = deps.createState(io.env);
-  const me = await resolveMe(api, state.identity, ctx.profile, io.env);
-  await deps.openHome({
-    actions: homeActions({
-      api,
-      state,
-      config,
-      env: io.env,
-      region,
-      me,
-      // Nothing to watch: the home opens on the repository picker.
-      initial: watchedRepositories(flagRepo, config, cloneRepo),
-    }),
+  // Only home and the picker need "me" (one STS call, cached per profile).
+  let home: Promise<HomeActions> | undefined;
+  const repoContext = (repository: string): RepoContext => ({
+    repository,
+    ...optional("region", ctx.region),
+    ...optional("profile", ctx.profile),
+    ...(repository === cloneRepo && ctx.clone ? { clone: ctx.clone } : {}),
+  });
+  const views: TopViews = {
+    home: () =>
+      (home ??= resolveMe(api, state.identity, ctx.profile, io.env).then((me) =>
+        homeActions({
+          api,
+          state,
+          config,
+          env: io.env,
+          region,
+          me,
+          // Nothing to watch: the home opens on the repository picker.
+          initial: watchedRepositories(top.flagRepo, config, cloneRepo),
+        }),
+      )),
+    branches(repository) {
+      const repoCtx = repoContext(repository);
+      return {
+        actions: branchActions({ api, git, ctx: repoCtx, config }, region),
+        async createPullRequest(head) {
+          try {
+            const result = await createPullRequest(
+              { head, fill: false, push: false, noPush: false, dryRun: false },
+              {
+                git,
+                api,
+                ctx: repoCtx,
+                config,
+                interactive: io.interactive,
+                confirm: io.confirm,
+                edit: io.edit,
+                readFile: io.readFile,
+                note: io.err,
+              },
+            );
+            // dry-run is off, so the result is a PR, new or already open.
+            return { pullRequestId: (result as { pr: { id: string } }).pr.id };
+          } catch (error) {
+            return { message: describeError(error, ctx.profile) };
+          }
+        },
+      };
+    },
+    browse: (repository) =>
+      browseActions(
+        { api, ctx: repoContext(repository) },
+        region,
+        repository === ctx.repository ? top.ref : undefined,
+      ),
+  };
+  await deps.openTop({
+    start: top.start,
+    ...optional("repository", ctx.repository),
+    ...optional("browsePath", top.path),
+    views,
     region,
+    markSeen: (id) => {
+      state.seen.mark(seenKey(region, id), new Date()).catch(() => {});
+    },
     ...optional("profile", ctx.profile),
     ...(cloneRepo ? { git, cloneRepository: cloneRepo } : {}),
   });
