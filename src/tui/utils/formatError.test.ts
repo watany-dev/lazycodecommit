@@ -371,6 +371,12 @@ describe("formatErrorMessage", () => {
       );
     });
 
+    it("returns network error for the SDK's TimeoutError", () => {
+      expect(formatErrorMessage(makeError("TimeoutError", "socket timed out"))).toBe(
+        "Network error. Check your connection.",
+      );
+    });
+
     it("returns network error for ECONNREFUSED", () => {
       expect(formatErrorMessage(makeError("Error", "ECONNREFUSED"))).toBe(
         "Network error. Check your connection.",

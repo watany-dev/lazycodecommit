@@ -16,6 +16,7 @@ describe("Help", () => {
 
     // Navigation
     expect(output).toContain("j / ↓");
+    expect(output).toContain("Show more of a large diff");
     expect(output).toContain("k / ↑");
     expect(output).toContain("Enter");
     expect(output).toContain("Ctrl+C");

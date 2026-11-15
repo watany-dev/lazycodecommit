@@ -88,7 +88,7 @@ is optional, the current branch's open PR is used.
 | `lazycc` | The home screen (TUI): the same inbox as `status`. With nothing to watch, it opens the repository picker |
 | `lazycc status` | The inbox as text: open PRs awaiting your approval, and your own open PRs with their approval rules and conflicts. ● marks activity since you last opened the PR |
 | `lazycc pr create` | Push the current branch if needed and open a PR (see below) |
-| `lazycc pr list` | List PRs. `--state open\|closed` (default `open`), `-L/--limit` (default 30). On a terminal with no flags it opens the PR list screen |
+| `lazycc pr list` | List PRs. `--state open\|closed` (default `open`), `-L/--limit` (default 30): the N most recently created PRs, most recently active first, as `gh pr list`. On a terminal with no flags it opens the PR list screen |
 | `lazycc pr view [<id>]` | Show a PR. On a terminal it opens the review screen |
 | `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR. Needs a clone. With the config's `ci`, `pr view` and `pr status` add CodeBuild and CodePipeline results ([CI results](docs/configuration.md#ci-results)) |
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it, fast-forwarding an existing local branch. Needs a clone |
@@ -244,7 +244,9 @@ bun run ci   # everything CI checks, before every push
 
 See [docs/dev/ci.md](docs/dev/ci.md) for the pipeline and release process,
 and [docs/dev/spec.ja.md](docs/dev/spec.ja.md) for the specification
-(Japanese).
+(Japanese). [docs/dev/real-aws-check.md](docs/dev/real-aws-check.md) runs
+everything against a throwaway CodeCommit repository on real AWS and writes
+one report.
 
 ## License
 

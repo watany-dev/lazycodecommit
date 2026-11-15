@@ -115,6 +115,20 @@ Comments:
 | `d` | Delete your comment (asks to confirm) |
 | `g` | React (`h`/`l` or `←`/`→` to pick, `Enter` to send) |
 
+Drafts: in the `c`, `C` and `R` boxes, `Enter` posts at once and `Tab` keeps
+the text as a draft instead. Drafts are saved per PR in
+`~/.local/state/lazycc/drafts.json` until posted. CodeCommit has no way to
+post several comments at once, so they go out one at a time, in the order you
+wrote them.
+
+| Key | Action |
+| --- | --- |
+| `D` | Draft list |
+| `S` (in the list) | Post all drafts (asks to confirm) |
+| `e` / `d` (in the list) | Edit / discard a draft (discard asks to confirm) |
+| `Enter` (in the list) | Go to an inline draft's line |
+| `p` (in the list) | Post a draft whose line changed in new commits anyway |
+
 Pull request:
 
 | Key | Action |

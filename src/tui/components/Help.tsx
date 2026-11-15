@@ -52,6 +52,7 @@ export function Help({ onClose }: Props) {
         <KeyRow keyName="]c" description="Next change (add/delete line)" />
         <KeyRow keyName="[c" description="Previous change (add/delete line)" />
         <KeyRow keyName="f" description="File list" />
+        <KeyRow keyName="t" description="Show more of a large diff" />
         <KeyRow keyName="Enter" description="Select / confirm" />
         <KeyRow keyName="q / Esc" description="Back / quit" />
         <KeyRow keyName="Ctrl+C" description="Exit immediately" />
@@ -62,6 +63,8 @@ export function Help({ onClose }: Props) {
         <KeyRow keyName="c" description="Post comment" />
         <KeyRow keyName="C" description="Post inline comment" />
         <KeyRow keyName="R" description="Reply to comment" />
+        <KeyRow keyName="Tab" description="Keep as draft (in a comment box)" />
+        <KeyRow keyName="D" description="Drafts: S posts all, e edit, d discard" />
         <KeyRow keyName="o" description="Toggle thread fold" />
         <KeyRow keyName="e" description="Edit comment" />
         <KeyRow keyName="d" description="Delete comment" />

@@ -2,12 +2,14 @@ import { type Instance, render } from "ink";
 import type { ReactNode } from "react";
 import type { BranchActions } from "../core/branch.js";
 import type { BrowseActions } from "../core/browse.js";
+import type { DraftStorage } from "../core/commentDrafts.js";
 import type { HomeActions } from "../core/home.js";
 import { type MergeStrategy, openReviewService, type ReviewService } from "../core/review.js";
 import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
 import { HomeApp } from "./HomeApp.js";
+import { keyStream } from "./keyStream.js";
 import { PickScreen } from "./PickScreen.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
 import type { TopSwitch, TopView } from "./top.js";
@@ -23,6 +25,8 @@ interface ServiceRequest {
   readonly markSeen?: (pullRequestId: string) => void;
   /** The config's pr.mergeOption, preselected in the merge dialog. */
   readonly mergeStrategy?: MergeStrategy;
+  /** drafts.json: unposted review comments survive leaving the screen. */
+  readonly drafts?: DraftStorage;
 }
 
 export interface ReviewRequest extends ServiceRequest {
@@ -49,6 +53,11 @@ export interface TopViews {
 /** spec: 画面遷移. The three top-level views and the repository they show. */
 export interface TopRequest extends ServiceRequest {
   readonly start: TopView;
+  /**
+   * The account home reads the config's repositories in, when it is not the
+   * clone's (lazycc branch or browse in a clone of another region or profile).
+   */
+  readonly home?: Pick<ServiceRequest, "region" | "profile" | "markSeen">;
   /** The repository the branch table and browse show; picked with r when unset. */
   readonly repository?: string;
   /** The clone's repository: only its PRs take their diffs from `git`. */
@@ -70,12 +79,14 @@ function service(request: ServiceRequest): ReviewService {
     ...s,
     ...(request.markSeen ? { markSeen: request.markSeen } : {}),
     ...(request.mergeStrategy ? { mergeStrategy: request.mergeStrategy } : {}),
+    ...(request.drafts ? { drafts: request.drafts } : {}),
   };
 }
 
 export async function openReview(request: ReviewRequest): Promise<void> {
   const app = render(
     <App service={service(request)} repository={request.repository} start={request.start} />,
+    { stdin: keyStream(process.stdin) },
   );
   await app.waitUntilExit();
 }
@@ -87,12 +98,16 @@ export async function openReview(request: ReviewRequest): Promise<void> {
  * starts again from its cache.
  */
 export async function openTop(request: TopRequest): Promise<void> {
-  const { git, cloneRepository, views, ...rest } = request;
+  const { git, cloneRepository, views, home, ...rest } = request;
   const base = { ...rest };
   const withGit = git ? service({ ...base, git }) : undefined;
   const withoutGit = service(base);
   const reviewService = (repository: string) =>
     withGit && repository === cloneRepository ? withGit : withoutGit;
+  const homeService =
+    home &&
+    service({ ...(rest.mergeStrategy ? { mergeStrategy: rest.mergeStrategy } : {}), ...home });
+  const homeReviewService = homeService ? () => homeService : reviewService;
 
   let view = request.start;
   let repository = request.repository;
@@ -103,7 +118,7 @@ export async function openTop(request: TopRequest): Promise<void> {
   let previous: TopView | null = null;
   let screen: Instance | undefined;
   const run = async (node: ReactNode) => {
-    screen = render(node);
+    screen = render(node, { stdin: keyStream(process.stdin) });
     await screen.waitUntilExit();
   };
   // Ink leaves a view's last frame on exit; the next view replaces it instead.
@@ -121,7 +136,7 @@ export async function openTop(request: TopRequest): Promise<void> {
       await run(
         <HomeApp
           actions={actions}
-          reviewService={reviewService}
+          reviewService={homeReviewService}
           note={note}
           onSwitch={onSwitch}
           onRepository={(r) => {
@@ -179,7 +194,7 @@ export async function openTop(request: TopRequest): Promise<void> {
       <PickScreen
         actions={await views.home()}
         current={repository}
-        reviewService={reviewService}
+        reviewService={homeReviewService}
         onDone={(r) => {
           picked = r;
           clearScreen();

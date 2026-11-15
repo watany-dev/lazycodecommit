@@ -29,13 +29,26 @@ describe("stateDir", () => {
 describe("identity", () => {
   it("round-trips per key and ignores what is not an ARN", async () => {
     const s = state();
-    expect(await s.identity.get("dev")).toBeUndefined();
-    await s.identity.set("dev", "arn:aws:iam::1:user/me");
-    await s.identity.set("prod", "arn:aws:iam::2:user/me");
-    expect(await s.identity.get("dev")).toBe("arn:aws:iam::1:user/me");
-    await put("identity.json", '{"dev": 3, "x": "nope"}');
-    expect(await s.identity.get("dev")).toBeUndefined();
-    expect(await s.identity.get("x")).toBeUndefined();
+    expect(await s.identity.get("cred:a")).toBeUndefined();
+    await s.identity.set("cred:a", "arn:aws:iam::1:user/me");
+    await s.identity.set("cred:b", "arn:aws:iam::2:user/me");
+    expect(await s.identity.get("cred:a")).toBe("arn:aws:iam::1:user/me");
+    expect(await s.identity.get("cred:b")).toBe("arn:aws:iam::2:user/me");
+    await put("identity.json", '{"cred:a": 3, "cred:x": "nope"}');
+    expect(await s.identity.get("cred:a")).toBeUndefined();
+    expect(await s.identity.get("cred:x")).toBeUndefined();
+  });
+
+  it("drops entries older versions keyed by profile or by a raw access key ID", async () => {
+    const s = state();
+    await put(
+      "identity.json",
+      '{"profile:dev": "arn:aws:iam::1:user/me", "key:AKIAIOSFODNN7EXAMPLE": "arn:aws:iam::1:user/me"}',
+    );
+    await s.identity.set("cred:a", "arn:aws:iam::1:user/me");
+    expect(JSON.parse(await readFile(join(dir, "identity.json"), "utf8"))).toEqual({
+      "cred:a": "arn:aws:iam::1:user/me",
+    });
   });
 });
 
@@ -121,10 +134,30 @@ describe("file modes", () => {
     const s = state();
     await s.cache.set("home", { title: "secret project" });
     await s.seen.mark(seenKey("us-east-1", "1"), new Date());
-    await s.identity.set("dev", "arn:aws:iam::1:user/me");
+    await s.identity.set("cred:a", "arn:aws:iam::1:user/me");
     expect((await stat(dir)).mode & 0o777).toBe(0o700);
     for (const name of ["cache.json", "seen.json", "identity.json"]) {
       expect((await stat(join(dir, name))).mode & 0o777, name).toBe(0o600);
     }
+  });
+});
+
+describe("drafts", () => {
+  it("keeps each PR's list, removes an emptied one, and writes the file user-only", async () => {
+    const s = state();
+    expect(await s.drafts.get("r/1")).toBeUndefined();
+    await s.drafts.set("r/1", [{ id: "a" }]);
+    await s.drafts.set("r/2", [{ id: "b" }]);
+    expect(await s.drafts.get("r/1")).toEqual([{ id: "a" }]);
+    await s.drafts.set("r/1", []);
+    expect(JSON.parse(await readFile(join(dir, "drafts.json"), "utf8"))).toEqual({
+      "r/2": [{ id: "b" }],
+    });
+    expect((await stat(join(dir, "drafts.json"))).mode & 0o777).toBe(0o600);
+  });
+
+  it("reads a corrupt file as empty", async () => {
+    await put("drafts.json", "{not json");
+    expect(await state().drafts.get("r/1")).toBeUndefined();
   });
 });

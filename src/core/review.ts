@@ -2,6 +2,7 @@ import type { CodeCommitClient, Difference, PullRequestTarget } from "@aws-sdk/c
 import type { MergeStrategy } from "../aws/codecommit.js";
 import * as aws from "../aws/review.js";
 import type { Git, TreeChange } from "../git/git.js";
+import type { DraftStorage } from "./commentDrafts.js";
 import { printable } from "./text.js";
 
 type WithoutClient<F> = F extends (client: CodeCommitClient, ...args: infer A) => infer R
@@ -35,6 +36,8 @@ export type ReviewService = { readonly [K in Operation]: WithoutClient<(typeof a
   readonly markSeen?: (pullRequestId: string) => void;
   /** The config's pr.mergeOption: the merge dialog starts on it. */
   readonly mergeStrategy?: MergeStrategy;
+  /** Where unposted comments are kept; without it they last as long as the screen. */
+  readonly drafts?: DraftStorage;
 };
 
 /** The service for the TUI, with its own client: the review screen needs more calls than CodeCommitApi has. */

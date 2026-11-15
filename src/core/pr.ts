@@ -44,9 +44,17 @@ export interface PrDeps {
   note(line: string): void;
 }
 
+/** Says why the clone we stand in was not used, when a flag is the reason. */
+function notInClone(ctx: RepoContext, message: string): UsageError {
+  return new UsageError(ctx.otherClone ? `${message} (${ctx.otherClone})` : message);
+}
+
 export function repositoryConsoleUrl(region: string, repository: string, path: string): string {
-  const host = region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com";
-  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/${path}?region=${region}`;
+  // GovCloud signs in at one host for both of its regions; ?region= picks one.
+  const host = region.startsWith("us-gov-")
+    ? "console.amazonaws-us-gov.com"
+    : `${region}.${region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com"}`;
+  return `https://${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/${path}?region=${region}`;
 }
 
 export function consoleUrl(region: string, repository: string, id: string): string {
@@ -113,7 +121,7 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
   const clone = ctx.clone;
   let head = opts.head;
   if (head === undefined) {
-    if (!clone) throw new UsageError("--head is required outside a clone of the repository");
+    if (!clone) throw notInClone(ctx, "--head is required outside a clone of the repository");
     const current = await git.currentBranch();
     if (current === null)
       throw new UserError("HEAD is detached. Switch to a branch, or pass --head.");
@@ -277,7 +285,7 @@ export async function resolvePullRequest(
 
 async function currentBranchOfClone(deps: Pick<PrDeps, "ctx" | "git">): Promise<string> {
   if (!deps.ctx.clone)
-    throw new UsageError("Not in a clone of the repository: pass a pull request id");
+    throw notInClone(deps.ctx, "Not in a clone of the repository: pass a pull request id");
   const branch = await deps.git.currentBranch();
   if (branch === null)
     throw new UserError("HEAD is detached. Switch to a branch, or pass a pull request id.");
@@ -295,7 +303,8 @@ export interface PrStatus {
 export async function pullRequestStatus(
   deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
 ): Promise<PrStatus> {
-  if (!deps.ctx.clone) throw new UsageError("pr status works inside a clone of the repository");
+  if (!deps.ctx.clone)
+    throw notInClone(deps.ctx, "pr status works inside a clone of the repository");
   const branch = await currentBranchOfClone(deps);
   const pr = await findOpenPullRequest(deps, branch);
   if (!pr) return { branch };
@@ -319,7 +328,8 @@ export async function checkoutPullRequest(
   id: string,
   deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
 ): Promise<CheckoutResult> {
-  if (!deps.ctx.clone) throw new UsageError("pr checkout works inside a clone of the repository");
+  if (!deps.ctx.clone)
+    throw notInClone(deps.ctx, "pr checkout works inside a clone of the repository");
   const { git } = deps;
   const pr = await resolvePullRequest(id, deps);
   const branch = pr.sourceBranch;

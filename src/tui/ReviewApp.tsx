@@ -3,6 +3,17 @@ import { Box, Text, useApp, useInput } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import {
+  type CommentDraft,
+  type DraftTarget,
+  draftKey,
+  editDraft,
+  lineReader,
+  newDraft,
+  postAnyway,
+  reanchor,
+  submitDrafts,
+} from "../core/commentDrafts.js";
+import {
   type CommentThread,
   type CommitInfo,
   type ConflictSummary,
@@ -123,6 +134,134 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const commitsPromiseRef = useRef<Promise<CommitInfo[]>>(Promise.resolve([]));
 
   const [reactionsByComment, setReactionsByComment] = useState<ReactionsByComment>(new Map());
+
+  // spec: コメントの下書き. The ref is what async work reads and writes; the
+  // state is what renders.
+  const [drafts, setDrafts] = useState<readonly CommentDraft[]>([]);
+  const draftsRef = useRef<readonly CommentDraft[]>([]);
+  const draftsForRef = useRef<string | null>(null);
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  const [isPostingDrafts, setIsPostingDrafts] = useState(false);
+  const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+
+  /** Shows `next` and writes it to drafts.json; the promise rejects when the write fails. */
+  async function storeDrafts(key: string, next: readonly CommentDraft[]) {
+    draftsRef.current = next;
+    setDrafts(next);
+    try {
+      await service.drafts?.save(key, next);
+      setDraftSaveError(null);
+    } catch (err) {
+      setDraftSaveError(formatErrorMessage(err));
+      throw err;
+    }
+  }
+
+  /** Edits from the screen: a failed write shows in the header, the drafts stay in memory. */
+  function changeDrafts(change: (list: readonly CommentDraft[]) => readonly CommentDraft[]) {
+    if (!prDetail?.pullRequestId) return;
+    storeDrafts(draftKey(prDetail), change(draftsRef.current)).catch(() => {});
+  }
+
+  function addDraft(content: string, target: DraftTarget) {
+    const t = prDetail?.pullRequestTargets?.[0];
+    if (!t?.destinationCommit || !t.sourceCommit) return;
+    const tip = { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit };
+    changeDrafts((list) => [...list, newDraft(content, target, tip)]);
+  }
+
+  async function loadDrafts(key: string) {
+    if (draftsForRef.current === key) return;
+    draftsForRef.current = key;
+    draftsRef.current = [];
+    setDrafts([]);
+    setDraftError(null);
+    if (!service.drafts) return;
+    try {
+      const list = await service.drafts.load(key);
+      if (draftsForRef.current !== key) return;
+      draftsRef.current = list;
+      setDrafts(list);
+    } catch (err) {
+      setDraftSaveError(formatErrorMessage(err));
+    }
+  }
+
+  async function handleSubmitDrafts() {
+    const pullRequestId = prDetail?.pullRequestId;
+    if (!pullRequestId || isPostingDrafts) return;
+    const key = draftKey(prDetail);
+    setIsPostingDrafts(true);
+    setDraftError(null);
+    let moved = false;
+    try {
+      // CodeCommit posts against the current tip only, so read it first.
+      const detail = await service.getPullRequestDetail(pullRequestId, selectedRepo);
+      const t = detail.pullRequest.pullRequestTargets?.[0];
+      if (!t?.destinationCommit || !t.sourceCommit) {
+        throw new Error("The pull request has no commits to comment on.");
+      }
+      const tip = { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit };
+      const old = prDetail?.pullRequestTargets?.[0];
+      moved =
+        old?.sourceCommit !== tip.afterCommitId || old?.destinationCommit !== tip.beforeCommitId;
+      const lineAt = await lineReader(draftsRef.current, tip, detail.differences, (blobId) =>
+        service.getBlobContent(selectedRepo, blobId),
+      );
+      const anchored = reanchor(draftsRef.current, tip, lineAt);
+      await storeDrafts(key, anchored);
+      const result = await submitDrafts(anchored, {
+        save: (list) => storeDrafts(key, list),
+        progress: (done, total) => setDraftProgress({ done, total }),
+        post: async (draft, on, token) => {
+          const { target, content } = draft;
+          if (target.kind === "reply") {
+            await service.postCommentReply({
+              inReplyTo: target.inReplyTo,
+              content,
+              clientRequestToken: token,
+            });
+            return;
+          }
+          await service.postComment({
+            pullRequestId,
+            repositoryName: selectedRepo,
+            ...on,
+            content,
+            clientRequestToken: token,
+            ...(target.kind === "inline"
+              ? {
+                  location: {
+                    filePath: target.location.filePath,
+                    filePosition: target.location.filePosition,
+                    relativeFileVersion: target.location.relativeFileVersion,
+                  },
+                }
+              : {}),
+          });
+        },
+      });
+      const movedLeft = result.remaining.filter((d) => d.problem?.kind === "moved").length;
+      if (result.stopped?.problem) {
+        setDraftError(
+          `Posted ${result.posted}. Stopped at a draft: ${result.stopped.problem.message}`,
+        );
+      } else if (movedLeft > 0) {
+        setDraftError(
+          `Posted ${result.posted}. ${movedLeft} draft${movedLeft === 1 ? " points" : "s point"} at a line that changed in new commits: check it (p posts anyway).`,
+        );
+      }
+    } catch (err) {
+      setDraftError(formatErrorMessage(err, "comment"));
+    } finally {
+      setIsPostingDrafts(false);
+      setDraftProgress(null);
+    }
+    // New commits: show them, so moved drafts can be checked against the new diff.
+    if (moved) await loadPullRequestDetail(pullRequestId);
+    else await reloadComments(pullRequestId).catch(() => {});
+  }
 
   // Read when opened, and again when left, so the user's own comments or
   // approval made here do not mark the PR unread.
@@ -402,6 +541,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
       if (isDetailLoadStale(loadId)) return;
 
       setPrDetail(detail.pullRequest);
+      void loadDrafts(draftKey(detail.pullRequest));
       setPrDifferences(detail.differences);
       setCommentThreads(detail.commentThreads);
       setDiffTexts(new Map());
@@ -718,6 +858,27 @@ export function App({ service, repository, start, onExit }: AppProps) {
           editComment={updateCommentAction}
           deleteComment={deleteCommentAction}
           reaction={{ ...reactAction, byComment: reactionsByComment }}
+          drafts={{
+            list: drafts,
+            saveError: draftSaveError,
+            add: addDraft,
+            edit: (id, content) =>
+              changeDrafts((list) => list.map((d) => (d.id === id ? editDraft(d, content) : d))),
+            discard: (id) => changeDrafts((list) => list.filter((d) => d.id !== id)),
+            postAnyway: (id) => {
+              const t = prDetail.pullRequestTargets?.[0];
+              if (!t?.destinationCommit || !t.sourceCommit) return;
+              const tip = { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit };
+              changeDrafts((list) => list.map((d) => (d.id === id ? postAnyway(d, tip) : d)));
+            },
+            submit: () => void handleSubmitDrafts(),
+            state: {
+              isProcessing: isPostingDrafts,
+              progress: draftProgress,
+              error: draftError,
+              clearError: () => setDraftError(null),
+            },
+          }}
         />
       );
     case "activity":

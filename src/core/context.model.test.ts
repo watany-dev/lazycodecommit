@@ -78,6 +78,10 @@ function expected(c: Case): RepoContext | null {
     ...(region ? { region } : {}),
     ...(profile ? { profile } : {}),
     ...(inClone ? { clone: { root: c.root as string } } : {}),
+    // Standing in a clone a flag ruled out: errors say why it was not used.
+    ...(remote !== null && !inClone
+      ? { otherClone: expect.stringContaining(String(remote.repo)) }
+      : {}),
   };
 }
 

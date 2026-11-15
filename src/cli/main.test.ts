@@ -162,12 +162,12 @@ describe("context and errors", () => {
   it("shows other errors by name, with a stack under LAZYCC_DEBUG", async () => {
     const api = fakeApi([], {
       listPullRequestIds: async () => {
-        throw Object.assign(new Error("no such repo"), { name: "RepositoryDoesNotExistException" });
+        throw Object.assign(new Error("no such repo"), { name: "InvalidRepositoryNameException" });
       },
     });
     expect(await cli(["pr", "list"], { api })).toMatchObject({
       code: 1,
-      err: "lazycc: RepositoryDoesNotExistException: no such repo",
+      err: "lazycc: InvalidRepositoryNameException: no such repo",
     });
     const debug = await cli(["pr", "list"], { api, env: { LAZYCC_DEBUG: "1" } });
     expect(debug.err).toContain("at ");
@@ -953,9 +953,23 @@ describe("the review screen on a terminal", () => {
         start: { pullRequestId: "3" },
         region: "ap-northeast-1",
         markSeen: expect.any(Function),
+        drafts: { load: expect.any(Function), save: expect.any(Function) },
         git: expect.anything(),
       },
     ]);
+  });
+
+  it("keeps the review screen's comment drafts in the state, per region and PR", async () => {
+    const state = fakeState();
+    const r = await cli(["pr", "view", "3"], {
+      interactive: true,
+      state,
+      api: fakeApi([pullRequest({ id: "3" })]),
+    });
+    await r.reviews[0]?.drafts?.save("3", []);
+    expect(await r.reviews[0]?.drafts?.load("3")).toEqual([]);
+    const b = await cli(["branch"], { interactive: true, state });
+    expect(b.tops[0]?.drafts).toBeDefined();
   });
 
   it("opens the PR list for a bare pr list, without git outside a clone", async () => {
@@ -970,6 +984,7 @@ describe("the review screen on a terminal", () => {
         region: "us-west-2",
         profile: "p",
         markSeen: expect.any(Function),
+        drafts: { load: expect.any(Function), save: expect.any(Function) },
       },
     ]);
   });
@@ -1121,7 +1136,8 @@ describe("status", () => {
     expect(r.out).toMatch(/#2 {2}Mine {2}✗ 1\/2 rules {2}no conflicts/);
     expect(r.out).not.toContain("Approved");
     expect(r.out).not.toContain("Elsewhere");
-    expect(state.identities.get("profile:default")).toBe(ME);
+    expect([...state.identities.values()]).toEqual([ME]);
+    expect([...state.identities.keys()][0]).toMatch(/^cred:/);
     expect(state.sections.get("home")).toMatchObject({ items: expect.any(Array) });
   });
 
@@ -1293,6 +1309,29 @@ describe("home", () => {
       (await (await cli(args, { interactive: true, config })).tops[0]?.views.home())?.initial;
     expect(await initial([])).toEqual(["a", "b"]);
     expect(await initial(["-R", "x"])).toEqual(["x"]);
+  });
+
+  it.each([["branch"], ["browse"]])(
+    "reads the config's repos in the config's region from lazycc %s in a clone",
+    async (command) => {
+      const config = { repos: ["a"], region: "us-west-2", profile: "cfg" };
+      const r = await cli([command], { interactive: true, config });
+      const top = r.tops[0];
+      // The branch table and browse stay on the clone's region...
+      expect(top).toMatchObject({ region: "ap-northeast-1", cloneRepository: "demo" });
+      // ...while home, as from bare lazycc, uses the config's.
+      const home = await top?.views.home();
+      expect(home).toMatchObject({ region: "us-west-2", initial: ["a"] });
+      expect(r.apiOptions).toContainEqual({ region: "us-west-2", profile: "cfg" });
+      expect(top?.home).toMatchObject({ region: "us-west-2", profile: "cfg" });
+    },
+  );
+
+  it("shares the clone's account with home when the config names the same", async () => {
+    const config = { repos: ["a"], region: "ap-northeast-1" };
+    const r = await cli(["branch"], { interactive: true, config, env: {} });
+    expect(r.tops[0]).not.toHaveProperty("home");
+    expect((await r.tops[0]?.views.home())?.region).toBe("ap-northeast-1");
   });
 
   it("rejects an unknown flag, and home as a command", async () => {

@@ -27,13 +27,34 @@ describe("explainAwsError", () => {
     ).toBe("Access denied: not authorized to perform: codecommit:CreatePullRequest");
   });
 
+  it("says a timeout is CodeCommit not answering, not a bug", () => {
+    const out = explainAwsError(
+      err("TimeoutError", "the request socket timed out after 10000 ms of inactivity"),
+      undefined,
+    );
+    expect(out).toContain("did not answer");
+    expect(out).toContain("10000 ms");
+  });
+
+  it("points an unknown pull request at the id, region and profile", () => {
+    expect(
+      explainAwsError(
+        err("PullRequestDoesNotExistException", "Pull request 9 does not exist"),
+        "dev",
+      ),
+    ).toContain("--region");
+    expect(
+      explainAwsError(err("RepositoryDoesNotExistException", "r does not exist"), undefined),
+    ).toContain("--region");
+  });
+
   it("explains a missing region", () => {
     expect(explainAwsError(err("Error", "Region is missing"), undefined)).toMatch(/--region/);
   });
 
   it("leaves other errors alone", () => {
     expect(
-      explainAwsError(err("RepositoryDoesNotExistException", "nope"), undefined),
+      explainAwsError(err("InvalidRepositoryNameException", "nope"), undefined),
     ).toBeUndefined();
     expect(explainAwsError("string", undefined)).toBeUndefined();
   });

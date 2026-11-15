@@ -56,6 +56,13 @@ export function explainAwsError(error: unknown, profile: string | undefined): st
     // The message names the codecommit:<Action> that was refused.
     return `Access denied: ${error.message}`;
   }
+  if (name === "PullRequestDoesNotExistException" || name === "RepositoryDoesNotExistException") {
+    const flag = profile ? ` and --profile ${profile}` : " and --profile";
+    return `${error.message.replace(/\.$/, "")}. Check the name or id, --region${flag}.`;
+  }
+  if (name === "TimeoutError") {
+    return `CodeCommit did not answer in time (${error.message.replace(/\.$/, "")}). Check the network and the region, then retry.`;
+  }
   if (/region is missing/i.test(error.message)) {
     return 'No AWS region. Pass --region, set AWS_REGION, or add "region" to the config file.';
   }

@@ -55,7 +55,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc | ホーム(受信箱)の TUI を開く | 可 |
 | lazycc status | ホームと同じ内容をテキストで出す | 可 |
 | lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
-| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30) | 可 |
+| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30)。-L N は作成が新しい N 件を、最終更新の新しい順に並べて出す(gh pr list と同じく作成順で絞る) | 可 |
 | lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
 | lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
@@ -152,7 +152,7 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 - clone 外では push とコミットからの下書きを行わず、タイトルの初期値はブランチ名にする。ソースブランチがリモートにあることは GetBranch で確かめる。
 - clientRequestToken は実行ごとに新しく作る。再実行での二重作成は既存 PR の確認で防ぐ。内容から作ると、その後に閉じた PR が返ってきてしまう。
 - clone 内では、ベースとの差分を origin/<base> から取る。なければローカルの <base>、どちらもなければ git fetch を案内する。
-- コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。
+- コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。GovCloud（us-gov-*）は地域ごとのホストがないため https://console.amazonaws-us-gov.com/… とし、リージョンは ?region= で指定する。
 
 ## ブランチ×PR 対応表
 
@@ -274,6 +274,17 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 
 インラインコメントの位置は、取得元にかかわらず CodeCommit の filePath、filePosition、relativeFileVersion(BEFORE / AFTER)に対応させる。
 
+### コメントの下書き
+
+コメントを溜めてまとめて投稿できる。詳細と根拠は [ADR 0009](../adr/0009-comment-drafts.md)。
+
+- CodeCommit にはまとめて提出する API がないため、下書きを作った順に PostCommentForPullRequest と PostCommentReply で 1 件ずつ投稿する。他人には 1 件ずつ届く。
+- c / C / R の入力欄で Enter は即時投稿、Tab は下書きとして保存する。
+- D で下書きの一覧を開く。Enter で該当行に移る、e で編集、d で破棄(確認あり)、S でまとめて投稿(確認あり)。
+- 下書きごとに clientRequestToken を持ち、内容・コミット・位置・返信先が変わらない限り同じトークンで送る。再試行で二重に投稿しない。
+- 成功した下書きはその場で消す。最初の失敗で止め、残りは下書きのまま残す。応答が来ず届いたか不明な下書きは、再試行するまで編集できない。
+- 投稿の直前に PR を読み直す。先端が進んでいたら、インライン下書きのうち記録した行の文字列が同じ行にないものを「行がずれた」として投稿から外す。一般コメントと返信は新しい先端に投稿する。
+
 ## CI 結果の表示
 
 PR のソースコミットに対する CodeBuild と CodePipeline の結果を出す。設定で見る先を指定したリポジトリだけが対象で、指定がなければ CodeBuild と CodePipeline の API を呼ばない(ADR 0010)。
@@ -345,6 +356,8 @@ PR のソースコミットに対する CodeBuild と CodePipeline の結果を�
 
 現行のキーをそのまま使う。主なものは c コメント、C インラインコメント、R 返信、a 承認、r 承認取り消し、m マージ、x クローズ、]c / [c 変更箇所への移動。
 
+D で下書きの一覧を開き、その中の S でまとめて投稿する(コメントの下書きの節)。
+
 トップレベル用のキー(1〜3、r、u)はレビュー画面では無効にする。これにより r などの衝突を避ける。
 
 ## 設定・認証・ローカル状態
@@ -378,7 +391,7 @@ PR のソースコミットに対する CodeBuild と CodePipeline の結果を�
 ### プロファイルとリージョンの優先順位
 - --profile、--region フラグ。
 - clone 内では git remote URL から読み取った値。
-- 環境変数 AWS_PROFILE、AWS_REGION。
+- 環境変数 AWS_PROFILE、AWS_REGION（なければ AWS_DEFAULT_REGION）。
 - 設定ファイル。
 - AWS SDK の既定値。
 
@@ -386,7 +399,7 @@ remote URL を環境変数より優先するのは、リポジトリのリージ
 
 ### 認証
 - AWS SDK の既定の認証チェーンを使う。CloudShell では追加設定なしで動く。
-- 自分の ARN は sts:GetCallerIdentity で取得し、プロファイルごとにキャッシュする。
+- 自分の ARN は sts:GetCallerIdentity で取得し、使っている認証情報ごとにキャッシュする(キーはアクセスキー ID のハッシュ。ロールやアカウントが変われば取り直す)。
 - 認証切れは API エラーから検出し、再認証のコマンドを案内する。
 
 ### ローカル状態
@@ -396,9 +409,11 @@ remote URL を環境変数より優先するのは、リポジトリのリージ
 |---|---|
 | seen.json | PR ごとの最終閲覧時刻 |
 | cache.json | ホームの前回取得結果 |
-| identity.json | プロファイルごとの ARN |
+| identity.json | 認証情報ごとの ARN(キーはアクセスキー ID のハッシュ) |
+| drafts.json | PR ごとのコメントの下書き(投稿するまで残す) |
 
 - 状態ファイルが壊れていても起動を止めず、破棄して作り直す。
+- 状態ファイルは本人だけが読めるよう 0600 で書く(下書きと PR のタイトルを含むため)。
 - CloudShell ではホームディレクトリがリージョン単位で永続化されるため、未読状態はセッションをまたいで残る。
 
 ## 技術構成
@@ -494,5 +509,5 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | 承認待ちの定義 | 簡易条件に、承認プールに自分が入っているかの条件を足す | [0005](../adr/0005-awaiting-my-approval.md) |
 | 未読判定の検証 | フェーズ3の完了条件として実機で確認する | [0006](../adr/0006-unread-detection.md) |
 | CI 結果の表示 | フェーズ5で、設定に書いたプロジェクトとパイプラインの実行をソースコミットで PR に結び付ける | [0010](../adr/0010-ci-results.md)(0007 を置き換え) |
-| コメントの下書き一括投稿 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
+| コメントの下書き一括投稿 | フェーズ1〜4に入れず、その後に下書きを保存して 1 件ずつ投稿する形で入れる | [0007](../adr/0007-out-of-phase-features.md)、[0009](../adr/0009-comment-drafts.md) |
 | マージ方式の既定値 | フラグがなければ設定の `pr.mergeOption` を使う | [0008](../adr/0008-merge-option-default.md) |
