@@ -469,7 +469,7 @@ export function startMockServer(gitRoot) {
               afterBlob: { blobId: meta.split(" ")[2], path, mode: "100644" },
               changeType: "A",
             };
-          const [, , , beforeId, afterId, change] = meta.split(" ");
+          const [, , beforeId, afterId, change] = meta.split(" ");
           const blob = (id) => ({ blobId: id, path, mode: "100644" });
           return {
             ...(change !== "A" ? { beforeBlob: blob(beforeId) } : {}),
