@@ -1,3 +1,5 @@
+import { shortArn } from "../../core/text.js";
+
 export function formatRelativeDate(date: Date, now: Date = new Date()): string {
   const diffMs = now.getTime() - date.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
@@ -21,5 +23,5 @@ export function formatRelativeDate(date: Date, now: Date = new Date()): string {
 }
 
 export function extractAuthorName(authorArn: string): string {
-  return authorArn.slice(authorArn.lastIndexOf("/") + 1);
+  return shortArn(authorArn);
 }

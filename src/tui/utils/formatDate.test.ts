@@ -37,9 +37,9 @@ describe("extractAuthorName", () => {
     expect(extractAuthorName("arn:aws:iam::123456789012:user/watany")).toBe("watany");
   });
 
-  it("extracts assumed role name", () => {
+  it("keeps the role with an assumed role's session, as the CLI prints it", () => {
     expect(extractAuthorName("arn:aws:sts::123456789012:assumed-role/admin/session")).toBe(
-      "session",
+      "admin/session",
     );
   });
 
@@ -122,17 +122,12 @@ describe("formatRelativeDate (property-based)", () => {
 });
 
 describe("extractAuthorName (property-based)", () => {
-  it("result equals the last segment after splitting by /", () => {
+  it("returns a string that is not an ARN unchanged", () => {
     fc.assert(
       fc.property(
-        fc.string({
-          unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789:/-_"),
-          minLength: 1,
-        }),
-        (arn) => {
-          const result = extractAuthorName(arn);
-          const parts = arn.split("/");
-          expect(result).toBe(parts[parts.length - 1]);
+        fc.string({ unit: fc.constantFrom(..."abcdefghijklmnopqrstuvwxyz0123456789/-_") }),
+        (text) => {
+          expect(extractAuthorName(text)).toBe(text);
         },
       ),
     );
@@ -170,7 +165,7 @@ describe("extractAuthorName (property-based)", () => {
     );
   });
 
-  it("returns the part after the last slash", () => {
+  it("keeps everything after the resource type", () => {
     fc.assert(
       fc.property(
         fc.array(
@@ -182,9 +177,8 @@ describe("extractAuthorName (property-based)", () => {
           { minLength: 2, maxLength: 5 },
         ),
         (parts) => {
-          const arn = parts.join("/");
-          const result = extractAuthorName(arn);
-          expect(result).toBe(parts[parts.length - 1]);
+          const arn = `arn:aws:sts::123456789012:${parts.join("/")}`;
+          expect(extractAuthorName(arn)).toBe(parts.slice(1).join("/"));
         },
       ),
     );
