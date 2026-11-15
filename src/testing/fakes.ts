@@ -5,6 +5,7 @@ import type {
   PullRequest,
 } from "../aws/codecommit.js";
 import type { Commit, Git } from "../git/git.js";
+import type { LocalState } from "../state/local.js";
 
 export function fakeGit(overrides: Partial<Git> = {}): Git {
   return {
@@ -45,6 +46,7 @@ export function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
     revisionId: "r1",
     creationDate: new Date("2026-11-01T00:00:00Z"),
     lastActivityDate: new Date("2026-11-02T00:00:00Z"),
+    approvalRules: [],
     ...overrides,
   };
 }
@@ -66,6 +68,7 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     created,
     writes,
     region: async () => "us-west-2",
+    callerArn: async () => "arn:aws:iam::123456789012:user/me",
     defaultBranch: async () => "main",
     cloneUrls: async (repo) => ({
       https: `https://git-codecommit.us-west-2.amazonaws.com/v1/repos/${repo}`,
@@ -74,9 +77,9 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     listBranches: async () => ["main", "topic"],
     deleteBranch: async () => {},
     branchCommit: async (_repo, branch) => (branch === "missing" ? undefined : "r0ffee"),
-    listPullRequestIds: async (_repo, status, limit) =>
+    listPullRequestIds: async (repo, status, limit) =>
       prs
-        .filter((p) => p.status === status)
+        .filter((p) => p.status === status && p.repository === repo)
         .map((p) => p.id)
         .slice(0, limit),
     getPullRequests: async (ids) =>
@@ -126,4 +129,34 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     ...overrides,
   };
   return api;
+}
+
+export interface FakeState extends LocalState {
+  readonly identities: Map<string, string>;
+  readonly seenAt: Map<string, Date>;
+  readonly sections: Map<string, unknown>;
+}
+
+/** LocalState in memory. */
+export function fakeState(): FakeState {
+  const identities = new Map<string, string>();
+  const seenAt = new Map<string, Date>();
+  const sections = new Map<string, unknown>();
+  return {
+    identities,
+    seenAt,
+    sections,
+    identity: {
+      get: async (k) => identities.get(k),
+      set: async (k, v) => void identities.set(k, v),
+    },
+    seen: {
+      all: async () => new Map(seenAt),
+      mark: async (k, at) => void seenAt.set(k, at),
+    },
+    cache: {
+      get: async (k) => sections.get(k),
+      set: async (k, v) => void sections.set(k, JSON.parse(JSON.stringify(v))),
+    },
+  };
 }

@@ -3,6 +3,7 @@ import { processIo } from "./cli/io.js";
 import { run } from "./cli/main.js";
 import { createGit } from "./git/git.js";
 import { loadConfig } from "./state/config.js";
+import { createLocalState } from "./state/local.js";
 
 process.exitCode = await run(process.argv.slice(2), {
   io: processIo(),
@@ -10,6 +11,7 @@ process.exitCode = await run(process.argv.slice(2), {
   // The SDK is the heavy part of the bundle; load it only for commands that call AWS.
   createApi: async (options) => (await import("./aws/codecommit.js")).createCodeCommitApi(options),
   loadConfig,
+  createState: createLocalState,
   openReview: async (request) => (await import("./tui/index.js")).openReview(request),
   openBranches: async (request) => (await import("./tui/index.js")).openBranches(request),
   openBrowse: async (request) => (await import("./tui/index.js")).openBrowse(request),

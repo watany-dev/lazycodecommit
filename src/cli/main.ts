@@ -5,13 +5,22 @@ import { explainAwsError } from "../aws/errors.js";
 import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { cloneRepository } from "../core/clone.js";
-import { type RepoContext, resolveContext } from "../core/context.js";
+import { type AccountContext, resolveAccountContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
+import {
+  fetchInbox,
+  isPending,
+  loadAllDetails,
+  resolveMe,
+  toCache,
+  watchedRepositories,
+} from "../core/inbox.js";
 import {
   approvePullRequest,
   checkoutPullRequest,
   closePullRequest,
   commentOnPullRequest,
+  concurrency,
   consoleUrl,
   createPullRequest,
   listPullRequests,
@@ -22,10 +31,20 @@ import {
 } from "../core/pr.js";
 import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
-import { type Config, ConfigError } from "../state/config.js";
+import { type Config, ConfigError, configPath } from "../state/config.js";
+import type { LocalState } from "../state/local.js";
 import type { BranchesRequest, BrowseRequest, ReviewRequest } from "../tui/index.js";
 import { completionScript, SHELLS, type Shell } from "./completion.js";
-import { branchJson, branchLines, listLines, prJson, statusLines, viewLines } from "./format.js";
+import {
+  branchJson,
+  branchLines,
+  inboxJson,
+  inboxLines,
+  listLines,
+  prJson,
+  statusLines,
+  viewLines,
+} from "./format.js";
 
 export interface Io {
   out(line: string): void;
@@ -44,6 +63,7 @@ export interface Deps {
   createGit(cwd: string): Git;
   createApi(options: { region?: string; profile?: string }): Promise<CodeCommitApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
+  createState(env: Readonly<Record<string, string | undefined>>): LocalState;
   /** Open the TUI; cli.ts loads it lazily so other commands never load Ink. */
   openReview(request: ReviewRequest): Promise<void>;
   openBranches(request: BranchesRequest): Promise<void>;
@@ -53,6 +73,7 @@ export interface Deps {
 export const USAGE = `lazycc - a daily-driver client for AWS CodeCommit
 
 Usage:
+  lazycc status
   lazycc pr create [-B base] [-H head] [-t title] [-b body | -F file] [--fill] [--push | --no-push] [--dry-run]
   lazycc pr list [--state open|closed] [-L limit]
   lazycc pr view [<id>]
@@ -127,6 +148,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
   },
   "pr close": { positionals: 1, options: {} },
   branch: { positionals: 0, options: {} },
+  status: { positionals: 0, options: {} },
   browse: {
     positionals: 1,
     options: { ref: { type: "string" }, path: { type: "string" } },
@@ -260,20 +282,28 @@ async function runCommand(
   values: Values,
   positionals: string[],
   deps: Deps,
-  onContext: (ctx: RepoContext) => void,
+  onContext: (ctx: AccountContext) => void,
 ): Promise<number> {
   const { io } = deps;
   const json = values["json"] === true;
   const config = await deps.loadConfig(io.env);
   const git = deps.createGit(io.cwd);
-  const ctx: RepoContext = await resolveContext({
+  const input = {
     ...optional("repo", str(values, "repo")),
     ...optional("region", str(values, "region")),
     ...optional("profile", str(values, "profile")),
     git,
     env: io.env,
     config,
-  });
+  };
+  if (command === "status") {
+    // The config's repos live in the config's region and profile, not the remote's.
+    const fromConfig = !input.repo && Boolean(config.repos?.length);
+    const account = await resolveAccountContext({ ...input, outsideClone: fromConfig });
+    onContext(account);
+    return runStatus(str(values, "repo"), account, config, json, deps);
+  }
+  const ctx = await resolveContext(input);
   onContext(ctx);
   const api = await deps.createApi({
     ...optional("region", ctx.region),
@@ -292,15 +322,7 @@ async function runCommand(
     readFile: io.readFile,
     note: io.err,
   };
-  // JSON.stringify escapes C0 controls but not C1 (U+0080-U+009F); \u escapes
-  // keep the data exact and the terminal safe.
-  const print = (value: unknown) =>
-    io.out(
-      JSON.stringify(value, null, 2).replace(
-        /[\u0080-\u009f]/g,
-        (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
-      ),
-    );
+  const print = (value: unknown) => printJson(io, value);
   const done = (line: string, pr: PullRequest) => {
     io.out(line);
     io.out(consoleUrl(region, pr.repository, pr.id));
@@ -538,6 +560,56 @@ async function runCommand(
   }
 }
 
+/** `lazycc status`: the home screen as text (spec: ホーム). */
+async function runStatus(
+  flagRepo: string | undefined,
+  ctx: AccountContext,
+  config: Config,
+  json: boolean,
+  deps: Deps,
+): Promise<number> {
+  const { io } = deps;
+  const repositories = watchedRepositories(
+    flagRepo,
+    config,
+    ctx.clone ? ctx.repository : undefined,
+  );
+  if (!repositories) {
+    throw new UserError(
+      `No repositories to watch. Add "repos" to ${configPath(io.env)}, run inside a clone, or pass --repo.`,
+    );
+  }
+  const api = await deps.createApi({
+    ...optional("region", ctx.region),
+    ...optional("profile", ctx.profile),
+  });
+  const region = ctx.region ?? (await api.region());
+  const state = deps.createState(io.env);
+  const me = await resolveMe(api, state.identity, ctx.profile, io.env);
+  const limit = concurrency(config);
+  const listed = await fetchInbox(repositories, {
+    api,
+    me,
+    region,
+    seen: await state.seen.all(),
+    concurrency: limit,
+  });
+  const inbox = { ...listed, items: await loadAllDetails(listed.items, api, limit) };
+  const items = inbox.items.filter((i) => isPending(i, me));
+  if (json) printJson(io, inboxJson(inbox, items, region));
+  else for (const line of inboxLines(items)) io.out(line);
+  for (const { repository, error } of inbox.errors) {
+    io.err(`lazycc: ${repository}: ${explainAwsError(error, ctx.profile) ?? error.message}`);
+  }
+  const incomplete = inbox.items.filter((i) => i.detailError);
+  for (const { pr, detailError } of incomplete) {
+    io.err(`lazycc: ${pr.repository} #${pr.id}: could not load approvals or rules: ${detailError}`);
+  }
+  // The cache only speeds up the next TUI start; failing to write it is not an error.
+  await state.cache.set("home", toCache(inbox, region)).catch(() => {});
+  return inbox.errors.length > 0 || incomplete.length > 0 ? 1 : 0;
+}
+
 /**
  * Every line we print carries text from elsewhere (titles, branch names, commit
  * messages, git's and the SDK's errors), so none may reach the terminal as an
@@ -550,6 +622,17 @@ function printableIo(io: Io): Io {
     err: (line) => io.err(printable(line, true)),
     confirm: (question) => io.confirm(printable(question)),
   };
+}
+
+// JSON.stringify escapes C0 controls but not C1 (U+0080-U+009F); \u escapes
+// keep the data exact and the terminal safe.
+function printJson(io: Io, value: unknown): void {
+  io.out(
+    JSON.stringify(value, null, 2).replace(
+      /[\u0080-\u009f]/g,
+      (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+    ),
+  );
 }
 
 function entryLine(e: { name: string; type: keyof typeof ENTRY_MARK }): string {
