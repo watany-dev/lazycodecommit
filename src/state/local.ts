@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-/** ~/.local/state/lazycc (XDG_STATE_HOME): seen.json, cache.json, identity.json. */
+/** ~/.local/state/lazycc (XDG_STATE_HOME): seen.json, cache.json, identity.json, drafts.json. */
 export function stateDir(env: Env): string {
   const base = env["XDG_STATE_HOME"] || join(env["HOME"] || homedir(), ".local", "state");
   return join(base, "lazycc");
@@ -53,8 +53,18 @@ interface CacheStore {
   set(section: string, value: unknown): Promise<void>;
 }
 
+/**
+ * Unposted review comments, keyed like seen. Entries are checked by the
+ * reader (core/commentDrafts.ts); an empty list removes the key.
+ */
+interface DraftStore {
+  get(key: string): Promise<unknown>;
+  set(key: string, drafts: readonly unknown[]): Promise<void>;
+}
+
 export interface LocalState {
   readonly identity: IdentityStore;
+  readonly drafts: DraftStore;
   readonly seen: SeenStore;
   readonly cache: CacheStore;
   /** Resolves when every save started so far has landed. */
@@ -108,6 +118,18 @@ export function createLocalState(env: Env): LocalState {
         update("seen.json", (o) => {
           const prev = typeof o[key] === "string" ? Date.parse(o[key] as string) : Number.NaN;
           if (!(prev >= at.getTime())) o[key] = at.toISOString();
+        }),
+    },
+    drafts: {
+      async get(key) {
+        // A save just made (posting one draft) must be in what is read next.
+        await queue;
+        return (await readObject(path("drafts.json")))[key];
+      },
+      set: (key, drafts) =>
+        update("drafts.json", (o) => {
+          if (drafts.length === 0) delete o[key];
+          else o[key] = drafts;
         }),
     },
     cache: {
