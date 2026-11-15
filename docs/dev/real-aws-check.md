@@ -17,7 +17,9 @@ AWS でしか確かめられない点を、検証用のリポジトリ 1 つに�
   環境変数で渡す）。
 - 実行前に作るもの・消すものを表示し、`yes` と入力するまで始めない。
 
-途中で Ctrl+C したときなどはリポジトリが残る。名前は開始時に表示されるので、
+途中で Ctrl+C しても、リポジトリを消してからそこまでのレポートを書いて終わる。
+消せなかったとき（ネットワーク断、作成の再試行で作られたか分からないときなど）は
+レポートと画面にリポジトリ名が出るので、
 `aws codecommit delete-repository --repository-name lazycc-realcheck-…` で消す。
 
 ## 実行する
@@ -40,7 +42,7 @@ node scripts/realcheck/realcheck.mjs --region ap-northeast-1
 ```
 
 HTTPS の clone には、git に CodeCommit の credential helper が設定されていれば
-それを使い、なければこの実行の間だけ `aws codecommit credential-helper` を足す。
+それを使い（レポートには有無だけを書く）、なければこの実行の間だけ `aws codecommit credential-helper` を足す。
 
 ### 手元の clone
 

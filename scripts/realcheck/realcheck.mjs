@@ -320,7 +320,8 @@ async function environment() {
     `https://git-codecommit.${region}.amazonaws.com/v1/repos/x`,
   );
   if (mock) state.helper = "mock (local transports)";
-  else if (helper.stdout.includes("codecommit")) state.helper = `existing: ${helper.stdout.trim()}`;
+  // Only whether one exists: a helper's command line can hold a secret.
+  else if (helper.stdout.includes("codecommit")) state.helper = "existing CodeCommit helper";
   else if (which("aws")) {
     // Added after any helper already configured (git tries them in order).
     const host = `https://git-codecommit.${region}.amazonaws.com`;
@@ -389,6 +390,11 @@ async function createRepository() {
         "Temporary repository made by lazycodecommit's realcheck. Safe to delete.",
     }),
   );
+  if (r.name === "RepositoryNameExistsException")
+    // It did not exist a moment ago, so a timed-out first attempt probably created it.
+    throw new Error(
+      `CreateRepository: ${repoName} exists now; a retried call may have created it. Check it and delete it by hand: aws codecommit delete-repository --repository-name ${repoName}`,
+    );
   if (!r.ok) throw new Error(`CreateRepository failed: ${r.name}: ${r.message}`);
   state.created = true;
   record("repo.create", "Create the test repository", "PASS", repoName);
@@ -1239,6 +1245,29 @@ if (!existsSync(cli)) {
   process.exit(2);
 }
 if (!(await confirm())) process.exit(1);
+/** Cleanup and report run once, whether the steps end, throw, or a signal stops them. */
+let finishing;
+function finish() {
+  finishing ??= (async () => {
+    try {
+      await cleanup();
+    } catch (error) {
+      record("cleanup", "Delete the test repository", "FAIL", error.message);
+    }
+    report();
+    if (!opt.keep) rmSync(work, { recursive: true, force: true });
+  })();
+  return finishing;
+}
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, async () => {
+    record("abort", "Run stopped early", "FAIL", `stopped by ${signal}`);
+    await finish();
+    console.log(`\nrealcheck: stopped. Report: ${reportPath}`);
+    process.exit(130);
+  });
+}
+
 try {
   await environment();
   pack();
@@ -1256,15 +1285,8 @@ try {
 } catch (error) {
   failed = true;
   record("abort", "Run stopped early", "FAIL", error.stack ?? error);
-} finally {
-  try {
-    await cleanup();
-  } catch (error) {
-    record("cleanup", "Delete the test repository", "FAIL", error.message);
-  }
-  report();
-  if (!opt.keep) rmSync(work, { recursive: true, force: true });
 }
+await finish();
 const bad = results.filter((r) => r.status === "FAIL").length;
 const diff = results.filter((r) => r.status === "DIFF").length;
 console.log(`\nrealcheck: ${bad} FAIL, ${diff} DIFF. Report: ${reportPath}`);
