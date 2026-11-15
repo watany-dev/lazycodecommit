@@ -1,3 +1,4 @@
+import { isCredentialError } from "../../aws/errors.js";
 import { printable } from "../../core/text.js";
 
 type ErrorContext =
@@ -88,14 +89,17 @@ export function formatErrorMessage(
   const message = (context && contextErrors[context]?.[name]) ?? commonErrors[name];
   if (message) return message;
 
-  if (name === "CredentialsProviderError" || name === "CredentialError") {
-    return "AWS authentication failed. Run `aws configure` to set up credentials.";
+  if (name === "CredentialError" || isCredentialError(err)) {
+    return "AWS credentials are missing or expired. Sign in again, for example `aws sso login`, then retry.";
   }
   if (name === "RepositoryDoesNotExistException") {
     return "Repository not found.";
   }
 
   if (name === "AccessDeniedException" || name === "UnauthorizedException") {
+    // Spec (IAM 権限): name the action the policy is missing.
+    const action = /\bcodecommit:[A-Za-z]+/.exec(err.message)?.[0];
+    if (action) return `Access denied: your IAM policy does not allow ${action}.`;
     if (context === "comment") {
       return "Access denied. Check your IAM policy allows CodeCommit write access.";
     }

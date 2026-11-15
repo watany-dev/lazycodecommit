@@ -432,11 +432,13 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 |---|---|
 | ホーム、PR 一覧 | ListRepositories、ListPullRequests、GetPullRequest、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts |
 | PR 作成 | GetRepository、ListPullRequests、GetPullRequest、GetBranch(clone 外のみ)、CreatePullRequest、GitPush |
-| ブランチ表 | ListBranches、GetBranch、GetRepository、DeleteBranch(削除時のみ) |
+| ブランチ表 | ListBranches、GetBranch、GetRepository、ListPullRequests、GetPullRequest、EvaluatePullRequestApprovalRules、DeleteBranch(削除時のみ) |
 | ブラウズ | GetFolder、GetFile、ListBranches、GetRepository(--ref 省略時) |
-| レビュー(閲覧) | GetCommit、GetDifferences、GetBlob、GetCommentsForPullRequest、GetCommentReactions、DescribePullRequestEvents |
+| レビュー(閲覧)、pr view、pr status | GetPullRequest、ListPullRequests(ID 省略時)、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts、GetCommit、GetDifferences、GetBlob、GetCommentsForPullRequest、GetCommentReactions、DescribePullRequestEvents |
 | レビュー(書き込み) | PostCommentForPullRequest、PostCommentReply、UpdateComment、DeleteCommentContent、PutCommentReaction、UpdatePullRequestApprovalState、UpdatePullRequestStatus、MergePullRequestByFastForward、MergePullRequestBySquash、MergePullRequestByThreeWay |
-| checkout、clone、fetch | GitPull |
+| checkout | GetPullRequest、GitPull |
+| clone | GetRepository、GitPull |
+| fetch(clone 内の diff) | GitPull |
 
 - sts:GetCallerIdentity は権限の付与なしで呼べる。
 - 権限不足のエラーでは、不足しているアクション名を表示する。
