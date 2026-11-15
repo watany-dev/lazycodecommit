@@ -52,7 +52,7 @@ export function homeActions(deps: HomeDeps): HomeActions {
   const limit = concurrency(deps.config);
   let watched: readonly string[] = deps.config.repos ?? [];
   // The picker opens often and a region can hold hundreds of repositories.
-  let repositories: Promise<string[]> | undefined;
+  let listing: Promise<string[]> | undefined;
   return {
     region,
     me,
@@ -84,12 +84,12 @@ export function homeActions(deps: HomeDeps): HomeActions {
       state.seen.mark(seenKey(region, pullRequestId), new Date()).catch(() => {});
     },
     listRepositories() {
-      repositories ??= api.listRepositories();
+      listing ??= api.listRepositories();
       // A failed listing is retried on the next open.
-      repositories.catch(() => {
-        repositories = undefined;
+      listing.catch(() => {
+        listing = undefined;
       });
-      return repositories;
+      return listing;
     },
     async toggleWatch(repository) {
       const next = watched.includes(repository)
