@@ -4,7 +4,12 @@ import type { BranchActions } from "../core/branch.js";
 import type { BrowseActions } from "../core/browse.js";
 import type { DraftStorage } from "../core/commentDrafts.js";
 import type { HomeActions } from "../core/home.js";
-import { type MergeStrategy, openReviewService, type ReviewService } from "../core/review.js";
+import {
+  type MergeStrategy,
+  openReviewService,
+  type ReviewService,
+  type SeenPr,
+} from "../core/review.js";
 import type { Git } from "../git/git.js";
 import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
@@ -22,7 +27,7 @@ interface ServiceRequest {
   /** Set inside a clone of the repository: diffs then come from git. */
   readonly git?: Git;
   /** Called when a PR is opened or left, for the home screen's unread marks. */
-  readonly markSeen?: (pullRequestId: string) => void;
+  readonly markSeen?: (pr: SeenPr) => void;
   /** The config's pr.mergeOption, preselected in the merge dialog. */
   readonly mergeStrategy?: MergeStrategy;
   /** drafts.json: unposted review comments survive leaving the screen. */

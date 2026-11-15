@@ -66,7 +66,7 @@ lazycc keeps a few files under `~/.local/state/lazycc/`
 
 | File | Contents |
 | --- | --- |
-| `seen.json` | When you last opened each PR, for the unread marker |
+| `seen.json` | When you last opened each PR (by region, account and PR id), for the unread marker |
 | `cache.json` | The home screen's last result, shown while it refreshes |
 | `identity.json` | Your ARN per set of credentials (keyed by a hash of the access key ID), from `sts:GetCallerIdentity` |
 
