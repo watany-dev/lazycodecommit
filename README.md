@@ -39,45 +39,94 @@ lazygit. The command is `lazycc`. It is the successor to
 
 ## Installation
 
-Once the package is published, it will run without installing:
+The package is not on npm yet, so for now you build it once and install the
+result. Building needs [Bun](https://bun.sh); the result is a single `.tgz`
+that runs on plain Node.js 20 or later (CI installs it on Node 20 to 26).
+
+### On AWS CloudShell
+
+CloudShell has Node.js, git and credentials, so nothing else is needed.
+`npx` fetches Bun for the build. Work in `/tmp`: `node_modules` takes a few
+hundred MB and the home directory has only 1 GB.
 
 ```bash
-npx lazycodecommit            # same as lazycc
-npm install -g lazycodecommit # puts lazycc and lazycodecommit on PATH
+cd /tmp
+git clone https://github.com/watany-dev/lazycodecommit.git
+cd lazycodecommit
+npx -y bun@1.4.4 install --frozen-lockfile
+npx -y bun@1.4.4 run build
+npm pack                                  # writes lazycodecommit-0.0.0.tgz
+npm install -g ./lazycodecommit-0.0.0.tgz # puts lazycc and lazycodecommit on PATH
+cp lazycodecommit-0.0.0.tgz ~/            # optional: /tmp is wiped when the session ends
+lazycc --version
 ```
 
-Until then, build it from source. Building needs [Bun](https://bun.sh); the
-result runs on plain Node.js.
+These steps run as written on Linux with Node.js 22; on CloudShell itself
+they have not been tried yet. If `npm install -g` is refused with `EACCES`,
+run it with `sudo`. In a later session, reinstall from the copy in your home
+directory with `npm install -g ~/lazycodecommit-0.0.0.tgz`.
+
+### On your own machine
+
+With Bun installed:
 
 ```bash
 git clone https://github.com/watany-dev/lazycodecommit.git
 cd lazycodecommit
 bun install
 bun run build
-npm pack                       # writes lazycodecommit-<version>.tgz
-npm install -g ./lazycodecommit-*.tgz
+npm pack
+npm install -g ./lazycodecommit-0.0.0.tgz
 ```
 
-The `.tgz` file can be copied to CloudShell (Actions > Upload file) and
-installed there with the same `npm install -g` line.
+The `.tgz` also installs on a machine without Bun, for example CloudShell
+(Actions > Upload file, then the same `npm install -g` line). To try it
+without installing, run `node dist/cli.mjs` in place of `lazycc`.
 
-## Quick start
+### After the npm release
 
 ```bash
-cd my-clone                  # a clone of a CodeCommit repository
-git switch -c fix-typo
-# ...commit...
+npx lazycodecommit            # run without installing; same as lazycc
+npm install -g lazycodecommit # puts lazycc and lazycodecommit on PATH
+```
+
+## Getting started
+
+lazycc finds the repository, region and profile from the `origin` remote of
+the clone you are in, so the quickest start is inside a clone. Outside one,
+add `-R <repo>` and, if the repository is not in your default region,
+`--region`.
+
+```bash
+lazycc --version                 # check the install
+lazycc pr list -R my-repo --region ap-northeast-1   # the PR list: checks credentials and permissions
+lazycc clone my-repo             # clone by name over HTTPS (--protocol ssh|grc for the others)
+cd my-repo
+lazycc                           # the home screen (TUI); ? lists the keys, q quits
+```
+
+An HTTPS clone needs git to have CodeCommit credentials, for example
+`git config --global credential.helper '!aws codecommit credential-helper $@'`
+and `git config --global credential.UseHttpPath true`.
+
+From there:
+
+```bash
+lazycc pr list                   # the PR list screen; Enter opens a PR's review screen
+lazycc pr view 12                # review PR 12: diff, comments, approve (a), merge (m)
+git switch -c fix-typo           # ...commit...
 lazycc pr create --fill --push   # push the branch and open a PR from its commits
-lazycc pr status                 # approvals, approval rules and conflicts
-lazycc                           # the home screen: your inbox
+lazycc pr status                 # approvals, approval rules and conflicts of this branch's PR
+lazycc browse my-other-repo      # read a repository without cloning it
 ```
 
-Outside a clone, name the repository with `-R/--repo`:
+To watch several repositories on the home screen, open the repository picker
+with `r` and press `w` on each one: lazycc saves them as `repos` in the
+config file, and from then on bare `lazycc` shows them from anywhere.
 
-```bash
-lazycc pr list -R my-repo --region ap-northeast-1
-lazycc browse my-repo
-```
+If a command says the credentials are missing or expired, sign in again
+(`aws sso login`, or `aws configure`). If it names an action that was denied,
+see [docs/iam.md](docs/iam.md) for the permissions each command needs.
 
 ## Commands
 
@@ -190,9 +239,16 @@ opens on that picker.
   The default branch and branches with an open PR cannot be deleted.
 - **Browse screen** (`lazycc browse`): `Enter`/`l` opens, `h`/Backspace goes
   up, `b` switches the ref, `g`/`G` jumps to the top or end.
+- **PR list** (`lazycc pr list`, `p` in the picker): `Enter` opens the review
+  screen, `f` cycles the status filter, `/` searches, `n`/`p` pages.
 - **Review screen** (`pr view`, or `Enter` elsewhere): the keys of
-  review-codecommit. Inside a clone the diff comes from git, fetching the PR's
-  branches if needed; otherwise from the API.
+  review-codecommit. `n`/`N` move between files, `c` comments on the PR, `C`
+  on the cursor line, `R` replies, `a` approves, `m` merges (opening on the
+  config's `pr.mergeOption`), `x` closes, `A` shows the activity. In a comment
+  box `Enter` posts and `Tab` keeps a draft; `D` lists the drafts and `S`
+  there posts them all. With the config's `ci`, the CodeBuild and CodePipeline
+  results of the PR's commit show in the header. Inside a clone the diff comes
+  from git, fetching the PR's branches if needed; otherwise from the API.
 
 ## Configuration
 
@@ -209,9 +265,19 @@ Nothing needs configuring. Optional settings live in
     "mergeOption": "squash"
   },
   "branch": { "closedPrLookback": 100 },
-  "concurrency": 8
+  "concurrency": 8,
+  "ci": {
+    "my-service": {
+      "codebuild": ["my-service-pr-check"],
+      "codepipeline": ["my-service-release"]
+    }
+  }
 }
 ```
+
+`ci` names, per repository, the CodeBuild projects and CodePipeline pipelines
+whose result for a PR's source commit lazycc shows; a repository not listed
+makes no CI calls.
 
 Every key, and the files lazycc keeps under `~/.local/state/lazycc/`, are
 described in [docs/configuration.md](docs/configuration.md).
