@@ -89,6 +89,12 @@ describe("Help", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("names the keys that close it, since other keys do not", () => {
+    const { lastFrame } = render(<Help onClose={vi.fn()} />);
+    expect(lastFrame()).not.toContain("Press any key to close");
+    expect(lastFrame()).toContain("? / q / Esc / Enter to close");
+  });
+
   // v0.7: Comment edit/delete keybindings
   it("shows e Edit comment keybinding", () => {
     const { lastFrame } = render(<Help onClose={vi.fn()} />);

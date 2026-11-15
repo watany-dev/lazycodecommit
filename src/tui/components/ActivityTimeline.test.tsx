@@ -2,6 +2,7 @@ import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { PrActivityEvent } from "../../core/review.js";
+import { settle } from "../../testing/keys.js";
 import { ActivityTimeline } from "./ActivityTimeline.js";
 
 vi.mock("../utils/formatDate.js", () => ({
@@ -337,5 +338,17 @@ describe("ActivityTimeline", () => {
       expect(cursorLine).toContain("event-20");
       expect(output).not.toContain("event-00");
     });
+  });
+
+  it("keeps a cursor row when the events are replaced by a shorter list", async () => {
+    const many = Array.from({ length: 60 }, (_, i) => makeEvent({ description: `event ${i}` }));
+    const screen = render(<ActivityTimeline {...defaultProps} events={many} />);
+    for (let i = 0; i < 59; i++) screen.stdin.write("j");
+    await settle();
+    await vi.waitFor(() => expect(screen.lastFrame()).toMatch(/> .*event 59/));
+    // A page token that expired restarts the list from the first page.
+    screen.rerender(<ActivityTimeline {...defaultProps} events={many.slice(0, 10)} />);
+    await settle();
+    expect(screen.lastFrame()).toMatch(/> .*event 9/);
   });
 });

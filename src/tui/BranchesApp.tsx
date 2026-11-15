@@ -85,7 +85,9 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
     void load(false);
   }, []);
 
-  const rows = (table?.rows ?? []).filter((r) => r.name.includes(filter));
+  const rows = (table?.rows ?? []).filter((r) =>
+    r.name.toLowerCase().includes(filter.toLowerCase()),
+  );
   // The table can shrink under the cursor (a delete, a filter).
   const index = Math.max(Math.min(cursor, rows.length - 1), 0);
   const selected = rows[index];

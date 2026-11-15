@@ -38,6 +38,8 @@ export function CommentInput({
       onClearError();
       return;
     }
+    // The post is on its way: Tab would keep a draft of it too, and post it twice.
+    if (isPosting) return;
     if (key.escape) {
       onCancel();
       return;

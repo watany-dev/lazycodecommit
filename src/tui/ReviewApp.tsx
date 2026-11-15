@@ -730,6 +730,9 @@ export function App({ service, repository, start, onExit }: AppProps) {
       const texts = await fetchBlobTexts(service, selectedRepo, diffs);
       if (isCommitLoadStale(loadId)) return;
       setCommitDiffTexts(texts);
+    } catch {
+      // Nobody awaits this load: a rejection here would end the process.
+      // The commit view stays empty and Tab leaves it.
     } finally {
       if (!isCommitLoadStale(loadId)) {
         setIsLoadingCommitDiff(false);
