@@ -29,6 +29,7 @@ import {
   pullRequestStatus,
   resolvePullRequest,
 } from "../core/pr.js";
+import { printable } from "../core/text.js";
 import { type Git, GitError } from "../git/git.js";
 import { type Config, ConfigError, configPath } from "../state/config.js";
 import type { LocalState } from "../state/local.js";
@@ -40,7 +41,6 @@ import {
   inboxJson,
   inboxLines,
   listLines,
-  printable,
   prJson,
   statusLines,
   viewLines,

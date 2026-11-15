@@ -48,6 +48,12 @@ describe("loadConfig", () => {
     expect(await loadConfig({ XDG_CONFIG_HOME: dir })).toEqual(config);
   });
 
+  it("reads a file saved with a UTF-8 byte order mark", async () => {
+    // Windows editors add one; JSON.parse rejects it.
+    await write('\uFEFF{"region":"us-east-1"}');
+    expect(await loadConfig({ XDG_CONFIG_HOME: dir })).toEqual({ region: "us-east-1" });
+  });
+
   it("reports broken JSON with the path", async () => {
     await write("{ nope");
     await expect(loadConfig({ XDG_CONFIG_HOME: dir })).rejects.toThrow(
