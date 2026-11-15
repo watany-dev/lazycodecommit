@@ -341,6 +341,13 @@ describe("createPullRequest in a clone", () => {
     expect(push).not.toHaveBeenCalled();
     expect(api.created).toEqual([]);
   });
+
+  it("fails a --dry-run with --no-push when a push is needed, as the real run does", async () => {
+    const { d } = deps({ git: { unpushedCount: async () => 2 } });
+    await expect(createPullRequest({ ...FILL, dryRun: true, noPush: true }, d)).rejects.toThrow(
+      "topic has 2 commit(s) not on origin, and --no-push was given.",
+    );
+  });
 });
 
 describe("createPullRequest outside a clone", () => {

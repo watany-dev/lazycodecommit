@@ -157,4 +157,26 @@ describe("pr create safety rules", () => {
       { numRuns: 3000 },
     );
   });
+
+  it("--dry-run fails or succeeds as the real run would, and predicts its push", async () => {
+    await fc.assert(
+      // Without a terminal the real run needs --push to push; a dry run previews
+      // it anyway, as a run on a terminal would ask.
+      fc.asyncProperty(
+        world.filter((w) => w.push || w.interactive),
+        async (w) => {
+          // The real run with everything outside the flags going its way.
+          const real = await runCreate({ ...w, dryRun: false, confirm: true, pushFails: false });
+          const dry = await runCreate({ ...w, dryRun: true, confirm: true, pushFails: false });
+          check(
+            (dry.error === undefined) === (real.error === undefined),
+            `dry-run ${dry.error ? `failed: ${String(dry.error)}` : "succeeded"}, the real run ${real.error ? `failed: ${String(real.error)}` : "succeeded"}`,
+          );
+          if (dry.result?.kind === "dry-run")
+            check(dry.result.wouldPush === real.log.includes("push"), "wouldPush is what happens");
+        },
+      ),
+      { numRuns: 3000 },
+    );
+  });
 });
