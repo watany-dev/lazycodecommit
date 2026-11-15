@@ -521,9 +521,11 @@ export function PullRequestDetail({
     if (input === "R") {
       const currentLine = lines[cursorIndex];
       if (!currentLine) return;
-      const replyTo = getReplyTargetFromLine(currentLine);
-      if (!replyTo) return;
-      setReplyTarget(replyTo);
+      const commentId = commentIdOf(currentLine);
+      if (!commentId) return;
+      // A comment's first row names its author.
+      const first = lines.find((l) => l.commentId === commentId) as DisplayLine;
+      setReplyTarget(getReplyTargetFromLine(first));
       return;
     }
     if (input === "a") {
@@ -977,11 +979,12 @@ function findCommentContent(commentThreads: CommentThread[], commentId: string):
 }
 /* v8 ignore stop */
 
-function getReplyTargetFromLine(
-  line: DisplayLine,
-): { commentId: string; author: string; content: string } | null {
-  const commentId = commentIdOf(line);
-  if (!commentId) return null;
+function getReplyTargetFromLine(line: DisplayLine): {
+  commentId: string;
+  author: string;
+  content: string;
+} {
+  const commentId = line.commentId as string;
 
   // Extract author from line text
   const text = line.text;

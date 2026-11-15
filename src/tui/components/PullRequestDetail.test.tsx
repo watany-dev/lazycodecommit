@@ -8120,5 +8120,27 @@ describe("PullRequestDetail", () => {
       expect(frame().length).toBeLessThanOrEqual(24);
       expect(frame().some((l) => /^ *>/.test(l))).toBe(true);
     });
+
+    it("replies to the author of a comment from any of its lines", async () => {
+      const screen = renderDetail({
+        commentThreads: [
+          {
+            location: null,
+            comments: [
+              {
+                commentId: "c1",
+                authorArn: "arn:aws:iam::1:user/taro",
+                content: "first: line\nsecond: line",
+              },
+            ],
+          },
+        ],
+      });
+      // Rows: separator, "Comments (1):", then the comment's two lines.
+      await press(screen, "j", "j", "j");
+      await vi.waitFor(() => expect(screen.lastFrame()).toMatch(/> +second: line/));
+      await press(screen, "R");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("Replying to taro: first: line"));
+    });
   });
 });

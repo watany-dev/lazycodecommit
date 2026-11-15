@@ -138,3 +138,40 @@ describe("buildDisplayLines truncation", () => {
     expect(diffRows(before, after, 4)).not.toContain("-two|2|undefined");
   });
 });
+
+describe("buildDisplayLines comments", () => {
+  // A row is one terminal line: a comment's newline made one row take
+  // several, so the window over the rows ran off the screen.
+  it("shows each line of a comment on a row of its own, with the comment's id", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom("x", "y", "", " "), { minLength: 1, maxLength: 6 }),
+        fc.boolean(),
+        (parts, inline) => {
+          const content = parts.join("\n");
+          const thread = {
+            location: inline
+              ? { filePath: "f", filePosition: 1, relativeFileVersion: "AFTER" as const }
+              : null,
+            comments: [{ commentId: "c1", authorArn: "arn:aws:iam::1:user/u", content }],
+          };
+          const built = buildDisplayLines(
+            [{ afterBlob: { blobId: "a", path: "f" } }],
+            new Map([[":a", { before: "", after: "line\n" }]]),
+            new Map([[":a", "loaded" as const]]),
+            new Map(),
+            [thread],
+            new Map(),
+            new Map(),
+          );
+          const rowsOf = built.filter((l) => l.commentId === "c1");
+          expect(rowsOf).toHaveLength(parts.length);
+          for (const r of rowsOf) {
+            expect(r.text).not.toContain("\n");
+            expect(r.threadIndex).toBe(0);
+          }
+        },
+      ),
+    );
+  });
+});

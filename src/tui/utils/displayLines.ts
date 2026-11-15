@@ -85,14 +85,22 @@ function appendThreadLines(
   const isCollapsed = collapsedThreads.get(threadKey) ?? shouldFold;
 
   const inline = mode === "inline";
-  const push = (comment: Comment, type: DisplayLine["type"], prefix: string) =>
+  // One row per line of the comment: a row is one line on the screen. The
+  // first names the author; R, e, d and g work from any of them.
+  const push = (comment: Comment, type: DisplayLine["type"], prefix: string) => {
+    const [first, ...rest] = commentText(comment).split("\n");
     lines.push({
       type,
-      text: `${prefix}${shortArn(comment.authorArn ?? "unknown")}: ${commentText(comment)}`,
+      text: `${prefix}${shortArn(comment.authorArn ?? "unknown")}: ${first}`,
       threadIndex,
       commentId: comment.commentId,
       reactionText: formatReactionBadge(reactionsByComment.get(comment.commentId ?? "")),
     });
+    const indent = " ".repeat(prefix.length);
+    for (const text of rest) {
+      lines.push({ type, text: `${indent}${text}`, threadIndex, commentId: comment.commentId });
+    }
+  };
 
   push(rootComment, inline ? "inline-comment" : "comment", inline ? "💬 " : "");
 
