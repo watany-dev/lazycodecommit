@@ -36,6 +36,7 @@ function deps(
 ) {
   const notes: string[] = [];
   const edits: string[] = [];
+  const reads: { path: string; within: string | undefined }[] = [];
   const git = fakeGit(over.git);
   const d: PrDeps = {
     git,
@@ -48,10 +49,13 @@ function deps(
       edits.push(text);
       return over.edited ?? text;
     },
-    readFile: async (path) => over.files?.[path] ?? null,
+    readFile: async (path, within) => {
+      reads.push({ path, within });
+      return over.files?.[path] ?? null;
+    },
     note: (line) => notes.push(line),
   };
-  return { d, notes, edits };
+  return { d, notes, edits, reads };
 }
 
 const FILL: CreateOptions = { fill: true, push: false, noPush: false, dryRun: false };
@@ -117,6 +121,17 @@ describe("createPullRequest in a clone", () => {
     expect(api.created[1]?.description).toBe("Because.\n\nABS");
     await createPullRequest(FILL, deps({ api, files, template: "missing.md" }).d);
     expect(api.created[2]?.description).toBe("Because.");
+  });
+
+  it("reads a repository-relative template only from inside the clone", async () => {
+    const relative = deps();
+    await createPullRequest(FILL, relative.d);
+    expect(relative.reads).toEqual([
+      { path: "/work/.codecommit/pull_request_template.md", within: "/work" },
+    ]);
+    const absolute = deps({ template: "/abs/t.md" });
+    await createPullRequest(FILL, absolute.d);
+    expect(absolute.reads).toEqual([{ path: "/abs/t.md", within: undefined }]);
   });
 
   it("lets --title, --body and --body-file override the draft", async () => {

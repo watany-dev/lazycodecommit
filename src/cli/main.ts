@@ -41,7 +41,7 @@ export interface Io {
   readonly interactive: boolean;
   confirm(question: string): Promise<boolean>;
   edit(text: string): Promise<string>;
-  readFile(path: string): Promise<string | null>;
+  readFile(path: string, within?: string): Promise<string | null>;
 }
 
 export interface Deps {
