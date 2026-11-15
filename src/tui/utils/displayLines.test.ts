@@ -57,13 +57,13 @@ describe("buildDisplayLines inline threads", () => {
 
 describe("buildDisplayLines diff cache", () => {
   it("keeps each file's own filePath when two files share identical blob ids", () => {
-    // Two empty files added in one PR have the same (empty-content) afterBlob id
+    // Two files added in one PR with the same content have the same afterBlob id
     // and no beforeBlob, so their blob keys collide.
     const differences: Difference[] = [
       { afterBlob: { blobId: "E", path: "pkg/a/__init__.py" }, changeType: "A" },
       { afterBlob: { blobId: "E", path: "pkg/b/__init__.py" }, changeType: "A" },
     ];
-    const diffTexts = new Map([[":E", { before: "", after: "" }]]);
+    const diffTexts = new Map([[":E", { before: "", after: "# package\n" }]]);
     const diffTextStatus = new Map<string, "loading" | "loaded" | "error">([[":E", "loaded"]]);
     const cache = new Map();
 
@@ -84,7 +84,7 @@ describe("buildDisplayLines diff cache", () => {
     for (const line of lines) {
       if (line.type === "header") {
         currentHeader = line.text;
-      } else if (line.type === "context") {
+      } else if (line.type === "add") {
         expect(line.filePath).toBe(currentHeader);
         checked++;
       }
@@ -195,5 +195,52 @@ describe("buildDisplayLines slice limits", () => {
     const lines = buildTruncated(before, after, 8);
     expect(lines.some((l) => l.text.includes("truncated 8/11"))).toBe(true);
     expect(contentLineCount(lines)).toBeLessThan(11);
+  });
+});
+
+const diffLines = (before: string, after: string, beforeId = "b", afterId = "a") => {
+  const differences: Difference[] = [
+    {
+      ...(beforeId ? { beforeBlob: { blobId: beforeId, path: "f" } } : {}),
+      ...(afterId ? { afterBlob: { blobId: afterId, path: "f" } } : {}),
+    },
+  ];
+  const key = `${beforeId}:${afterId}`;
+  return buildDisplayLines(
+    differences,
+    new Map([[key, { before, after }]]),
+    new Map([[key, "loaded" as const]]),
+    new Map(),
+    [],
+    new Map(),
+    NO_REACTIONS,
+  )
+    .filter((l) => ["add", "delete", "context"].includes(l.type))
+    .map((l) => [l.text, l.beforeLineNumber, l.afterLineNumber]);
+};
+
+describe("buildDisplayLines line endings", () => {
+  // A final newline ends the last line; it does not start an empty one that
+  // could be commented on past the end of the file.
+  it("shows no line after a file's final newline", () => {
+    expect(diffLines("a\n", "a\nb\n")).toEqual([
+      [" a", 1, 1],
+      ["+b", undefined, 2],
+    ]);
+  });
+
+  it("shows an added file as additions only, and a deleted one as deletions only", () => {
+    expect(diffLines("", "x\ny\n", "")).toEqual([
+      ["+x", undefined, 1],
+      ["+y", undefined, 2],
+    ]);
+    expect(diffLines("gone", "", "b", "")).toEqual([["-gone", 1, undefined]]);
+  });
+
+  it("keeps a last line that has no newline", () => {
+    expect(diffLines("a", "a\nb")).toEqual([
+      [" a", 1, 1],
+      ["+b", undefined, 2],
+    ]);
   });
 });
