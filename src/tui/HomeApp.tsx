@@ -13,6 +13,7 @@ import {
 } from "../core/inbox.js";
 import type { ReviewService } from "../core/review.js";
 import { printable, shortArn } from "../core/text.js";
+import { HelpScreen, type HelpSection } from "./components/Help.js";
 import { RepoPicker } from "./components/RepoPicker.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { App as ReviewApp } from "./ReviewApp.js";
@@ -237,7 +238,14 @@ export function HomeApp({
     );
   }
 
-  if (showHelp) return <HomeHelp />;
+  if (showHelp)
+    return (
+      <HelpScreen
+        title="Home help"
+        note="● marks activity since you last opened the PR."
+        sections={[{ keys: HOME_HELP }]}
+      />
+    );
 
   const notes = (inbox?.errors.length ?? 0) + (inbox && loadError ? 1 : 0);
   const height = Math.max((stdout.rows || 24) - CHROME_LINES - notes, 3);
@@ -374,35 +382,14 @@ function Detail({ item }: { item: InboxItem }) {
   );
 }
 
-function HomeHelp() {
-  const keys: [string, string][] = [
-    ["j / k, ↓ / ↑", "Move"],
-    ["Tab", "Switch between awaiting your approval and your PRs"],
-    ["Enter", "Review the PR (marks it read)"],
-    ["r", "Pick repositories (w watches, p lists PRs)"],
-    ["2 / 3", "Branch table / browse, for the clone or the repository picked"],
-    ["/", "Filter by title or repository"],
-    ["Ctrl+r", "Refresh"],
-    ["u", "Show the PR's console URL"],
-    ["q / Esc", "Quit"],
-  ];
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        lazycc — Home help
-      </Text>
-      <Text dimColor> ● marks activity since you last opened the PR.</Text>
-      {keys.map(([k, d]) => (
-        <Box key={k}>
-          <Box minWidth={16}>
-            <Text> {k}</Text>
-          </Box>
-          <Text>{d}</Text>
-        </Box>
-      ))}
-      <Box marginTop={1}>
-        <Text dimColor>Press any key to close</Text>
-      </Box>
-    </Box>
-  );
-}
+const HOME_HELP: HelpSection["keys"] = [
+  ["j / k, ↓ / ↑", "Move"],
+  ["Tab", "Switch between awaiting your approval and your PRs"],
+  ["Enter", "Review the PR (marks it read)"],
+  ["r", "Pick repositories (w watches, p lists PRs)"],
+  ["2 / 3", "Branch table / browse, for the clone or the repository picked"],
+  ["/", "Filter by title or repository"],
+  ["Ctrl+r", "Refresh"],
+  ["u", "Show the PR's console URL"],
+  ["q / Esc", "Quit"],
+];

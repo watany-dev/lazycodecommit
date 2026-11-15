@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
+import { HelpScreen, type HelpSection } from "./components/Help.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { screenErrorText } from "./utils/formatError.js";
@@ -245,7 +246,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
     { isActive: true },
   );
 
-  if (showHelp) return <BrowseHelp />;
+  if (showHelp) return <HelpScreen title="Browse help" sections={[{ keys: BROWSE_HELP }]} />;
 
   const where = file ? file.path : folderKey ? `${folderKey}/` : "/";
   return (
@@ -406,35 +407,15 @@ function RefPickerView(props: {
   );
 }
 
-function BrowseHelp() {
-  const keys: [string, string][] = [
-    ["j / k, ↓ / ↑", "Move, or scroll a file"],
-    ["Enter / l", "Open the folder or file"],
-    ["h / Backspace", "Up to the parent folder; back from a file"],
-    ["Ctrl+d / Ctrl+u", "Half a page down or up in a file"],
-    ["g / G", "Top or end"],
-    ["/", "Filter this folder by name"],
-    ["b", "Switch to another branch, or type a commit ID"],
-    ["u", "Show the console URL of this place"],
-    ["Ctrl+r", "Reload"],
-    ["q / Esc", "Back from a file; quit from a folder"],
-  ];
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        lazycc — Browse help
-      </Text>
-      {keys.map(([k, d]) => (
-        <Box key={k}>
-          <Box minWidth={18}>
-            <Text> {k}</Text>
-          </Box>
-          <Text>{d}</Text>
-        </Box>
-      ))}
-      <Box marginTop={1}>
-        <Text dimColor>Press any key to close</Text>
-      </Box>
-    </Box>
-  );
-}
+const BROWSE_HELP: HelpSection["keys"] = [
+  ["j / k, ↓ / ↑", "Move, or scroll a file"],
+  ["Enter / l", "Open the folder or file"],
+  ["h / Backspace", "Up to the parent folder; back from a file"],
+  ["Ctrl+d / Ctrl+u", "Half a page down or up in a file"],
+  ["g / G", "Top or end"],
+  ["/", "Filter this folder by name"],
+  ["b", "Switch to another branch, or type a commit ID"],
+  ["u", "Show the console URL of this place"],
+  ["Ctrl+r", "Reload"],
+  ["q / Esc", "Back from a file; quit from a folder"],
+];

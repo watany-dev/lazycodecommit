@@ -10,6 +10,7 @@ import {
 } from "../core/branch.js";
 import type { ReviewService } from "../core/review.js";
 import { printable } from "../core/text.js";
+import { HelpScreen, type HelpSection } from "./components/Help.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
@@ -190,7 +191,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
     );
   }
 
-  if (showHelp) return <BranchHelp />;
+  if (showHelp) return <HelpScreen title="Branches help" sections={[{ keys: BRANCH_HELP }]} />;
 
   const height = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
   const top = Math.max(0, Math.min(index - height + 1, rows.length - height));
@@ -292,34 +293,14 @@ const STATE_COLOR: Record<BranchRow["state"], string> = {
   none: "white",
 };
 
-function BranchHelp() {
-  const keys: [string, string][] = [
-    ["j / k, ↓ / ↑", "Move"],
-    ["Enter", "Review the branch's open PR"],
-    ["n", "Create a PR from the branch"],
-    ["d", "Delete the branch on CodeCommit (not the local one)"],
-    ["Space", "Switch to the branch (git switch, clone only)"],
-    ["/", "Filter by name"],
-    ["Ctrl+r", "git fetch origin and reload"],
-    ["u", "Show the branch's console URL"],
-    ["q / Esc", "Quit"],
-  ];
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        lazycc — Branches help
-      </Text>
-      {keys.map(([k, d]) => (
-        <Box key={k}>
-          <Box minWidth={16}>
-            <Text> {k}</Text>
-          </Box>
-          <Text>{d}</Text>
-        </Box>
-      ))}
-      <Box marginTop={1}>
-        <Text dimColor>Press any key to close</Text>
-      </Box>
-    </Box>
-  );
-}
+const BRANCH_HELP: HelpSection["keys"] = [
+  ["j / k, ↓ / ↑", "Move"],
+  ["Enter", "Review the branch's open PR"],
+  ["n", "Create a PR from the branch"],
+  ["d", "Delete the branch on CodeCommit (not the local one)"],
+  ["Space", "Switch to the branch (git switch, clone only)"],
+  ["/", "Filter by name"],
+  ["Ctrl+r", "git fetch origin and reload"],
+  ["u", "Show the branch's console URL"],
+  ["q / Esc", "Quit"],
+];
