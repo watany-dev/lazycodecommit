@@ -1,5 +1,5 @@
-import type { PullRequest, RuleEvaluation } from "../aws/codecommit.js";
-import type { BranchRow, BranchTable } from "../core/branch.js";
+import type { PullRequest } from "../aws/codecommit.js";
+import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
 
@@ -87,26 +87,12 @@ function align(rows: readonly string[][]): string[] {
   );
 }
 
-const STATE_TEXT: Record<BranchRow["state"], string> = {
-  open: "PR",
-  merged: "merged",
-  none: "-",
-};
-
-function rulesSummary(rules: RuleEvaluation | undefined): string {
-  if (!rules) return "";
-  if (rules.overridden) return "rules overridden";
-  const total = rules.satisfied.length + rules.notSatisfied.length;
-  if (total === 0) return "";
-  return `${rules.approved ? "✓" : "✗"} ${rules.satisfied.length}/${total} rules`;
-}
-
 /** spec: ブランチ×PR 対応表, as text: one line per branch, the default marked with *. */
 export function branchLines(table: BranchTable): string[] {
   return align(
     table.rows.map((r) => [
       `${r.isDefault ? "*" : " "} ${printable(r.name)}`,
-      STATE_TEXT[r.state],
+      STATE_LABEL[r.state],
       r.ahead === undefined ? "" : `↑${r.ahead} ↓${r.behind}`,
       r.lastCommit ? `${date(r.lastCommit.date)} ${printable(r.lastCommit.author)}` : "",
       [r.pr ? `#${r.pr.id} ${printable(r.pr.title)}` : "", rulesSummary(r.rules)]

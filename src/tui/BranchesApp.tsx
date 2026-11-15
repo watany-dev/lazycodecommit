@@ -1,7 +1,13 @@
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
-import type { BranchActions, BranchRow, BranchTable } from "../core/branch.js";
+import {
+  type BranchActions,
+  type BranchRow,
+  type BranchTable,
+  rulesSummary,
+  STATE_LABEL,
+} from "../core/branch.js";
 import type { ReviewService } from "../core/review.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
@@ -106,6 +112,8 @@ export function BranchesApp({ actions, service, start, onCreate }: Props) {
         setShowHelp(true);
         return;
       }
+      // Rows are stale until the reload lands, and a second load could finish first.
+      if (loading) return;
       if (key.ctrl && input === "r") {
         setNote(null);
         void load(true);
@@ -258,33 +266,18 @@ function BranchLine({
       <Text wrap="truncate">
         {row.pr ? `#${row.pr.id} ${row.pr.title}` : ""}
         {row.rules ? (
-          <Text color={row.rules.approved ? "green" : "yellow"}> {rulesText(row)}</Text>
+          <Text color={row.rules.approved ? "green" : "yellow"}> {rulesSummary(row.rules)}</Text>
         ) : null}
       </Text>
     </Box>
   );
 }
 
-const STATE_LABEL: Record<BranchRow["state"], string> = {
-  open: "PR",
-  merged: "merged",
-  none: "-",
-};
-
 const STATE_COLOR: Record<BranchRow["state"], string> = {
   open: "green",
   merged: "magenta",
   none: "white",
 };
-
-function rulesText(row: BranchRow): string {
-  const rules = row.rules;
-  if (!rules) return "";
-  if (rules.overridden) return "rules overridden";
-  const total = rules.satisfied.length + rules.notSatisfied.length;
-  if (total === 0) return rules.approved ? "✓" : "";
-  return `${rules.approved ? "✓" : "✗"} ${rules.satisfied.length}/${total}`;
-}
 
 function errorText(err: unknown): string {
   // Our own refusals (default branch, open PR) and git's messages are already for the user.

@@ -144,8 +144,10 @@ describe("pr create safety rules", () => {
           const c = created[0]!;
           check(c.title.trim() !== "", "never creates a PR without a title");
           check(c.sourceBranch !== c.destinationBranch, "head and base differ");
-          if (w.clone && w.unpushed !== 0)
+          if (w.clone && w.localBranch && w.unpushed !== 0)
             check(pushed && !w.pushFails, "the branch is on origin before the PR");
+          if (!w.clone || !w.localBranch)
+            check(w.remoteBranch && !pushed, "without a local branch, uses origin's as it is");
           check(result?.kind === "created", "reports what it created");
         }
         if (w.push && w.noPush)

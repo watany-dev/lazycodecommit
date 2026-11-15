@@ -1,5 +1,5 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
-import { Box, Text, useApp } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import {
@@ -635,16 +635,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
     return <Help onClose={() => setShowHelp(false)} />;
   }
 
-  if (error) {
-    return (
-      <Box flexDirection="column" padding={1}>
-        <Text color="red" bold>
-          Error: {error}
-        </Text>
-        <Text dimColor>Press Ctrl+C to exit.</Text>
-      </Box>
-    );
-  }
+  if (error) return <ErrorScreen error={error} onBack={onExit} />;
 
   if (loading) {
     return (
@@ -723,4 +714,21 @@ export function App({ service, repository, start, onExit }: AppProps) {
         />
       );
   }
+}
+
+function ErrorScreen({ error, onBack }: { error: string; onBack: (() => void) | undefined }) {
+  useInput(
+    (input, key) => {
+      if (input === "q" || key.escape) onBack?.();
+    },
+    { isActive: onBack !== undefined },
+  );
+  return (
+    <Box flexDirection="column" padding={1}>
+      <Text color="red" bold>
+        Error: {error}
+      </Text>
+      <Text dimColor>{onBack ? "Press q to go back." : "Press Ctrl+C to exit."}</Text>
+    </Box>
+  );
 }

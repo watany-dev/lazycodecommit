@@ -187,6 +187,21 @@ describe("BranchesApp", () => {
     await vi.waitFor(() => expect(a.load).toHaveBeenLastCalledWith({ fetch: true }));
   });
 
+  it("ignores row actions while the table reloads", async () => {
+    let calls = 0;
+    const table: BranchTable = { repository: "demo", defaultBranch: "main", rows: ROWS };
+    const a = actions({
+      load: vi.fn(async () => (calls++ === 0 ? table : new Promise<BranchTable>(() => {}))),
+    });
+    const { lastFrame, stdin } = await setup(a);
+    await press(stdin, "\u0012", "j", "j", "d");
+    expect(lastFrame()).not.toContain("Delete origin/done");
+    await press(stdin, "\u0012");
+    expect(a.load).toHaveBeenCalledTimes(2);
+    await press(stdin, "q");
+    expect(exit).toHaveBeenCalled();
+  });
+
   it("shows help, and quits on q", async () => {
     const { lastFrame, stdin } = await setup();
     await press(stdin, "?");

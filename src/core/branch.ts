@@ -4,7 +4,7 @@ import type { Git } from "../git/git.js";
 import type { Config } from "../state/config.js";
 import type { RepoContext } from "./context.js";
 import { UserError } from "./errors.js";
-import { listPullRequests } from "./pr.js";
+import { listPullRequests, repositoryConsoleUrl } from "./pr.js";
 
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_CLOSED_LOOKBACK = 100;
@@ -139,8 +139,23 @@ export async function deleteRemoteBranch(row: BranchRow, deps: BranchDeps): Prom
 }
 
 export function branchConsoleUrl(region: string, repository: string, branch: string): string {
-  const host = region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com";
-  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/browse/refs/heads/${branch.split("/").map(encodeURIComponent).join("/")}?region=${region}`;
+  const path = branch.split("/").map(encodeURIComponent).join("/");
+  return repositoryConsoleUrl(region, repository, `browse/refs/heads/${path}`);
+}
+
+export const STATE_LABEL: Record<BranchState, string> = {
+  open: "PR",
+  merged: "merged",
+  none: "-",
+};
+
+/** The approval rules of a row's PR in a few characters, "" when it has none. */
+export function rulesSummary(rules: RuleEvaluation | undefined): string {
+  if (!rules) return "";
+  if (rules.overridden) return "rules overridden";
+  const total = rules.satisfied.length + rules.notSatisfied.length;
+  if (total === 0) return "";
+  return `${rules.approved ? "✓" : "✗"} ${rules.satisfied.length}/${total} rules`;
 }
 
 /** What the branch screen does, bound to one repository. */
