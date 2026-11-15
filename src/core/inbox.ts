@@ -3,6 +3,7 @@ import type { CodeCommitApi, PullRequest, RuleEvaluation } from "../aws/codecomm
 import { mapLimit } from "../aws/mapLimit.js";
 import type { Config } from "../state/config.js";
 import { type IdentityStore, lastSeen } from "../state/local.js";
+import { type CheckState, checksFor, type RepositoryRuns } from "./checks.js";
 import { OPEN_SCAN_LIMIT } from "./pr.js";
 
 export type Section = "awaiting" | "mine";
@@ -16,6 +17,8 @@ export interface InboxItem {
   /** Loaded after the list for "mine" items. */
   readonly rules?: RuleEvaluation;
   readonly mergeable?: boolean;
+  /** CI on the source commit, for "mine" items in a repository the config's ci lists (ADR 0010). */
+  readonly checks?: CheckState;
   /** Why the details above could not be loaded. */
   readonly detailError?: string;
 }
@@ -242,19 +245,26 @@ export async function fetchInbox(repositories: readonly string[], deps: InboxDep
 
 /**
  * The calls each row needs beyond GetPullRequest: approvals for "awaiting"
- * (condition 3), rule evaluation and conflicts for "mine".
+ * (condition 3), rule evaluation, conflicts and CI for "mine".
  */
 export async function loadDetails(
   item: InboxItem,
   api: Pick<CodeCommitApi, "approvers" | "evaluateApprovalRules" | "mergeable">,
+  runs?: RepositoryRuns,
 ): Promise<InboxItem> {
   try {
     if (item.section === "awaiting") return { ...item, approvedBy: await api.approvers(item.pr) };
-    const [rules, mergeable] = await Promise.all([
+    const [rules, mergeable, ci] = await Promise.all([
       api.evaluateApprovalRules(item.pr),
       api.mergeable(item.pr),
+      runs?.(item.pr.repository),
     ]);
-    return { ...item, rules, mergeable };
+    return {
+      ...item,
+      rules,
+      mergeable,
+      ...(ci ? { checks: checksFor(item.pr.sourceCommit, ci).state } : {}),
+    };
   } catch (e) {
     return { ...item, detailError: asError(e).message };
   }
@@ -311,6 +321,12 @@ function isRules(v: unknown): v is RuleEvaluation {
   );
 }
 
+const CHECK_STATES = new Set<unknown>(["pass", "fail", "pending", "cancel", "none", "error"]);
+
+function isCheckState(v: unknown): v is CheckState {
+  return CHECK_STATES.has(v);
+}
+
 function parseItem(raw: unknown): InboxItem | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const r = raw as Record<string, unknown>;
@@ -346,6 +362,7 @@ function parseItem(raw: unknown): InboxItem | undefined {
     ...(isStringArray(r["approvedBy"]) ? { approvedBy: r["approvedBy"] } : {}),
     ...(typeof r["mergeable"] === "boolean" ? { mergeable: r["mergeable"] } : {}),
     ...(isRules(r["rules"]) ? { rules: r["rules"] } : {}),
+    ...(isCheckState(r["checks"]) ? { checks: r["checks"] } : {}),
   };
   return item;
 }

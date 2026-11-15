@@ -3,6 +3,7 @@ import type { MergeStrategy } from "../aws/codecommit.js";
 import * as aws from "../aws/review.js";
 import type { Git, TreeChange } from "../git/git.js";
 import type { SeenPr } from "../state/local.js";
+import type { Checks } from "./checks.js";
 import type { DraftStorage } from "./commentDrafts.js";
 import { printable } from "./text.js";
 
@@ -41,6 +42,8 @@ export type ReviewService = { readonly [K in Operation]: WithoutClient<(typeof a
   readonly mergeStrategy?: MergeStrategy;
   /** Where unposted comments are kept; without it they last as long as the screen. */
   readonly drafts?: DraftStorage;
+  /** CI on the PR's source commit; null when the config's ci lists nothing for the repository (ADR 0010). */
+  readonly checks?: (pr: { repository: string; sourceCommit: string }) => Promise<Checks | null>;
 };
 
 /** The service for the TUI, with its own client: the review screen needs more calls than CodeCommitApi has. */

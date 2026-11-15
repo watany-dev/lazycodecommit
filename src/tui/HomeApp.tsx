@@ -2,6 +2,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { useEffect, useRef, useState } from "react";
 import { rulesSummary } from "../core/branch.js";
+import { CHECK_COLOR, CHECK_MARK } from "../core/checks.js";
 import type { HomeActions } from "../core/home.js";
 import {
   type Inbox,
@@ -361,6 +362,9 @@ function Detail({ item }: { item: InboxItem }) {
   if (!item.rules) return <Text dimColor>…</Text>;
   return (
     <Text wrap="truncate">
+      {item.checks ? (
+        <Text color={CHECK_COLOR[item.checks]}>CI {CHECK_MARK[item.checks]} </Text>
+      ) : null}
       <Text color={item.rules.approved ? "green" : "yellow"}>
         {rulesSummary(item.rules) || "no rules"}
       </Text>

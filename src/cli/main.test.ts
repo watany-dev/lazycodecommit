@@ -461,6 +461,40 @@ describe("CI results in pr view and pr status (ADR 0010)", () => {
     expect(j.checks).toMatchObject({ state: "none", runs: [{ state: "none", startedAt: null }] });
   });
 
+  it("hands the review screen a CI loader for the same account", async () => {
+    const r = await cli(["pr", "view", "3"], { api: ciPrApi(), config, ci, interactive: true });
+    const checks = await r.reviews[0]?.checks?.({ repository: "demo", sourceCommit: "s1" });
+    expect(checks?.state).toBe("fail");
+    expect(r.ciOptions).toEqual([{ region: "ap-northeast-1" }]);
+  });
+
+  it("hands the top-level views a CI loader, created only when used", async () => {
+    const r = await cli(["branch"], { api: ciPrApi(), config, ci, interactive: true });
+    expect(r.ciOptions).toEqual([]);
+    const checks = await r.tops[0]?.checks?.({ repository: "demo", sourceCommit: "s1" });
+    expect(checks?.state).toBe("fail");
+    expect(r.ciOptions).toEqual([{ region: "ap-northeast-1" }]);
+  });
+
+  it("adds the CI state to lazycc status for the listed repository", async () => {
+    const api = fakeApi(
+      [
+        pullRequest({
+          id: "3",
+          sourceCommit: "s1",
+          authorArn: "arn:aws:iam::123456789012:user/me",
+        }),
+      ],
+      {
+        callerArn: async () => "arn:aws:iam::123456789012:user/me",
+      },
+    );
+    const r = await cli(["status", "--json", "-R", "demo"], { api, config, ci });
+    expect(json(r.out).mine[0].checks).toBe("fail");
+    const text = await cli(["status", "-R", "demo"], { api, config, ci });
+    expect(text.out).toContain("CI ✗ fail");
+  });
+
   it("does not look for CI when the branch has no PR", async () => {
     const r = await cli(["pr", "status", "--json"], { config, ci });
     expect(json(r.out)).toEqual({ branch: "topic", pullRequest: null });
@@ -954,6 +988,7 @@ describe("the review screen on a terminal", () => {
         region: "ap-northeast-1",
         markSeen: expect.any(Function),
         drafts: { load: expect.any(Function), save: expect.any(Function) },
+        checks: expect.any(Function),
         git: expect.anything(),
       },
     ]);
@@ -985,6 +1020,7 @@ describe("the review screen on a terminal", () => {
         profile: "p",
         markSeen: expect.any(Function),
         drafts: { load: expect.any(Function), save: expect.any(Function) },
+        checks: expect.any(Function),
       },
     ]);
   });

@@ -2,6 +2,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CiApi } from "../aws/ci.js";
+import type { Config } from "../state/config.js";
 import { fakeApi, fakeState, pullRequest } from "../testing/fakes.js";
 import { homeActions } from "./home.js";
 
@@ -17,16 +19,21 @@ const prs = [
   pullRequest({ id: "2", repository: "b", authorArn: ME }),
 ];
 
-function setup(repos?: string[]) {
+const noCi = async (): Promise<CiApi> => {
+  throw new Error("CI is not configured in this test");
+};
+
+function setup(repos?: string[], extra: { config?: Config; ci?: () => Promise<CiApi> } = {}) {
   const state = fakeState();
   const actions = homeActions({
     api: fakeApi(prs),
     state,
-    config: repos ? { repos, concurrency: 3 } : {},
+    config: { ...(repos ? { repos, concurrency: 3 } : {}), ...extra.config },
     env: { XDG_CONFIG_HOME: dir },
     region: "us-east-1",
     me: ME,
     initial: repos,
+    ci: extra.ci ?? noCi,
   });
   return { state, actions };
 }
@@ -36,6 +43,47 @@ const fail = async () => {
 };
 
 describe("homeActions", () => {
+  it("reads each listed repository's CI runs once per refresh, for its own PRs only", async () => {
+    let builds = 0;
+    const ci: CiApi = {
+      recentBuilds: async () => {
+        builds++;
+        return [
+          {
+            id: "p:1",
+            status: "FAILED",
+            commits: ["s1"],
+            startedAt: undefined,
+            endedAt: undefined,
+            url: "u",
+          },
+        ];
+      },
+      recentExecutions: async () => [],
+    };
+    const { actions } = setup(["a", "b"], {
+      config: { ci: { b: { codebuild: ["p"] } } },
+      ci: async () => ci,
+    });
+    const inbox = await actions.fetch(["a", "b"]);
+    const mine = inbox.items.find((i) => i.section === "mine")!;
+    expect((await actions.details(mine)).checks).toBe("fail");
+    await actions.details(mine);
+    expect(builds).toBe(1);
+    await actions.fetch(["a", "b"]);
+    await actions.details(mine);
+    expect(builds).toBe(2);
+  });
+
+  it("leaves checks out for a repository ci does not list, without creating the client", async () => {
+    const { actions } = setup(["a", "b"]);
+    const inbox = await actions.fetch(["a", "b"]);
+    const mine = inbox.items.find((i) => i.section === "mine")!;
+    const loaded = await actions.details(mine);
+    expect(loaded.detailError).toBeUndefined();
+    expect(loaded).not.toHaveProperty("checks");
+  });
+
   it("fetches, loads details, saves and reads back the cache with fresh unread marks", async () => {
     const { state, actions } = setup(["a", "b"]);
     expect(actions).toMatchObject({ concurrency: 3, initial: ["a", "b"], me: ME });
@@ -67,6 +115,7 @@ describe("homeActions", () => {
         },
       }),
       state: fakeState(),
+      ci: noCi,
       config: {},
       env: {},
       region: "us-east-1",

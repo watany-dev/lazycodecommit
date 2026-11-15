@@ -4,9 +4,12 @@ import {
   type CheckState,
   checksFor,
   ciTargets,
+  lazyCiClient,
   loadTargetRuns,
   overallState,
+  pullRequestChecks,
   RECENT_RUNS,
+  repositoryRuns,
   stateOf,
 } from "./checks.js";
 
@@ -165,5 +168,51 @@ describe("checksFor", () => {
       { provider: "codebuild", name: "p", runs: [run("p:1", "SUCCEEDED", [])] },
     ]);
     expect(checks.state).toBe("none");
+  });
+});
+
+describe("lazyCiClient", () => {
+  it("creates the client once, and again after a failed creation", async () => {
+    const api: CiApi = { recentBuilds: async () => [], recentExecutions: async () => [] };
+    const create = vi.fn().mockRejectedValueOnce(new Error("chunk")).mockResolvedValue(api);
+    const client = lazyCiClient(create);
+    await expect(client()).rejects.toThrow("chunk");
+    expect(await client()).toBe(api);
+    expect(await client()).toBe(api);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+});
+
+const succeededApi = (): CiApi => ({
+  recentBuilds: vi.fn(async () => [run("p:1", "SUCCEEDED", ["c1"])]),
+  recentExecutions: async () => [],
+});
+
+describe("pullRequestChecks and repositoryRuns", () => {
+  const config = { ci: { svc: { codebuild: ["p"] } } };
+
+  it("is null for a repository ci does not list, without creating the client", async () => {
+    const create = vi.fn(async () => succeededApi());
+    expect(
+      await pullRequestChecks(config, create, { repository: "other", sourceCommit: "c1" }),
+    ).toBeNull();
+    expect(await repositoryRuns(config, create)("other")).toBeUndefined();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("matches the PR's source commit", async () => {
+    const checks = await pullRequestChecks(config, async () => succeededApi(), {
+      repository: "svc",
+      sourceCommit: "c1",
+    });
+    expect(checks?.state).toBe("pass");
+  });
+
+  it("reads a repository's runs once", async () => {
+    const ci = succeededApi();
+    const runs = repositoryRuns(config, async () => ci);
+    await Promise.all([runs("svc"), runs("svc")]);
+    expect(await runs("svc")).toHaveLength(1);
+    expect(ci.recentBuilds).toHaveBeenCalledTimes(1);
   });
 });

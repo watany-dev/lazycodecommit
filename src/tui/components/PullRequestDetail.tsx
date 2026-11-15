@@ -1,6 +1,7 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { CHECK_COLOR, CHECK_MARK, type Checks } from "../../core/checks.js";
 import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
 import type {
   CommentThread,
@@ -90,6 +91,8 @@ interface Props {
   };
   /** Absent: c / C / R only post immediately and there is no draft list. */
   drafts?: DraftProps;
+  /** CI on the source commit (ADR 0010); null while loading or when the config's ci lists nothing. */
+  checks?: Checks | null;
 }
 
 function buildCollapsedThreadState(
@@ -132,6 +135,7 @@ export function PullRequestDetail({
   deleteComment,
   reaction,
   drafts,
+  checks = null,
 }: Props) {
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isCommenting, setIsCommenting] = useState(false);
@@ -621,6 +625,7 @@ export function PullRequestDetail({
             </Text>
           </Box>
         )}
+      {checks && <ChecksLines checks={checks} />}
       {(commits.length > 0 || commitsAvailable) && (
         <Box flexDirection="column" marginBottom={0}>
           <Box>
@@ -1032,4 +1037,31 @@ function formatStrategyName(strategy: MergeStrategy): string {
     case "three-way":
       return "three-way merge";
   }
+}
+
+/** The review screen's CI block: the overall state, then one line per project or pipeline. */
+function ChecksLines({ checks }: { checks: Checks }) {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text>
+        CI:{" "}
+        <Text color={CHECK_COLOR[checks.state]}>
+          {CHECK_MARK[checks.state]} {checks.state}
+        </Text>
+      </Text>
+      {checks.runs.map((r) => (
+        <Text key={`${r.provider}:${r.name}`} wrap="truncate">
+          {"  "}
+          <Text color={CHECK_COLOR[r.state]}>{CHECK_MARK[r.state]}</Text> {r.provider} {r.name}{" "}
+          <Text dimColor>
+            {r.state === "error"
+              ? printable(r.message ?? "")
+              : r.state === "none"
+                ? `no run on ${checks.commit.slice(0, 7)}`
+                : `${r.status} ${r.url ?? ""}`}
+          </Text>
+        </Text>
+      ))}
+    </Box>
+  );
 }
