@@ -1,3 +1,4 @@
+import * as fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import type { CiApi, CiRun } from "../aws/ci.js";
 import {
@@ -171,6 +172,47 @@ describe("checksFor", () => {
   });
 });
 
+describe("checksFor, for any runs", () => {
+  const statuses = ["SUCCEEDED", "FAILED", "IN_PROGRESS", "STOPPED", "QUEUED"];
+  const runs = fc
+    .array(
+      fc.record({
+        status: fc.constantFrom(...statuses),
+        commits: fc.subarray(["c1", "c2", "c3"]),
+      }),
+      { maxLength: 8 },
+    )
+    .map((rs) => rs.map((r, i) => run(`b${i}`, r.status, r.commits)));
+
+  it("takes each target's newest run on the commit, and the overall state from them", () => {
+    fc.assert(
+      fc.property(
+        fc.array(runs, { minLength: 1, maxLength: 3 }),
+        fc.constantFrom("c1", "c2", ""),
+        (lists, commit) => {
+          const checks = checksFor(
+            commit,
+            lists.map((rs, i) => ({ provider: "codebuild" as const, name: `p${i}`, runs: rs })),
+          );
+          lists.forEach((rs, i) => {
+            const newest = commit ? rs.find((r) => r.commits.includes(commit)) : undefined;
+            expect(checks.runs[i]?.id ?? undefined).toBe(newest?.id);
+            expect(checks.runs[i]?.state).toBe(
+              newest ? stateOf("codebuild", newest.status) : "none",
+            );
+          });
+          const states = checks.runs.map((r) => r.state);
+          expect(states).toContain(checks.state);
+          // Nothing worse than the overall state is hidden.
+          if (states.includes("fail")) expect(checks.state).toBe("fail");
+          if (checks.state === "pass")
+            expect(states.every((s) => s === "pass" || s === "none")).toBe(true);
+        },
+      ),
+    );
+  });
+});
+
 describe("lazyCiClient", () => {
   it("creates the client once, and again after a failed creation", async () => {
     const api: CiApi = { recentBuilds: async () => [], recentExecutions: async () => [] };
@@ -187,6 +229,10 @@ const succeededApi = (): CiApi => ({
   recentBuilds: vi.fn(async () => [run("p:1", "SUCCEEDED", ["c1"])]),
   recentExecutions: async () => [],
 });
+
+const broken = async (): Promise<CiApi> => {
+  throw new Error("Cannot find module @aws-sdk/client-codebuild");
+};
 
 describe("pullRequestChecks and repositoryRuns", () => {
   const config = { ci: { svc: { codebuild: ["p"] } } };
@@ -206,6 +252,21 @@ describe("pullRequestChecks and repositoryRuns", () => {
       sourceCommit: "c1",
     });
     expect(checks?.state).toBe("pass");
+  });
+
+  it("keeps the PR showing when the CI clients cannot be created: each target errs", async () => {
+    const checks = await pullRequestChecks(config, broken, {
+      repository: "svc",
+      sourceCommit: "c1",
+    });
+    expect(checks?.state).toBe("error");
+    expect(checks?.runs[0]).toMatchObject({
+      state: "error",
+      message: "Cannot find module @aws-sdk/client-codebuild",
+    });
+    expect(await repositoryRuns(config, broken)("svc")).toEqual([
+      { provider: "codebuild", name: "p", error: "Cannot find module @aws-sdk/client-codebuild" },
+    ]);
   });
 
   it("reads a repository's runs once", async () => {

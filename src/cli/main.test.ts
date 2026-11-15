@@ -454,7 +454,9 @@ describe("CI results in pr view and pr status (ADR 0010)", () => {
       recentExecutions: async () => [],
     };
     const r = await cli(["pr", "status"], { api: ciPrApi(), config: quiet, ci: none });
-    expect(r.out).toContain("  CI:             · none\n    ·  codebuild check    no run on s1");
+    expect(r.out).toContain(
+      "  CI:             · none\n    ·  codebuild check    no run on s1 among the newest 20",
+    );
     const j = json(
       (await cli(["pr", "status", "--json"], { api: ciPrApi(), config: quiet, ci: none })).out,
     );
@@ -493,6 +495,12 @@ describe("CI results in pr view and pr status (ADR 0010)", () => {
     expect(json(r.out).mine[0].checks).toBe("fail");
     const text = await cli(["status", "-R", "demo"], { api, config, ci });
     expect(text.out).toContain("CI ✗ fail");
+    // The row only shows a mark: why a lookup failed goes to stderr, once per
+    // repository, without failing the command (CI is optional).
+    expect(text.err).toBe(
+      "lazycc: demo: CI codepipeline release: Access denied: not authorized to perform: codepipeline:ListPipelineExecutions",
+    );
+    expect(text.code).toBe(0);
   });
 
   it("does not look for CI when the branch has no PR", async () => {

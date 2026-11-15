@@ -57,6 +57,20 @@ describe("recentBuilds", () => {
     expect(run).toMatchObject({ status: "", commits: [], startedAt: undefined });
   });
 
+  it("takes a commit ID it was started on while the source is not resolved yet", async () => {
+    // A queued build has no resolvedSourceVersion until it downloads the source.
+    const commit = "0123456789abcdef0123456789abcdef01234567";
+    cb.on(ListBuildsForProjectCommand).resolves({ ids: ["p:2", "p:1"] });
+    cb.on(BatchGetBuildsCommand).resolves({
+      builds: [
+        { id: "p:2", buildStatus: "IN_PROGRESS", sourceVersion: commit },
+        { id: "p:1", buildStatus: "IN_PROGRESS", sourceVersion: "refs/heads/main" },
+      ],
+    });
+    const runs = await api().recentBuilds("p", 20);
+    expect(runs.map((r) => r.commits)).toEqual([[commit], []]);
+  });
+
   it("does not call BatchGetBuilds for a project with no builds", async () => {
     cb.on(ListBuildsForProjectCommand).resolves({});
     expect(await api().recentBuilds("empty", 20)).toEqual([]);

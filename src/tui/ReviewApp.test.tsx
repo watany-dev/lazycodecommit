@@ -5676,7 +5676,7 @@ describe("CI results on the review screen (ADR 0010)", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("CI: ✗ fail"));
     expect(checks).toHaveBeenCalledWith({ repository: "my-service", sourceCommit: "abc1234def" });
     expect(lastFrame()).toContain("✗ codebuild check FAILED https://console/check:1");
-    expect(lastFrame()).toContain("· codepipeline release no run on abc1234");
+    expect(lastFrame()).toContain("· codepipeline release no run on abc1234 among the newest 20");
     expect(lastFrame()).toContain("! codepipeline locked Access denied: ^[[31mx");
   });
 
