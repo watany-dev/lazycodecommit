@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-`ccm pr create` は、テンプレートファイルがあれば PR 本文の末尾に差し込む。
+`lazycc pr create` は、テンプレートファイルがあれば PR 本文の末尾に差し込む。
 CodeCommit には PR テンプレートの仕組みも、決まった置き場所もない。
 GitHub は `.github/pull_request_template.md` を使う。
 

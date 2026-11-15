@@ -55,9 +55,9 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc | ホーム(受信箱)の TUI を開く | 可 |
 | lazycc status | ホームと同じ内容をテキストで出す | 可 |
 | lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
-| lazycc pr list | PR 一覧を出す | 可 |
+| lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30) | 可 |
 | lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
-| lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す | 不可 |
+| lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
 | lazycc pr comment <id> | PR にコメントする | 可 |
 | lazycc pr approve <id> | 承認する。--revoke で取り消す | 可 |
@@ -103,13 +103,13 @@ lazycc pr create は、clone 内なら引数なしで push から PR 作成ま�
 - 現在のブランチを取得する。detached HEAD ならエラーにする。
 - ベースブランチを決める。--base がなければリポジトリのデフォルトブランチを使う。
 - 同じソースとベースの OPEN な PR が既にあれば、その PR を表示して終了する。
-- upstream が未設定か、未 push のコミットがあれば、確認のうえ git push -u origin <branch> を実行する。
 - git log <base>..HEAD からタイトルと本文の下書きを作る。
 - コミットが1件なら、件名をタイトルに、コミット本文を PR 本文にする。
 - 複数件なら、ブランチ名を整形してタイトルにし、コミット件名を箇条書きで本文に入れる。
 - テンプレートファイルがあれば本文の末尾に差し込む。
 - $EDITOR で下書きを開く。1行目がタイトル、空行の後が本文。タイトルが空なら中止する。
-- CreatePullRequest を呼ぶ。再実行で二重作成しないよう clientRequestToken を付ける。
+- origin に同名のブランチがないか、origin/<branch> にないコミットがあれば、確認のうえ git push -u origin <branch> を実行する。upstream ではなく origin/<branch> と比べるのは、PR のソースが同名のリモートブランチだから。エディタの後に置くのは、エディタで中止したときに何も push しないため。
+- CreatePullRequest を呼ぶ。SDK の再試行で二重作成しないよう clientRequestToken を付ける。
 - PR ID、タイトル、コンソール URL を出力する。
 
 TUI のブランチ表から作成した場合は、作成後にそのままレビュー画面を開く。
@@ -125,9 +125,11 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 | --fill | 下書きをそのまま使い、エディタを開かない |
 | --push | 確認なしで push する |
 | --no-push | push が必要なら失敗させる |
-| --dry-run | API を呼ばず、作成内容だけ表示する |
+| --dry-run | push と CreatePullRequest を行わず、作成内容だけ表示する。ベースの解決と既存 PR の確認のための参照系 API は呼ぶ |
 
---title と --body の両方を指定した場合もエディタを開かない。
+--title と --body の両方を指定した場合もエディタを開かない。非 TTY でエディタが必要になる指定(--fill も --title と --body の組もない)は、引数の誤り(終了コード 2)にする。
+
+--json 指定時、作成した PR は pr view --json と同じ形で出す。既存 PR があるときは同じ形に "existing": true を足して標準出力に出し、終了コード 1 で終わる。
 
 ### エラー時の挙動
 | 状況 | 挙動 |
@@ -141,7 +143,9 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 
 ### 補足
 - テンプレートの既定パスは .codecommit/pull_request_template.md。設定で変更できる。
-- clone 外では push とコミットからの下書きを行わず、タイトルの初期値はブランチ名にする。
+- clone 外では push とコミットからの下書きを行わず、タイトルの初期値はブランチ名にする。ソースブランチがリモートにあることは GetBranch で確かめる。
+- clientRequestToken は実行ごとに新しく作る。再実行での二重作成は既存 PR の確認で防ぐ。内容から作ると、その後に閉じた PR が返ってきてしまう。
+- clone 内では、ベースとの差分を origin/<base> から取る。なければローカルの <base>、どちらもなければ git fetch を案内する。
 - コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。
 
 ## ブランチ×PR 対応表
@@ -393,7 +397,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 |---|---|
 | 現在のブランチ | git symbolic-ref --short HEAD |
 | remote URL | git remote get-url origin |
-| 未 push の確認 | git rev-list --count @{u}..HEAD |
+| 未 push の確認 | git rev-list --count origin/<branch>..<branch> |
 | push | git push -u origin <branch> |
 | コミット一覧 | git log --reverse <base>..HEAD |
 | ahead/behind | git rev-list --left-right --count origin/<default>...origin/<branch> |
@@ -416,7 +420,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | 機能 | 必要なアクション |
 |---|---|
 | ホーム、PR 一覧 | ListRepositories、ListPullRequests、GetPullRequest、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts |
-| PR 作成 | GetRepository、GetBranch、CreatePullRequest、GitPush |
+| PR 作成 | GetRepository、ListPullRequests、GetPullRequest、GetBranch(clone 外のみ)、CreatePullRequest、GitPush |
 | ブランチ表 | ListBranches、GetBranch、GetRepository、DeleteBranch(削除時のみ) |
 | ブラウズ | GetFolder、GetFile、ListBranches |
 | レビュー(閲覧) | GetCommit、GetDifferences、GetBlob、GetCommentsForPullRequest、GetCommentReactions、DescribePullRequestEvents |

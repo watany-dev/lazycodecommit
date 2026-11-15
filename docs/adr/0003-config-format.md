@@ -14,7 +14,7 @@ Node.js の標準ライブラリには TOML パーサがない。Bun には組�
 
 ## Decision
 
-設定ファイルは JSON（`~/.config/ccm/config.json`、`XDG_CONFIG_HOME` に従う）。
+設定ファイルは JSON（`~/.config/lazycc/config.json`、`XDG_CONFIG_HOME` に従う）。
 
 ## Consequences
 

@@ -36,10 +36,12 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@aws-sdk/client-codecommit": "^3.1164.0",
     "@biomejs/biome": "2.6.6",
     "@types/bun": "1.4.4",
     "@types/node": "20.19.43",
     "@vitest/coverage-v8": "5.1.0",
+    "aws-sdk-client-mock": "^4.1.0",
     "knip": "6.44.2",
     "oxlint": "1.92.0",
     "typescript": "6.0.3",
