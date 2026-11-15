@@ -11,13 +11,18 @@ import {
   ListBranchesCommand,
   ListPullRequestsCommand,
 } from "@aws-sdk/client-codecommit";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCodeCommitApi, type PullRequest, toPullRequest } from "./codecommit.js";
 import { mapLimit } from "./mapLimit.js";
 
 const cc = mockClient(CodeCommitClient);
-afterEach(() => cc.reset());
+const sts = mockClient(STSClient);
+afterEach(() => {
+  cc.reset();
+  sts.reset();
+});
 
 const sdkPr = (id: string, extra: object = {}) => ({
   pullRequestId: id,
@@ -60,7 +65,20 @@ describe("toPullRequest", () => {
       revisionId: "rev7",
       creationDate: new Date("2026-01-01T00:00:00Z"),
       lastActivityDate: new Date("2026-01-02T00:00:00Z"),
+      approvalRules: [],
     });
+  });
+
+  it("keeps the approval rules' names and content", () => {
+    const withRules = toPullRequest(
+      sdkPr("7", {
+        approvalRules: [{ approvalRuleName: "two", approvalRuleContent: "{}" }, {}],
+      }),
+    );
+    expect(withRules.approvalRules).toEqual([
+      { name: "two", content: "{}" },
+      { name: "", content: "" },
+    ]);
   });
 
   it("fills defaults for missing fields", () => {
@@ -121,6 +139,13 @@ describe("createCodeCommitApi", () => {
 
   it("reports the region the client resolved", async () => {
     expect(await api.region()).toBe("ap-northeast-1");
+  });
+
+  it("asks STS who the caller is", async () => {
+    sts.on(GetCallerIdentityCommand).resolves({ Arn: "arn:aws:iam::1:user/me" });
+    expect(await api.callerArn()).toBe("arn:aws:iam::1:user/me");
+    sts.on(GetCallerIdentityCommand).resolves({});
+    await expect(api.callerArn()).rejects.toThrow("no ARN");
   });
 
   it("returns undefined for an empty repository", async () => {

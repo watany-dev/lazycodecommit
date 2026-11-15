@@ -4,7 +4,7 @@ import type { CodeCommitApi } from "../aws/codecommit.js";
 import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
-import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
+import { type FakeState, fakeApi, fakeGit, fakeState, pullRequest } from "../testing/fakes.js";
 import type { BranchesRequest, ReviewRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
@@ -15,6 +15,7 @@ interface Setup {
   api?: CodeCommitApi;
   config?: Config | Error;
   env?: Record<string, string>;
+  state?: FakeState;
 }
 
 async function cli(args: string[], setup: Setup = {}) {
@@ -43,6 +44,7 @@ async function cli(args: string[], setup: Setup = {}) {
       if (setup.config instanceof Error) throw setup.config;
       return setup.config ?? {};
     },
+    createState: () => setup.state ?? fakeState(),
     openReview: async (request) => void reviews.push(request),
     openBranches: async (request) => {
       branchScreens.push(request);
@@ -615,5 +617,118 @@ describe("branch rules column", () => {
     });
     const r = await cli(["branch", "-R", "demo"], { api, git: { topLevel: async () => null } });
     expect(r.out).not.toContain("rules");
+  });
+});
+
+describe("status", () => {
+  const ME = "arn:aws:iam::123456789012:user/me";
+  const prs = [
+    pullRequest({ id: "1", repository: "demo", title: "Review me" }),
+    pullRequest({ id: "2", repository: "demo", title: "Mine", authorArn: ME }),
+    pullRequest({ id: "3", repository: "infra", title: "Elsewhere" }),
+    pullRequest({ id: "4", repository: "demo", title: "Approved" }),
+  ];
+  const api = () =>
+    fakeApi(prs, {
+      approvers: async (pr) => (pr.id === "4" ? [ME] : []),
+    });
+
+  it("lists the clone's repository by default, without the PRs I approved", async () => {
+    const state = fakeState();
+    const r = await cli(["status"], { api: api(), state });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("Awaiting your approval (1)");
+    expect(r.out).toMatch(/● {2}demo {2}#1 {2}Review me {2}alice/);
+    expect(r.out).toContain("Your pull requests (1)");
+    expect(r.out).toMatch(/#2 {2}Mine {2}✗ 1\/2 rules {2}no conflicts/);
+    expect(r.out).not.toContain("Approved");
+    expect(r.out).not.toContain("Elsewhere");
+    expect(state.identities.get("profile:default")).toBe(ME);
+    expect(state.sections.get("home")).toMatchObject({ items: expect.any(Array) });
+  });
+
+  it("uses the config's repos outside a clone and prints JSON", async () => {
+    const r = await cli(["status", "--json"], {
+      api: api(),
+      config: { repos: ["demo", "infra"] },
+      git: { topLevel: async () => null },
+    });
+    expect(r.code).toBe(0);
+    const out = json(r.out);
+    expect(out.me).toBe(ME);
+    expect(out.repositories).toEqual(["demo", "infra"]);
+    expect(out.awaiting.map((p: { id: string }) => p.id).toSorted()).toEqual(["1", "3"]);
+    expect(out.awaiting[0]).toMatchObject({ unread: true, approvedBy: [] });
+    expect(out.mine).toEqual([
+      expect.objectContaining({
+        id: "2",
+        unread: true,
+        mergeable: true,
+        approvalRules: expect.objectContaining({ notSatisfied: ["two"] }),
+      }),
+    ]);
+    expect(out.errors).toEqual([]);
+  });
+
+  it("asks for repositories outside a clone without config", async () => {
+    const r = await cli(["status"], {
+      git: { topLevel: async () => null },
+      env: { XDG_CONFIG_HOME: "/cfg" },
+    });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('Add "repos" to /cfg/lazycc/config.json');
+  });
+
+  it("reports a repository it cannot read and exits 1, keeping the rest", async () => {
+    const failing = fakeApi(prs, {
+      listPullRequestIds: async (repo) => {
+        if (repo === "gone")
+          throw Object.assign(new Error("denied for codecommit:ListPullRequests"), {
+            name: "AccessDeniedException",
+          });
+        return ["1"];
+      },
+    });
+    const r = await cli(["status"], { api: failing, config: { repos: ["demo", "gone"] } });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain("#1");
+    expect(r.err).toContain("lazycc: gone: Access denied: denied for codecommit:ListPullRequests");
+  });
+
+  it("looks up the config's repos in the config's region even inside a clone", async () => {
+    const r = await cli(["status"], {
+      api: api(),
+      config: { repos: ["infra"], region: "eu-west-1" },
+    });
+    expect(r.apiOptions).toEqual([{ region: "eu-west-1" }]);
+    expect(r.out).toContain("Elsewhere");
+  });
+
+  it("prints none for empty sections and reports missing details", async () => {
+    const r = await cli(["status", "-R", "demo"], {
+      api: fakeApi([prs[1] as never], {
+        evaluateApprovalRules: async () => {
+          throw new Error("x");
+        },
+      }),
+    });
+    expect(r.out).toContain("Awaiting your approval (0)\n  none");
+    expect(r.out).toMatch(/rules \? {2}conflicts \?/);
+    expect(r.err).toContain("lazycc: demo #2: could not load approvals or rules: x");
+    expect(r.code).toBe(1);
+  });
+
+  it("keeps going when the cache cannot be written", async () => {
+    const state = fakeState();
+    const broken = {
+      ...state,
+      cache: {
+        ...state.cache,
+        set: async () => {
+          throw new Error("EROFS");
+        },
+      },
+    };
+    expect((await cli(["status"], { api: api(), state: broken })).code).toBe(0);
   });
 });

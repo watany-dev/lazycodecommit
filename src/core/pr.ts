@@ -47,7 +47,7 @@ export function consoleUrl(region: string, repository: string, id: string): stri
   return repositoryConsoleUrl(region, repository, `pull-requests/${id}/details`);
 }
 
-function concurrency(config: Config): number {
+export function concurrency(config: Config): number {
   return config.concurrency ?? DEFAULT_CONCURRENCY;
 }
 
