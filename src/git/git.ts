@@ -39,9 +39,6 @@ export interface Git {
   push(branch: string): Promise<void>;
 }
 
-const FIELD = "\x1f";
-const RECORD = "\x1e";
-
 export function createGit(cwd: string): Git {
   function git(
     args: string[],
@@ -88,21 +85,22 @@ export function createGit(cwd: string): Git {
     },
 
     async commits(base, head) {
+      // NUL between subject and body, and -z puts NUL between commits: a commit
+      // message can hold any byte but NUL.
       const out = await required([
         "log",
+        "-z",
         "--reverse",
-        `--format=%s${FIELD}%b${RECORD}`,
+        "--format=%s%x00%b",
         `${base}..${head}`,
         "--",
       ]);
-      return out
-        .split(RECORD)
-        .map((record) => record.replace(/^\n/, ""))
-        .filter((record) => record !== "")
-        .map((record) => {
-          const [subject = "", body = ""] = record.split(FIELD);
-          return { subject, body: body.trim() };
-        });
+      const fields = out.split("\0");
+      const commits: Commit[] = [];
+      for (let i = 0; i + 1 < fields.length; i += 2) {
+        commits.push({ subject: fields[i] as string, body: (fields[i + 1] as string).trim() });
+      }
+      return commits;
     },
 
     push(branch) {
