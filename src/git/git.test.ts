@@ -284,6 +284,69 @@ describe("createGit", () => {
     await expect(git.switchBranch("nope", { quiet: true })).rejects.toThrow(/nope/);
   });
 
+  it("names the branch even when a tag has the same name", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    sh(work, "tag", "topic");
+    expect(await createGit(work).currentBranch()).toBe("topic");
+  });
+
+  it("pushes the branch when a tag has the same name", async () => {
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("topic work");
+    sh(work, "tag", "topic", "main");
+    const git = createGit(work);
+    await git.push("topic");
+    expect(sh(bare, "rev-parse", "refs/heads/topic")).toBe(
+      sh(work, "rev-parse", "refs/heads/topic"),
+    );
+    expect(await git.unpushedCount("topic")).toBe(0);
+  });
+
+  it("keeps signature checks out of the parsed log with log.showSignature", async () => {
+    // A commit with a signature gpg cannot verify: with log.showSignature on,
+    // git prints the result of the check into the log output.
+    const parent = sh(work, "rev-parse", "HEAD");
+    const tree = sh(work, "rev-parse", "HEAD^{tree}");
+    const object = join(dir, "signed.txt");
+    await writeFile(
+      object,
+      [
+        `tree ${tree}`,
+        `parent ${parent}`,
+        "author t <t@example.com> 1700000000 +0000",
+        "committer t <t@example.com> 1700000000 +0000",
+        "gpgsig -----BEGIN PGP SIGNATURE-----",
+        " ",
+        " AAAA",
+        " -----END PGP SIGNATURE-----",
+        "",
+        "signed subject",
+        "",
+        "signed body",
+        "",
+      ].join("\n"),
+    );
+    const signed = sh(work, "hash-object", "-t", "commit", "-w", object);
+    sh(work, "update-ref", "refs/heads/signed", signed);
+    sh(work, "config", "log.showSignature", "true");
+    const git = createGit(work);
+    expect(await git.commits(parent, "signed")).toEqual([
+      { subject: "signed subject", body: "signed body" },
+    ]);
+    const [logged] = await git.firstParentLog(parent, "signed", 5);
+    expect(logged).toMatchObject({ id: signed, parents: [parent], subject: "signed subject" });
+  });
+
+  it("reads the log as UTF-8 whatever i18n.logOutputEncoding says", async () => {
+    const base = sh(work, "rev-parse", "HEAD");
+    sh(work, "switch", "-q", "-c", "topic");
+    await commit("café");
+    sh(work, "config", "i18n.logOutputEncoding", "ISO-8859-1");
+    const git = createGit(work);
+    expect(await git.commits(base, "topic")).toEqual([{ subject: "café", body: "" }]);
+    expect((await git.firstParentLog(base, "topic", 5))[0]?.subject).toBe("café");
+  });
+
   it("rejects when git cannot start", async () => {
     await expect(createGit(join(dir, "gone")).topLevel()).rejects.toThrow();
     await expect(createGit(join(dir, "gone")).push("main")).rejects.toThrow();

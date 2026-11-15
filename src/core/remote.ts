@@ -5,9 +5,10 @@ export interface CodeCommitRemote {
 }
 
 // https://git-codecommit.<region>.amazonaws.com/v1/repos/<repo>, the ssh:// form,
-// with an optional user@, the -fips host and the .com.cn partition.
+// with an optional user@, the -fips host, the .com.cn partition and an
+// interface VPC endpoint's vpce-<id>.git-codecommit.<region>.vpce.amazonaws.com.
 const HOSTED =
-  /^(?:https|ssh):\/\/(?:[^@/]+@)?git-codecommit(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?\/v1\/repos\/([^/?#]+?)\/?$/;
+  /^(?:https|ssh):\/\/(?:[^@/]+@)?(?:vpce-[\w-]+\.)?git-codecommit(?:-fips)?\.([a-z0-9-]+)\.(?:vpce\.)?amazonaws\.com(?:\.cn)?\/v1\/repos\/([^/?#]+?)\/?$/;
 // git-remote-codecommit: codecommit::<region>://[<profile>@]<repo> or codecommit://[<profile>@]<repo>.
 const GRC = /^codecommit:(?::([a-z0-9-]+):)?\/\/(?:([^@/]+)@)?([^@/]+)$/;
 

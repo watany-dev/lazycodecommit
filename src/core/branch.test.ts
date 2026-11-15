@@ -1,6 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CodeCommitApi } from "../aws/codecommit.js";
-import type { Git } from "../git/git.js";
+import { createGit, type Git } from "../git/git.js";
 import { fakeApi, fakeGit, pullRequest } from "../testing/fakes.js";
 import {
   type BranchDeps,
@@ -14,6 +18,8 @@ import type { RepoContext } from "./context.js";
 
 const CLONE: RepoContext = { repository: "demo", clone: { root: "/work" } };
 const OUTSIDE: RepoContext = { repository: "demo" };
+const sh = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const day = (d: number) => new Date(Date.UTC(2026, 10, d));
 
 function deps(over: { api?: CodeCommitApi; git?: Partial<Git>; ctx?: RepoContext } = {}) {
@@ -198,6 +204,29 @@ describe("branchActions", () => {
     await actions.switchBranch?.({ name: "x", isDefault: false, tip: "t", state: "none" });
     await actions.deleteBranch({ name: "x", isDefault: false, tip: "r0ffee", state: "none" });
     expect(calls).toEqual(["fetch --prune", "switch x true", "fetch --prune"]);
+  });
+
+  it("switches to origin's branch even when another remote has one of the same name", async () => {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "lazycc-branch-")));
+    const work = join(dir, "work");
+    try {
+      sh(dir, "init", "-q", "-b", "main", work);
+      sh(work, "config", "user.name", "t");
+      sh(work, "config", "user.email", "t@example.com");
+      sh(work, "config", "commit.gpgsign", "false");
+      sh(work, "commit", "-q", "--allow-empty", "-m", "initial");
+      for (const name of ["origin", "mirror"]) {
+        sh(work, "remote", "add", name, join(dir, `${name}.git`));
+        sh(work, "update-ref", `refs/remotes/${name}/topic`, "HEAD");
+      }
+      const git = createGit(work);
+      const actions = branchActions({ api: fakeApi(), git, ctx: CLONE, config: {} }, "us-west-2");
+      await actions.switchBranch?.({ name: "topic", isDefault: false, tip: "t", state: "none" });
+      expect(await git.currentBranch()).toBe("topic");
+      expect(sh(work, "config", "branch.topic.remote").trim()).toBe("origin");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("has no switch and no fetch outside a clone", async () => {

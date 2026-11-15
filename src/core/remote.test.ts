@@ -27,6 +27,15 @@ describe("parseRemoteUrl", () => {
       "https://git-codecommit.cn-north-1.amazonaws.com.cn/v1/repos/cn",
       { repo: "cn", region: "cn-north-1" },
     ],
+    // An interface VPC endpoint without private DNS, as the CodeCommit guide clones through it.
+    [
+      "https://vpce-0b7d2939abEXAMPLE-mtyl4twz.git-codecommit.us-east-2.vpce.amazonaws.com/v1/repos/MyDemoRepo",
+      { repo: "MyDemoRepo", region: "us-east-2" },
+    ],
+    [
+      "ssh://APKAEXAMPLE@vpce-0b7d2939abEXAMPLE-mtyl4twz-us-east-2a.git-codecommit-fips.us-east-2.vpce.amazonaws.com/v1/repos/r",
+      { repo: "r", region: "us-east-2" },
+    ],
     [
       "codecommit::ap-northeast-1://profile@my-repo",
       { repo: "my-repo", region: "ap-northeast-1", profile: "profile" },
