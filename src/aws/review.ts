@@ -141,6 +141,12 @@ export interface CommitInfo {
   parentIds: string[];
 }
 
+/** CodeCommit's commit dates read like git's raw format: "1484167798 -0800". */
+function commitDate(date: string | undefined): Date {
+  const seconds = /^(\d+)(?: [+-]\d{4})?$/.exec(date ?? "")?.[1];
+  return seconds ? new Date(Number(seconds) * 1000) : new Date();
+}
+
 /** The most commits the review screen lists for one PR. */
 export const MAX_COMMITS = 100;
 
@@ -508,7 +514,7 @@ export function createReviewApi(client: CodeCommitClient) {
       /* v8 ignore next -- split always returns at least one element */
       message: (commit.message ?? "").split("\n")[0] ?? "",
       authorName: commit.author?.name ?? "unknown",
-      authorDate: commit.author?.date ? new Date(commit.author.date) : new Date(),
+      authorDate: commitDate(commit.author?.date),
       parentIds: commit.parents ?? [],
     };
   }

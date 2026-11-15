@@ -1445,6 +1445,19 @@ describe("getCommitsForPR reading one commit", () => {
     expect(result.parentIds).toEqual(["parent123"]);
   });
 
+  it("reads CodeCommit's date: epoch seconds and a GMT offset", async () => {
+    mockSend.mockResolvedValueOnce({
+      commit: {
+        commitId: "abc1234",
+        parents: [],
+        message: "test",
+        author: { name: "watany", date: "1707868800 +0900" },
+      },
+    });
+    const result = await getCommit("my-service", "abc1234");
+    expect(result.authorDate.toISOString()).toBe("2024-02-14T00:00:00.000Z");
+  });
+
   it("throws when commit is undefined", async () => {
     mockSend.mockResolvedValueOnce({ commit: undefined });
     await expect(getCommit("my-service", "nonexistent")).rejects.toThrow(
