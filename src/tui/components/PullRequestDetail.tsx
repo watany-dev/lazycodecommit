@@ -10,7 +10,7 @@ import type {
   MergeStrategy,
   ReactionsByComment,
 } from "../../core/review.js";
-import { printable, shortArn } from "../../core/text.js";
+import { head, printable, shortArn } from "../../core/text.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { useAsyncDismiss } from "../hooks/useAsyncDismiss.js";
 import { useKeys } from "../hooks/useKeys.js";
@@ -720,8 +720,8 @@ export function PullRequestDetail({
       {replyTarget && (
         <Box flexDirection="column">
           <Text dimColor>
-            Replying to {replyTarget.author}: {replyTarget.content.slice(0, 50)}
-            {replyTarget.content.length > 50 ? "..." : ""}
+            Replying to {replyTarget.author}: {head(replyTarget.content, 50)}
+            {head(replyTarget.content, 50).length < replyTarget.content.length ? "..." : ""}
           </Text>
           <CommentInput
             onSubmit={(content) => reply.execute(replyTarget.commentId, content)}
@@ -733,7 +733,7 @@ export function PullRequestDetail({
                   inReplyTo: replyTarget.commentId,
                   replyTo: {
                     author: replyTarget.author,
-                    excerpt: replyTarget.content.slice(0, 50),
+                    excerpt: head(replyTarget.content, 50),
                   },
                 });
                 setReplyTarget(null);
