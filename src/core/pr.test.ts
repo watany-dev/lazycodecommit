@@ -11,7 +11,6 @@ import {
   listPullRequests,
   type PrDeps,
   pullRequestStatus,
-  requestToken,
   resolvePullRequest,
 } from "./pr.js";
 
@@ -61,7 +60,9 @@ describe("consoleUrl", () => {
     expect(consoleUrl("ap-northeast-1", "my repo", "12")).toBe(
       "https://ap-northeast-1.console.aws.amazon.com/codesuite/codecommit/repositories/my%20repo/pull-requests/12/details?region=ap-northeast-1",
     );
-    expect(consoleUrl(undefined, "r", "1")).toContain("us-east-1");
+    expect(consoleUrl("cn-north-1", "r", "1")).toMatch(
+      /^https:\/\/cn-north-1\.console\.amazonaws\.cn\//,
+    );
   });
 });
 
@@ -78,19 +79,29 @@ describe("createPullRequest in a clone", () => {
         description: "Because.",
         sourceBranch: "topic",
         destinationBranch: "main",
-        clientRequestToken: requestToken("demo", "topic", "main", "c0ffee", {
-          title: "Add thing",
-          body: "Because.",
-        }),
+        clientRequestToken: expect.stringMatching(/^[0-9a-f-]{36}$/),
       },
     ]);
   });
 
-  it("gives the same token for the same input and a different one otherwise", () => {
-    const a = requestToken("r", "h", "b", "c", { title: "t", body: "x" });
-    expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(requestToken("r", "h", "b", "c", { title: "t", body: "x" })).toBe(a);
-    expect(requestToken("r", "h", "b", "c2", { title: "t", body: "x" })).not.toBe(a);
+  it("uses a fresh token per run, so a PR closed since is not returned", async () => {
+    const api = fakeApi();
+    await createPullRequest(FILL, deps({ api }).d);
+    await createPullRequest(FILL, deps({ api }).d);
+    expect(api.created[0]?.clientRequestToken).not.toBe(api.created[1]?.clientRequestToken);
+  });
+
+  it("does not push when the editor is abandoned", async () => {
+    const push = vi.fn(async () => {});
+    const { d } = deps({
+      git: { unpushedCount: async () => null, push },
+      interactive: true,
+      edited: "",
+    });
+    await expect(createPullRequest({ ...FILL, fill: false, push: true }, d)).rejects.toThrow(
+      "the title is empty",
+    );
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("appends the default template and honours a configured one", async () => {
@@ -186,14 +197,14 @@ describe("createPullRequest in a clone", () => {
   it("prefers origin/<base> and falls back to the local base", async () => {
     const commits = vi.fn(async () => [{ subject: "x", body: "" }]);
     await createPullRequest(FILL, deps({ git: { commits } }).d);
-    expect(commits).toHaveBeenLastCalledWith("origin/main", "refs/heads/topic");
+    expect(commits).toHaveBeenLastCalledWith("refs/remotes/origin/main", "refs/heads/topic");
     await createPullRequest(
       FILL,
       deps({
         git: { commits, resolveCommit: async (r) => (r.startsWith("refs/remotes") ? null : "c") },
       }).d,
     );
-    expect(commits).toHaveBeenLastCalledWith("main", "refs/heads/topic");
+    expect(commits).toHaveBeenLastCalledWith("refs/heads/main", "refs/heads/topic");
   });
 
   it("errors when the base is not in the clone", async () => {
@@ -220,7 +231,9 @@ describe("createPullRequest in a clone", () => {
       const push = vi.fn(async () => {});
       const { d } = deps({ git: { unpushedCount: async () => 2, push }, interactive: true });
       await createPullRequest(FILL, d);
-      expect(d.confirm).toHaveBeenCalledWith("topic has 2 unpushed commit(s). Push it to origin?");
+      expect(d.confirm).toHaveBeenCalledWith(
+        "topic has 2 commit(s) not on origin. Push it to origin?",
+      );
       expect(push).toHaveBeenCalled();
     });
 
@@ -236,7 +249,7 @@ describe("createPullRequest in a clone", () => {
     it("errors without a terminal and without --push", async () => {
       const { d } = deps({ git: { unpushedCount: async () => null } });
       await expect(createPullRequest(FILL, d)).rejects.toThrow(
-        "topic has no upstream. Pass --push",
+        "topic is not on origin. Pass --push",
       );
     });
 
@@ -299,10 +312,7 @@ describe("createPullRequest outside a clone", () => {
       description: "",
       sourceBranch: "feature/x",
       destinationBranch: "develop",
-      clientRequestToken: requestToken("demo", "feature/x", "develop", "r0ffee", {
-        title: "feature/x",
-        body: "",
-      }),
+      clientRequestToken: expect.any(String),
     });
     expect(commits).not.toHaveBeenCalled();
   });
@@ -335,6 +345,13 @@ describe("resolvePullRequest", () => {
 
   it("gets by id", async () => {
     expect((await resolvePullRequest("9", deps({ api: fakeApi(prs) }).d)).id).toBe("9");
+  });
+
+  it("refuses a PR from another repository", async () => {
+    const api = fakeApi([pullRequest({ id: "4", repository: "other" })]);
+    await expect(resolvePullRequest("4", deps({ api }).d)).rejects.toThrow(
+      "#4 belongs to other, not demo. Pass --repo other.",
+    );
   });
 
   it("rejects a non-numeric id", async () => {

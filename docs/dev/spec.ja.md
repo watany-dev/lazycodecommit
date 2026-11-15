@@ -103,13 +103,13 @@ lazycc pr create は、clone 内なら引数なしで push から PR 作成ま�
 - 現在のブランチを取得する。detached HEAD ならエラーにする。
 - ベースブランチを決める。--base がなければリポジトリのデフォルトブランチを使う。
 - 同じソースとベースの OPEN な PR が既にあれば、その PR を表示して終了する。
-- upstream が未設定か、未 push のコミットがあれば、確認のうえ git push -u origin <branch> を実行する。
 - git log <base>..HEAD からタイトルと本文の下書きを作る。
 - コミットが1件なら、件名をタイトルに、コミット本文を PR 本文にする。
 - 複数件なら、ブランチ名を整形してタイトルにし、コミット件名を箇条書きで本文に入れる。
 - テンプレートファイルがあれば本文の末尾に差し込む。
 - $EDITOR で下書きを開く。1行目がタイトル、空行の後が本文。タイトルが空なら中止する。
-- CreatePullRequest を呼ぶ。再実行で二重作成しないよう clientRequestToken を付ける。
+- origin に同名のブランチがないか、origin/<branch> にないコミットがあれば、確認のうえ git push -u origin <branch> を実行する。upstream ではなく origin/<branch> と比べるのは、PR のソースが同名のリモートブランチだから。エディタの後に置くのは、エディタで中止したときに何も push しないため。
+- CreatePullRequest を呼ぶ。SDK の再試行で二重作成しないよう clientRequestToken を付ける。
 - PR ID、タイトル、コンソール URL を出力する。
 
 TUI のブランチ表から作成した場合は、作成後にそのままレビュー画面を開く。
@@ -144,7 +144,7 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 ### 補足
 - テンプレートの既定パスは .codecommit/pull_request_template.md。設定で変更できる。
 - clone 外では push とコミットからの下書きを行わず、タイトルの初期値はブランチ名にする。ソースブランチがリモートにあることは GetBranch で確かめる。
-- clientRequestToken は、リポジトリ、ソース、ベース、ソースの先端コミット、タイトル、本文から作るハッシュ。同じ内容の再実行は同じ PR を返す。
+- clientRequestToken は実行ごとに新しく作る。再実行での二重作成は既存 PR の確認で防ぐ。内容から作ると、その後に閉じた PR が返ってきてしまう。
 - clone 内では、ベースとの差分を origin/<base> から取る。なければローカルの <base>、どちらもなければ git fetch を案内する。
 - コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。
 
@@ -397,7 +397,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 |---|---|
 | 現在のブランチ | git symbolic-ref --short HEAD |
 | remote URL | git remote get-url origin |
-| 未 push の確認 | git rev-list --count @{u}..HEAD |
+| 未 push の確認 | git rev-list --count origin/<branch>..<branch> |
 | push | git push -u origin <branch> |
 | コミット一覧 | git log --reverse <base>..HEAD |
 | ahead/behind | git rev-list --left-right --count origin/<default>...origin/<branch> |

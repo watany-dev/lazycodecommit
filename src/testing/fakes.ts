@@ -36,14 +36,13 @@ export function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
 
 export interface FakeApi extends CodeCommitApi {
   readonly created: NewPullRequest[];
-  readonly prs: PullRequest[];
 }
 
 export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitApi> = {}): FakeApi {
   const created: NewPullRequest[] = [];
   const api: FakeApi = {
     created,
-    prs,
+    region: async () => "us-west-2",
     defaultBranch: async () => "main",
     branchCommit: async (_repo, branch) => (branch === "missing" ? undefined : "r0ffee"),
     listPullRequestIds: async (_repo, status, limit) =>

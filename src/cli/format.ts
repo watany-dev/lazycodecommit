@@ -14,7 +14,7 @@ function date(d: Date): string {
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-export function prJson(pr: PullRequest, region: string | undefined) {
+export function prJson(pr: PullRequest, region: string) {
   return {
     id: pr.id,
     title: pr.title,
@@ -48,7 +48,7 @@ export function listLines(prs: readonly PullRequest[]): string[] {
   );
 }
 
-export function viewLines(pr: PullRequest, region: string | undefined): string[] {
+export function viewLines(pr: PullRequest, region: string): string[] {
   const state = pr.isMerged ? "MERGED" : pr.status;
   return [
     `${pr.title} #${pr.id}`,
@@ -61,7 +61,7 @@ export function viewLines(pr: PullRequest, region: string | undefined): string[]
   ];
 }
 
-export function statusLines(s: PrStatus, region: string | undefined): string[] {
+export function statusLines(s: PrStatus, region: string): string[] {
   const { pr, rules } = s;
   if (!pr) return [`No open pull request from ${s.branch}.`];
   let ruleLine: string;

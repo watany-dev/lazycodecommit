@@ -32,8 +32,9 @@ export function processIo(): Io {
       try {
         await writeFile(file, text);
         const editor = env["VISUAL"] || env["EDITOR"] || "vi";
-        // Through the shell, like git, so EDITOR="code --wait" works.
-        const r = spawnSync(`${editor} "${file}"`, { shell: true, stdio: "inherit" });
+        // Through the shell, like git, so EDITOR="code --wait" works. The path
+        // goes in as $1 so nothing in it is parsed by the shell.
+        const r = spawnSync("sh", ["-c", `${editor} "$1"`, "sh", file], { stdio: "inherit" });
         if (r.error || r.status !== 0) {
           throw new UserError(
             `Aborted: the editor (${editor}) exited with ${r.error?.message ?? `status ${r.status}`}`,

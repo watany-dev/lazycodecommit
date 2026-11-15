@@ -88,6 +88,15 @@ describe("context and errors", () => {
     ]);
   });
 
+  it("uses the SDK's region for URLs when none was given", async () => {
+    const api = fakeApi([pullRequest({ id: "4" })]);
+    const r = await cli(["pr", "view", "4", "-R", "demo"], {
+      api,
+      git: { topLevel: async () => null },
+    });
+    expect(r.out).toContain("https://us-west-2.console.aws.amazon.com/");
+  });
+
   it("exits 1 on a config error", async () => {
     const r = await cli(["pr", "list"], { config: new ConfigError("/c.json", "bad") });
     expect(r).toMatchObject({ code: 1, err: "lazycc: /c.json: bad" });

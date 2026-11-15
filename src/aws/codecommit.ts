@@ -47,6 +47,8 @@ export interface NewPullRequest {
 }
 
 export interface CodeCommitApi {
+  /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
+  region(): Promise<string>;
   defaultBranch(repository: string): Promise<string | undefined>;
   /** Tip commit of a remote branch, or undefined when the branch does not exist. */
   branchCommit(repository: string, branch: string): Promise<string | undefined>;
@@ -116,6 +118,8 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
   });
 
   return {
+    region: () => client.config.region(),
+
     async defaultBranch(repository) {
       const out = await client.send(new GetRepositoryCommand({ repositoryName: repository }));
       return out.repositoryMetadata?.defaultBranch || undefined;

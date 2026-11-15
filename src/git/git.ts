@@ -27,7 +27,11 @@ export interface Git {
   remoteUrl(remote: string): Promise<string | null>;
   /** Commit id the ref points to, or null when it does not resolve. */
   resolveCommit(ref: string): Promise<string | null>;
-  /** Commits `branch` has that its upstream lacks, or null without an upstream. */
+  /**
+   * Commits `branch` has that origin/<branch> lacks, or null when origin has no
+   * such branch. Compared with origin/<branch>, not the upstream: the PR is
+   * opened from the branch of the same name, whatever the upstream is.
+   */
   unpushedCount(branch: string): Promise<number | null>;
   /** Commits in `base..head`, oldest first. */
   commits(base: string, head: string): Promise<Commit[]>;
@@ -77,9 +81,9 @@ export function createGit(cwd: string): Git {
     resolveCommit: (ref) => value(["rev-parse", "--verify", "-q", `${ref}^{commit}`]),
 
     async unpushedCount(branch) {
-      const upstream = await value(["rev-parse", "--abbrev-ref", `${branch}@{upstream}`]);
-      if (upstream === null) return null;
-      const out = await required(["rev-list", "--count", `${branch}@{upstream}..${branch}`]);
+      const remote = `refs/remotes/origin/${branch}`;
+      if ((await value(["rev-parse", "--verify", "-q", remote])) === null) return null;
+      const out = await required(["rev-list", "--count", `${remote}..refs/heads/${branch}`]);
       return Number(out.trim());
     },
 

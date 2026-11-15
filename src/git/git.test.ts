@@ -76,6 +76,11 @@ describe("createGit", () => {
     expect(await git.unpushedCount("topic")).toBeNull();
   });
 
+  it("compares with origin/<branch>, not with a differently named upstream", async () => {
+    sh(work, "switch", "-q", "-c", "topic", "--track", "origin/main");
+    expect(await createGit(work).unpushedCount("topic")).toBeNull();
+  });
+
   it("lists commits oldest first with bodies", async () => {
     sh(work, "switch", "-q", "-c", "topic");
     await commit("first change");

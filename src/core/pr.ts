@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import type {
   CodeCommitApi,
@@ -38,9 +38,9 @@ export interface PrDeps {
   note(line: string): void;
 }
 
-export function consoleUrl(region: string | undefined, repository: string, id: string): string {
-  const r = region ?? "us-east-1";
-  return `https://${r}.console.aws.amazon.com/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/pull-requests/${id}/details?region=${r}`;
+export function consoleUrl(region: string, repository: string, id: string): string {
+  const host = region.startsWith("cn-") ? "console.amazonaws.cn" : "console.aws.amazon.com";
+  return `https://${region}.${host}/codesuite/codecommit/repositories/${encodeURIComponent(repository)}/pull-requests/${id}/details?region=${region}`;
 }
 
 function concurrency(config: Config): number {
@@ -53,13 +53,10 @@ async function findOpenPullRequest(
   head: string,
   base?: string,
 ): Promise<PullRequest | undefined> {
-  const ids = await deps.api.listPullRequestIds(deps.ctx.repository, "OPEN", OPEN_SCAN_LIMIT);
-  const prs = await deps.api.getPullRequests(ids, concurrency(deps.config));
-  return prs
-    .filter(
-      (pr) => pr.sourceBranch === head && (base === undefined || pr.destinationBranch === base),
-    )
-    .toSorted((a, b) => b.lastActivityDate.getTime() - a.lastActivityDate.getTime())[0];
+  const prs = await listPullRequests({ state: "OPEN", limit: OPEN_SCAN_LIMIT }, deps);
+  return prs.find(
+    (pr) => pr.sourceBranch === head && (base === undefined || pr.destinationBranch === base),
+  );
 }
 
 // ---------------------------------------------------------------- pr create
@@ -127,34 +124,32 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
   if (existing) return { kind: "exists", pr: existing };
 
   let draft: Draft;
-  let wouldPush = false;
-  let sourceCommit: string;
+  let unpushed: number | null = 0;
   if (clone) {
-    const headCommit = await git.resolveCommit(`refs/heads/${head}`);
-    if (headCommit === null) throw new UserError(`No local branch named ${head}.`);
-    sourceCommit = headCommit;
+    if ((await git.resolveCommit(`refs/heads/${head}`)) === null) {
+      throw new UserError(`No local branch named ${head}.`);
+    }
     const baseRef = await localBaseRef(git, base);
     const commits = await git.commits(baseRef, `refs/heads/${head}`);
-    if (commits.length === 0)
-      throw new UserError(`${head} has no commits that ${baseRef} does not have.`);
-
-    const unpushed = await git.unpushedCount(head);
-    if (unpushed === null || unpushed > 0) {
-      wouldPush = true;
-      if (!opts.dryRun) await pushIfAllowed(head, unpushed, opts, deps);
+    if (commits.length === 0) {
+      throw new UserError(`${head} has no commits that ${shortRef(baseRef)} does not have.`);
     }
+    unpushed = await git.unpushedCount(head);
     draft = withTemplate(draftFromCommits(head, commits), await readTemplate(clone.root, deps));
   } else {
-    const remoteCommit = await api.branchCommit(ctx.repository, head);
-    if (remoteCommit === undefined)
+    if ((await api.branchCommit(ctx.repository, head)) === undefined) {
       throw new UserError(`${ctx.repository} has no branch named ${head}.`);
-    sourceCommit = remoteCommit;
+    }
     draft = { title: head, body: "" };
   }
 
+  // Edit before pushing, so giving up in the editor leaves origin untouched.
   draft = { title: opts.title ?? draft.title, body: explicitBody ?? draft.body };
   if (useEditor) draft = fromEditorText(await deps.edit(toEditorText(draft)));
   if (draft.title.trim() === "") throw new UserError("Aborted: the title is empty.");
+
+  const wouldPush = unpushed === null || unpushed > 0;
+  if (wouldPush && !opts.dryRun) await pushIfAllowed(head, unpushed, opts, deps);
 
   if (opts.dryRun) {
     return {
@@ -173,25 +168,13 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
     description: draft.body,
     sourceBranch: head,
     destinationBranch: base,
-    clientRequestToken: requestToken(ctx.repository, head, base, sourceCommit, draft),
+    // One token per run: the SDK resends it on retries, so a retried request
+    // cannot open a second PR. A rerun is caught by the open-PR check above;
+    // a token derived from the content would instead return a PR that was
+    // closed since.
+    clientRequestToken: randomUUID(),
   });
   return { kind: "created", pr };
-}
-
-/**
- * Same branch tip and same text give the same token, so a rerun after a lost
- * response returns the PR that was already made instead of a second one.
- */
-export function requestToken(
-  repository: string,
-  head: string,
-  base: string,
-  commit: string,
-  draft: Draft,
-): string {
-  return createHash("sha256")
-    .update([repository, head, base, commit, draft.title, draft.body].join("\0"))
-    .digest("hex");
 }
 
 async function readBodyFile(path: string, deps: PrDeps): Promise<string> {
@@ -205,10 +188,14 @@ async function readTemplate(root: string, deps: PrDeps): Promise<string | undefi
   return (await deps.readFile(isAbsolute(path) ? path : join(root, path))) ?? undefined;
 }
 
-/** Prefer origin/<base>: the local base branch is often behind or absent. */
+function shortRef(ref: string): string {
+  return ref.replace(/^refs\/(remotes|heads)\//, "");
+}
+
+/** Prefer origin/<base>: the local base branch is often behind or absent. Full ref, so a tag cannot shadow it. */
 async function localBaseRef(git: Git, base: string): Promise<string> {
   for (const ref of [`refs/remotes/origin/${base}`, `refs/heads/${base}`]) {
-    if ((await git.resolveCommit(ref)) !== null) return ref.replace(/^refs\/(remotes|heads)\//, "");
+    if ((await git.resolveCommit(ref)) !== null) return ref;
   }
   throw new UserError(
     `The base branch ${base} is not in this clone. Run \`git fetch origin ${base}\`.`,
@@ -222,7 +209,9 @@ async function pushIfAllowed(
   deps: PrDeps,
 ): Promise<void> {
   const why =
-    unpushed === null ? `${head} has no upstream` : `${head} has ${unpushed} unpushed commit(s)`;
+    unpushed === null
+      ? `${head} is not on origin`
+      : `${head} has ${unpushed} commit(s) not on origin`;
   if (opts.noPush) throw new UserError(`${why}, and --no-push was given.`);
   if (!opts.push) {
     if (!deps.interactive) throw new UserError(`${why}. Pass --push to push it to origin.`);
@@ -256,8 +245,14 @@ export async function resolvePullRequest(
 ): Promise<PullRequest> {
   if (id !== undefined) {
     if (!/^\d+$/.test(id)) throw new UsageError(`Not a pull request id: ${id}`);
-    const [pr] = await deps.api.getPullRequests([id], 1);
-    return pr as PullRequest;
+    const [pr] = (await deps.api.getPullRequests([id], 1)) as [PullRequest];
+    // Ids are unique per region, not per repository.
+    if (pr.repository !== deps.ctx.repository) {
+      throw new UserError(
+        `#${id} belongs to ${pr.repository}, not ${deps.ctx.repository}. Pass --repo ${pr.repository}.`,
+      );
+    }
+    return pr;
   }
   const branch = await currentBranchOfClone(deps);
   const pr = await findOpenPullRequest(deps, branch);

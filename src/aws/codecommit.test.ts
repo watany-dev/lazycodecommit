@@ -116,6 +116,10 @@ describe("createCodeCommitApi", () => {
     expect(await createCodeCommitApi({}).defaultBranch("demo")).toBe("main");
   });
 
+  it("reports the region the client resolved", async () => {
+    expect(await api.region()).toBe("ap-northeast-1");
+  });
+
   it("returns undefined for an empty repository", async () => {
     cc.on(GetRepositoryCommand).resolves({ repositoryMetadata: {} });
     expect(await api.defaultBranch("demo")).toBeUndefined();

@@ -165,6 +165,8 @@ async function runPr(
     ...optional("region", ctx.region),
     ...optional("profile", ctx.profile),
   });
+  // For console URLs; also fails early, with advice, when no region is set anywhere.
+  const region = ctx.region ?? (await api.region());
   const prDeps: PrDeps = {
     git,
     api,
@@ -209,16 +211,16 @@ async function runPr(
         }
         return 0;
       }
-      const url = consoleUrl(ctx.region, result.pr.repository, result.pr.id);
+      const url = consoleUrl(region, result.pr.repository, result.pr.id);
       if (result.kind === "exists") {
-        if (json) print({ existing: true, ...prJson(result.pr, ctx.region) });
+        if (json) print({ existing: true, ...prJson(result.pr, region) });
         io.err(
           `A pull request from ${result.pr.sourceBranch} into ${result.pr.destinationBranch} is already open: #${result.pr.id} ${result.pr.title}`,
         );
         if (!json) io.err(url);
         return 1;
       }
-      if (json) print(prJson(result.pr, ctx.region));
+      if (json) print(prJson(result.pr, region));
       else {
         io.out(`Created pull request #${result.pr.id}: ${result.pr.title}`);
         io.out(url);
@@ -234,7 +236,7 @@ async function runPr(
       if (!Number.isInteger(limit) || limit < 1)
         throw new UsageError(`--limit must be a positive integer: ${limitText}`);
       const prs = await listPullRequests({ state, limit }, prDeps);
-      if (json) print(prs.map((pr) => prJson(pr, ctx.region)));
+      if (json) print(prs.map((pr) => prJson(pr, region)));
       else if (prs.length === 0)
         io.err(`No ${state.toLowerCase()} pull requests in ${ctx.repository}.`);
       else for (const line of listLines(prs)) io.out(line);
@@ -242,8 +244,8 @@ async function runPr(
     }
     case "view": {
       const pr = await resolvePullRequest(positionals[0], prDeps);
-      if (json) print(prJson(pr, ctx.region));
-      else for (const line of viewLines(pr, ctx.region)) io.out(line);
+      if (json) print(prJson(pr, region));
+      else for (const line of viewLines(pr, region)) io.out(line);
       return 0;
     }
     default: {
@@ -251,7 +253,7 @@ async function runPr(
       if (json) {
         print({
           branch: status.branch,
-          pullRequest: status.pr ? prJson(status.pr, ctx.region) : null,
+          pullRequest: status.pr ? prJson(status.pr, region) : null,
           ...(status.pr
             ? {
                 approvedBy: status.approvers,
@@ -260,7 +262,7 @@ async function runPr(
               }
             : {}),
         });
-      } else for (const line of statusLines(status, ctx.region)) io.out(line);
+      } else for (const line of statusLines(status, region)) io.out(line);
       return 0;
     }
   }
