@@ -61,7 +61,7 @@ export function explainAwsError(error: unknown, profile: string | undefined): st
     return `${error.message.replace(/\.$/, "")}. Check the id, --region${flag}.`;
   }
   if (name === "TimeoutError") {
-    return `CodeCommit did not answer in time (${error.message}). Check the network and the region, then retry.`;
+    return `CodeCommit did not answer in time (${error.message.replace(/\.$/, "")}). Check the network and the region, then retry.`;
   }
   if (/region is missing/i.test(error.message)) {
     return 'No AWS region. Pass --region, set AWS_REGION, or add "region" to the config file.';

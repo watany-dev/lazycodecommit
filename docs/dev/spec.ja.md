@@ -152,7 +152,7 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 - clone 外では push とコミットからの下書きを行わず、タイトルの初期値はブランチ名にする。ソースブランチがリモートにあることは GetBranch で確かめる。
 - clientRequestToken は実行ごとに新しく作る。再実行での二重作成は既存 PR の確認で防ぐ。内容から作ると、その後に閉じた PR が返ってきてしまう。
 - clone 内では、ベースとの差分を origin/<base> から取る。なければローカルの <base>、どちらもなければ git fetch を案内する。
-- コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。
+- コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。GovCloud（us-gov-*）は地域ごとのホストがないため https://console.amazonaws-us-gov.com/… とし、リージョンは ?region= で指定する。
 
 ## ブランチ×PR 対応表
 
@@ -354,7 +354,7 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 ### プロファイルとリージョンの優先順位
 - --profile、--region フラグ。
 - clone 内では git remote URL から読み取った値。
-- 環境変数 AWS_PROFILE、AWS_REGION。
+- 環境変数 AWS_PROFILE、AWS_REGION（なければ AWS_DEFAULT_REGION）。
 - 設定ファイル。
 - AWS SDK の既定値。
 
