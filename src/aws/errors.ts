@@ -58,7 +58,7 @@ export function explainAwsError(error: unknown, profile: string | undefined): st
   }
   if (name === "PullRequestDoesNotExistException" || name === "RepositoryDoesNotExistException") {
     const flag = profile ? ` and --profile ${profile}` : " and --profile";
-    return `${error.message.replace(/\.$/, "")}. Check the id, --region${flag}.`;
+    return `${error.message.replace(/\.$/, "")}. Check the name or id, --region${flag}.`;
   }
   if (name === "TimeoutError") {
     return `CodeCommit did not answer in time (${error.message.replace(/\.$/, "")}). Check the network and the region, then retry.`;
