@@ -27,6 +27,13 @@ const PULL_REQUEST_ERRORS = new Map(
   }),
 );
 
+/** Missing or expired credentials: the fix is to sign in again, not to change a policy. */
+export function isCredentialError(error: Error): boolean {
+  return (
+    CREDENTIAL_ERRORS.has(error.name) || /sso.*(expired|token)|token.*expired/i.test(error.message)
+  );
+}
+
 const ACCESS_DENIED = new Set(["AccessDeniedException", "AccessDenied"]);
 
 /**
@@ -36,7 +43,7 @@ const ACCESS_DENIED = new Set(["AccessDeniedException", "AccessDenied"]);
 export function explainAwsError(error: unknown, profile: string | undefined): string | undefined {
   if (!(error instanceof Error)) return undefined;
   const name = error.name;
-  if (CREDENTIAL_ERRORS.has(name) || /sso.*(expired|token)|token.*expired/i.test(error.message)) {
+  if (isCredentialError(error)) {
     const flag = profile ? ` --profile ${profile}` : "";
     return [
       `AWS credentials are missing or expired (${name}: ${error.message})`,
