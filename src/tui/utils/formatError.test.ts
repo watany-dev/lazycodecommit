@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { formatErrorMessage } from "./formatError.js";
+import { formatErrorMessage, screenErrorText } from "./formatError.js";
 
 function makeError(name: string, message = "test"): Error {
   const err = new Error(message);
@@ -513,6 +513,18 @@ describe("formatErrorMessage control characters", () => {
   it("makes control characters in an unrecognized message visible", () => {
     expect(formatErrorMessage(unknownError("bad \x1b]52;c;aGk=\x07 \u009b2J"))).toBe(
       "bad ^[]52;c;aGk=^G ^[[2J",
+    );
+  });
+});
+
+describe("screenErrorText", () => {
+  it.each(["UserError", "UsageError", "GitError"])("shows a %s as written", (name) => {
+    expect(screenErrorText(makeError(name, "No such path: src/x"))).toBe("No such path: src/x");
+  });
+
+  it("explains anything else", () => {
+    expect(screenErrorText(makeError("AccessDeniedException"))).toBe(
+      "Access denied. Check your IAM policy.",
     );
   });
 });
