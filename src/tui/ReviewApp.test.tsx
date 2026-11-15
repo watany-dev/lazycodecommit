@@ -5434,6 +5434,46 @@ describe("App", () => {
         expect(lastFrame()).toContain("Pull request not found.");
       });
     });
+    it("keeps a slow activity load of the PR left before from replacing the next PR's", async () => {
+      const pr = (id: string) => ({
+        pullRequestId: id,
+        title: `PR title ${id}`,
+        authorArn: "arn:aws:iam::123456789012:user/watany",
+        creationDate: new Date("2026-02-13T10:00:00Z"),
+        status: "OPEN" as const,
+      });
+      vi.mocked(listPullRequests).mockResolvedValue({ pullRequests: [pr("42"), pr("43")] });
+      vi.mocked(getPullRequestDetail).mockImplementation(async (id: string) => ({
+        pullRequest: { pullRequestId: id, title: `PR title ${id}`, pullRequestTargets: [] },
+        differences: [],
+        commentThreads: [],
+      }));
+      const event = (description: string) => ({
+        eventDate: new Date("2026-02-13T10:00:00Z"),
+        eventType: "PULL_REQUEST_CREATED",
+        actorArn: "arn:aws:iam::123456789012:user/watany",
+        description,
+      });
+      const slow = createDeferred<{ events: ReturnType<typeof event>[] }>();
+      vi.mocked(getPullRequestActivity).mockImplementation(async ({ pullRequestId }) =>
+        pullRequestId === "42" ? slow.promise : { events: [event("event of 43")] },
+      );
+
+      const screen = render(<App service={svc} repository="my-service" start={null} />);
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR title 43"));
+      await press(screen, "\r");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR #42"));
+      await press(screen, "A", "q", "q", "j", "\r");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR #43"));
+      await press(screen, "A");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("event of 43"));
+
+      slow.resolve({ events: [event("event of 42")] });
+      await settle();
+      expect(screen.lastFrame()).toContain("Activity: PR title 43");
+      expect(screen.lastFrame()).toContain("event of 43");
+      expect(screen.lastFrame()).not.toContain("event of 42");
+    });
   });
 
   describe("starting on one pull request", () => {
