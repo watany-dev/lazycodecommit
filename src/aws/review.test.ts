@@ -378,8 +378,7 @@ describe("getPullRequestDetail edge cases", () => {
     });
 
     const detail = await getPullRequestDetail("42", "my-service");
-    expect(detail.commentThreads).toHaveLength(1);
-    expect(detail.commentThreads[0]!.comments).toHaveLength(0);
+    expect(detail.commentThreads).toHaveLength(0);
   });
 
   it("defaults filePosition and relativeFileVersion in getPullRequestDetail", async () => {
@@ -683,12 +682,14 @@ describe("getComments", () => {
       ],
     });
 
+    // Two general comments, neither a reply: two threads, not one with a reply.
     const threads = await getComments("42");
-    expect(threads).toHaveLength(1);
-    expect(threads[0]!.location).toBeNull();
-    expect(threads[0]!.comments).toHaveLength(2);
-    expect(threads[0]!.comments[0]!.content).toBe("First comment");
-    expect(threads[0]!.comments[1]!.content).toBe("Second comment");
+    expect(threads).toHaveLength(2);
+    expect(threads.map((t) => t.location)).toEqual([null, null]);
+    expect(threads.map((t) => t.comments.map((c) => c.content))).toEqual([
+      ["First comment"],
+      ["Second comment"],
+    ]);
   });
 
   it("handles empty comments data", async () => {
@@ -706,8 +707,7 @@ describe("getComments", () => {
     });
 
     const threads = await getComments("42");
-    expect(threads).toHaveLength(1);
-    expect(threads[0]!.comments).toHaveLength(0);
+    expect(threads).toHaveLength(0);
   });
 
   it("returns location for inline comment threads", async () => {
@@ -855,6 +855,32 @@ describe("getComments", () => {
     expect(threads[0]!.comments[0]!.inReplyTo).toBeUndefined();
     expect(threads[0]!.comments[1]!.commentId).toBe("reply-1");
     expect(threads[0]!.comments[1]!.inReplyTo).toBe("root-1");
+  });
+
+  it("splits two comments on one line, each with its replies, into two threads", async () => {
+    // CodeCommit groups comments by location and commits, not by thread.
+    const at = (h: number) => new Date(`2026-02-14T${String(h).padStart(2, "0")}:00:00Z`);
+    mockSend.mockResolvedValueOnce({
+      commentsForPullRequestData: [
+        {
+          location: { filePath: "a.ts", filePosition: 3, relativeFileVersion: "AFTER" },
+          comments: [
+            { commentId: "r1", content: "first", creationDate: at(1) },
+            { commentId: "r2", content: "second", creationDate: at(2) },
+            { commentId: "x2", inReplyTo: "r2", creationDate: at(3) },
+            { commentId: "x1", inReplyTo: "r1", creationDate: at(4) },
+            { commentId: "y1", inReplyTo: "x1", creationDate: at(5) },
+          ],
+        },
+      ],
+    });
+
+    const threads = await getComments("42");
+    expect(threads.map((t) => t.comments.map((c) => c.commentId))).toEqual([
+      ["r1", "x1", "y1"],
+      ["r2", "x2"],
+    ]);
+    expect(threads.every((t) => t.location?.filePosition === 3)).toBe(true);
   });
 
   it("sorts replies by creationDate within a thread", async () => {

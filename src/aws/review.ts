@@ -65,18 +65,35 @@ export interface PullRequestDetail {
   commentThreads: CommentThread[];
 }
 
-function sortCommentsRootFirst(comments: Comment[]): Comment[] {
-  const root: Comment[] = [];
-  const replies: Comment[] = [];
-  for (const c of comments) {
-    if (c.inReplyTo) {
-      replies.push(c);
-    } else {
-      root.push(c);
+const byCreation = (a: Comment, b: Comment) =>
+  (a.creationDate?.getTime() ?? 0) - (b.creationDate?.getTime() ?? 0);
+
+/**
+ * CodeCommit groups comments by location and commits, so one group can hold
+ * several threads: each comment that answers nothing in the group starts one,
+ * and a reply joins the thread of the comment it answers. Root first, then
+ * the replies oldest first.
+ */
+function splitThreads(comments: Comment[]): Comment[][] {
+  const byId = new Map(comments.map((c) => [c.commentId, c]));
+  const rootOf = (c: Comment): Comment => {
+    const seen = new Set<Comment>();
+    let at = c;
+    while (at.inReplyTo && !seen.has(at)) {
+      seen.add(at);
+      const parent = byId.get(at.inReplyTo);
+      if (!parent) break;
+      at = parent;
     }
+    return at;
+  };
+  const threads = new Map<Comment, Comment[]>();
+  for (const c of comments) {
+    const root = rootOf(c);
+    if (!threads.has(root)) threads.set(root, []);
+    if (c !== root) threads.get(root)?.push(c);
   }
-  replies.sort((a, b) => (a.creationDate?.getTime() ?? 0) - (b.creationDate?.getTime() ?? 0));
-  return [...root, ...replies];
+  return [...threads].map(([root, replies]) => [root, ...replies.toSorted(byCreation)]);
 }
 
 /**
@@ -380,10 +397,9 @@ export function createReviewApi(client: CodeCommitClient) {
                 (thread.location.relativeFileVersion as "BEFORE" | "AFTER") ?? "AFTER",
             }
           : null;
-        commentThreads.push({
-          location,
-          comments: sortCommentsRootFirst(thread.comments ?? []),
-        });
+        for (const comments of splitThreads(thread.comments ?? [])) {
+          commentThreads.push({ location, comments });
+        }
       }
       nextToken = commentsResponse.nextToken;
     } while (nextToken);
