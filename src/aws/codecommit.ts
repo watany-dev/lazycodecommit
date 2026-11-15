@@ -50,6 +50,7 @@ export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
   defaultBranch(repository: string): Promise<string | undefined>;
+  cloneUrls(repository: string): Promise<{ https: string; ssh: string }>;
   /** Tip commit of a remote branch, or undefined when the branch does not exist. */
   branchCommit(repository: string, branch: string): Promise<string | undefined>;
   listPullRequestIds(
@@ -123,6 +124,14 @@ export function createCodeCommitApi(options: { region?: string; profile?: string
     async defaultBranch(repository) {
       const out = await client.send(new GetRepositoryCommand({ repositoryName: repository }));
       return out.repositoryMetadata?.defaultBranch || undefined;
+    },
+
+    async cloneUrls(repository) {
+      const out = await client.send(new GetRepositoryCommand({ repositoryName: repository }));
+      return {
+        https: out.repositoryMetadata?.cloneUrlHttp ?? "",
+        ssh: out.repositoryMetadata?.cloneUrlSsh ?? "",
+      };
     },
 
     async branchCommit(repository, branch) {

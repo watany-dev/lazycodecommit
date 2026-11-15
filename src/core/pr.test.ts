@@ -6,6 +6,7 @@ import type { RepoContext } from "./context.js";
 import { UsageError, UserError } from "./errors.js";
 import {
   type CreateOptions,
+  checkoutPullRequest,
   consoleUrl,
   createPullRequest,
   listPullRequests,
@@ -399,5 +400,74 @@ describe("pullRequestStatus", () => {
 
   it("needs a clone", async () => {
     await expect(pullRequestStatus(deps({ ctx: OUTSIDE }).d)).rejects.toThrow("inside a clone");
+  });
+});
+
+const checkoutApi = () => fakeApi([pullRequest({ id: "9", sourceBranch: "feature/x" })]);
+
+describe("checkoutPullRequest", () => {
+  it("creates a tracking branch when there is no local one", async () => {
+    const calls: string[] = [];
+    const { d } = deps({
+      api: checkoutApi(),
+      git: {
+        resolveCommit: async () => null,
+        fetch: async (refspecs) => void calls.push(`fetch ${refspecs.join(" ")}`),
+        switchBranch: async (b, o) => void calls.push(`switch ${b} ${o?.track ?? ""}`),
+      },
+    });
+    expect(await checkoutPullRequest("9", d)).toMatchObject({
+      branch: "feature/x",
+      created: true,
+    });
+    expect(calls).toEqual([
+      "fetch +refs/heads/feature/x:refs/remotes/origin/feature/x",
+      "switch feature/x origin/feature/x",
+    ]);
+  });
+
+  it("switches to an existing branch and fast-forwards it", async () => {
+    const calls: string[] = [];
+    const { d } = deps({
+      api: checkoutApi(),
+      git: {
+        switchBranch: async (b) => void calls.push(`switch ${b}`),
+        fastForward: async (ref) => void calls.push(`ff ${ref}`),
+      },
+    });
+    expect(await checkoutPullRequest("9", d)).toMatchObject({ created: false });
+    expect(calls).toEqual(["switch feature/x", "ff refs/remotes/origin/feature/x"]);
+  });
+
+  it("does not switch when already on the branch", async () => {
+    const calls: string[] = [];
+    const { d } = deps({
+      api: checkoutApi(),
+      git: {
+        currentBranch: async () => "feature/x",
+        switchBranch: async (b) => void calls.push(`switch ${b}`),
+      },
+    });
+    await checkoutPullRequest("9", d);
+    expect(calls).toEqual([]);
+  });
+
+  it("explains a failed fetch, hinting at a deleted branch for a closed PR", async () => {
+    const fail = { fetch: async () => Promise.reject(new Error("couldn't find remote ref")) };
+    const open = deps({ api: checkoutApi(), git: fail }).d;
+    await expect(checkoutPullRequest("9", open)).rejects.toThrow(
+      new UserError("git fetch origin feature/x failed: couldn't find remote ref"),
+    );
+    const closed = deps({
+      api: fakeApi([pullRequest({ id: "9", status: "CLOSED", sourceBranch: "gone" })]),
+      git: fail,
+    }).d;
+    await expect(checkoutPullRequest("9", closed)).rejects.toThrow(/may have been deleted/);
+  });
+
+  it("works only inside a clone", async () => {
+    await expect(checkoutPullRequest("9", deps({ ctx: OUTSIDE }).d)).rejects.toBeInstanceOf(
+      UsageError,
+    );
   });
 });

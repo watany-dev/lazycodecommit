@@ -37,6 +37,14 @@ export interface Git {
   commits(base: string, head: string): Promise<Commit[]>;
   /** `git push -u origin <branch>`, with git's output on stderr. */
   push(branch: string): Promise<void>;
+  /** `git fetch origin <refspec>...`, with git's output on stderr. */
+  fetch(refspecs: readonly string[]): Promise<void>;
+  /** `git switch <branch>`, or `git switch -c <branch> --track <track>` to create it. */
+  switchBranch(branch: string, opts?: { readonly track: string }): Promise<void>;
+  /** `git merge --ff-only <ref>` into the checked-out branch. */
+  fastForward(ref: string): Promise<void>;
+  /** `git clone <url> [args...]` in the working directory. */
+  clone(url: string, args: readonly string[]): Promise<void>;
 }
 
 const FIELD = "\x1f";
@@ -74,6 +82,18 @@ export function createGit(cwd: string): Git {
     return r.stdout;
   }
 
+  /** For commands the user watches: git's progress and errors go straight to stderr, so stdout stays clean for --json. */
+  function streamed(args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn("git", args, { cwd, stdio: ["ignore", 2, 2] });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new GitError(args, "", code));
+      });
+    });
+  }
+
   return {
     topLevel: () => value(["rev-parse", "--show-toplevel"]),
     currentBranch: () => value(["symbolic-ref", "--short", "-q", "HEAD"]),
@@ -105,18 +125,11 @@ export function createGit(cwd: string): Git {
         });
     },
 
-    push(branch) {
-      const args = ["push", "-u", "origin", branch];
-      return new Promise((resolve, reject) => {
-        // git's progress and errors go straight to the user's stderr; stdout
-        // stays clean for --json.
-        const child = spawn("git", args, { cwd, stdio: ["ignore", 2, 2] });
-        child.on("error", reject);
-        child.on("close", (code) => {
-          if (code === 0) resolve();
-          else reject(new GitError(args, "", code));
-        });
-      });
-    },
+    push: (branch) => streamed(["push", "-u", "origin", branch]),
+    fetch: (refspecs) => streamed(["fetch", "origin", ...refspecs]),
+    switchBranch: (branch, opts) =>
+      streamed(opts ? ["switch", "-c", branch, "--track", opts.track] : ["switch", branch]),
+    fastForward: (ref) => streamed(["merge", "--ff-only", ref]),
+    clone: (url, args) => streamed(["clone", url, ...args]),
   };
 }

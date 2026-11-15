@@ -2,9 +2,11 @@ import { type ParseArgsConfig, parseArgs } from "node:util";
 import { version } from "../../package.json" with { type: "json" };
 import type { CodeCommitApi } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
+import { cloneRepository } from "../core/clone.js";
 import { type RepoContext, resolveContext } from "../core/context.js";
 import { UsageError, UserError } from "../core/errors.js";
 import {
+  checkoutPullRequest,
   consoleUrl,
   createPullRequest,
   listPullRequests,
@@ -42,10 +44,12 @@ Usage:
   lazycc pr list [--state open|closed] [-L limit]
   lazycc pr view [<id>]
   lazycc pr status
+  lazycc pr checkout <id>
+  lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
   lazycc --version
 
-Flags for every pr command:
-  -R, --repo <name>     repository (default: the origin remote of this clone)
+Flags for every command:
+  -R, --repo <name>     repository (default: the origin remote of this clone; not for clone)
       --profile <name>  AWS profile
       --region <region> AWS region
       --json            print JSON
@@ -55,15 +59,16 @@ Exit codes: 0 success, 1 error, 2 bad arguments.`;
 type Options = NonNullable<ParseArgsConfig["options"]>;
 
 const COMMON: Options = {
-  repo: { type: "string", short: "R" },
   profile: { type: "string" },
   region: { type: "string" },
   json: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 };
 
+const REPO: Options = { repo: { type: "string", short: "R" } };
+
 const COMMANDS: Record<string, { options: Options; positionals: number }> = {
-  create: {
+  "pr create": {
     positionals: 0,
     options: {
       base: { type: "string", short: "B" },
@@ -77,19 +82,27 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
       "dry-run": { type: "boolean" },
     },
   },
-  list: {
+  "pr list": {
     positionals: 0,
     options: { state: { type: "string", short: "s" }, limit: { type: "string", short: "L" } },
   },
-  view: { positionals: 1, options: {} },
-  status: { positionals: 0, options: {} },
+  "pr view": { positionals: 1, options: {} },
+  "pr status": { positionals: 0, options: {} },
+  "pr checkout": { positionals: 1, options: {} },
 };
+
+for (const spec of Object.values(COMMANDS)) Object.assign(spec.options, REPO);
+// The repository is the positional argument, and `--` passes the rest to git clone.
+COMMANDS["clone"] = { positionals: 2, options: { protocol: { type: "string" } } };
 
 type Values = Record<string, string | boolean | undefined>;
 
-function parse(verb: string, args: readonly string[]): { values: Values; positionals: string[] } {
-  const spec = COMMANDS[verb];
-  if (!spec) throw new UsageError(`Unknown command: pr ${verb}`);
+function parse(
+  command: string,
+  args: readonly string[],
+): { values: Values; positionals: string[] } {
+  const spec = COMMANDS[command];
+  if (!spec) throw new UsageError(`Unknown command: ${command}`);
   let parsed: { values: Values; positionals: string[] };
   try {
     parsed = parseArgs({
@@ -123,17 +136,41 @@ export async function run(args: readonly string[], deps: Deps): Promise<number> 
       io.out(USAGE);
       return 0;
     }
-    if (noun !== "pr") throw new UsageError(`Unknown command: ${noun}`);
-    if (verb === undefined || verb === "--help" || verb === "-h") {
-      io.out(USAGE);
-      return verb === undefined ? 2 : 0;
+    let command: string;
+    let commandArgs: readonly string[];
+    if (noun === "pr") {
+      if (verb === undefined || verb === "--help" || verb === "-h") {
+        io.out(USAGE);
+        return verb === undefined ? 2 : 0;
+      }
+      command = `pr ${verb}`;
+      commandArgs = rest;
+    } else {
+      command = noun;
+      commandArgs = args.slice(1);
     }
-    const { values, positionals } = parse(verb, rest);
+    let passthrough: string[] = [];
+    if (command === "clone") {
+      const dashes = commandArgs.indexOf("--");
+      if (dashes !== -1) {
+        passthrough = commandArgs.slice(dashes + 1);
+        commandArgs = commandArgs.slice(0, dashes);
+      }
+    }
+    const { values, positionals } = parse(command, commandArgs);
     if (values["help"]) {
       io.out(USAGE);
       return 0;
     }
-    return await runPr(verb, values, positionals, deps, (ctx) => {
+    if (command === "clone") {
+      if (positionals[0] === undefined) throw new UsageError("clone needs a repository name");
+      values["repo"] = positionals[0];
+      positionals.push(...passthrough);
+    }
+    if (command === "pr checkout" && positionals[0] === undefined) {
+      throw new UsageError("pr checkout needs a pull request id");
+    }
+    return await runCommand(command, values, positionals, deps, (ctx) => {
       profile = ctx.profile;
     });
   } catch (error) {
@@ -141,8 +178,8 @@ export async function run(args: readonly string[], deps: Deps): Promise<number> 
   }
 }
 
-async function runPr(
-  verb: string,
+async function runCommand(
+  command: string,
   values: Values,
   positionals: string[],
   deps: Deps,
@@ -180,8 +217,38 @@ async function runPr(
   };
   const print = (value: unknown) => io.out(JSON.stringify(value, null, 2));
 
-  switch (verb) {
-    case "create": {
+  switch (command) {
+    case "clone": {
+      const url = await cloneRepository(
+        {
+          repository: ctx.repository,
+          ...optional("protocol", str(values, "protocol")),
+          region,
+          ...optional("profile", ctx.profile),
+          args: positionals.slice(1),
+        },
+        { git, api },
+      );
+      if (json) print({ repository: ctx.repository, url });
+      return 0;
+    }
+    case "pr checkout": {
+      const result = await checkoutPullRequest(positionals[0] as string, prDeps);
+      if (json)
+        print({
+          branch: result.branch,
+          created: result.created,
+          pullRequest: prJson(result.pr, region),
+        });
+      else
+        io.err(
+          result.created
+            ? `Switched to a new branch ${result.branch} tracking origin/${result.branch} (#${result.pr.id}).`
+            : `Switched to ${result.branch}, up to date with origin/${result.branch} (#${result.pr.id}).`,
+        );
+      return 0;
+    }
+    case "pr create": {
       const result = await createPullRequest(
         {
           ...optional("base", str(values, "base")),
@@ -227,7 +294,7 @@ async function runPr(
       }
       return 0;
     }
-    case "list": {
+    case "pr list": {
       const state = (str(values, "state") ?? "open").toUpperCase();
       if (state !== "OPEN" && state !== "CLOSED")
         throw new UsageError("--state must be open or closed");
@@ -242,7 +309,7 @@ async function runPr(
       else for (const line of listLines(prs)) io.out(line);
       return 0;
     }
-    case "view": {
+    case "pr view": {
       const pr = await resolvePullRequest(positionals[0], prDeps);
       if (json) print(prJson(pr, region));
       else for (const line of viewLines(pr, region)) io.out(line);
