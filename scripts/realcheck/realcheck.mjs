@@ -1224,8 +1224,15 @@ async function failures() {
 // (nothing is started or changed there), checks the fields lazycc matches on,
 // then runs pr view with the config's ci pointing at them.
 const SHA = /^[0-9a-f]{40}$/;
-const BUILD_STATUSES = ["SUCCEEDED", "FAILED", "FAULT", "TIMED_OUT", "IN_PROGRESS", "STOPPED"];
-const EXECUTION_STATUSES = [
+const BUILD_STATUSES = new Set([
+  "SUCCEEDED",
+  "FAILED",
+  "FAULT",
+  "TIMED_OUT",
+  "IN_PROGRESS",
+  "STOPPED",
+]);
+const EXECUTION_STATUSES = new Set([
   "Succeeded",
   "Failed",
   "InProgress",
@@ -1233,7 +1240,7 @@ const EXECUTION_STATUSES = [
   "Stopped",
   "Cancelled",
   "Superseded",
-];
+]);
 
 async function ciResults() {
   const project = opt["ci-project"];
@@ -1262,7 +1269,7 @@ async function ciResults() {
       const builds = got.ok ? (got.out.builds ?? []) : [];
       const odd = builds.flatMap((b) => {
         const why = [];
-        if (!BUILD_STATUSES.includes(b.buildStatus)) why.push(`buildStatus ${b.buildStatus}`);
+        if (!BUILD_STATUSES.has(b.buildStatus)) why.push(`buildStatus ${b.buildStatus}`);
         if (!/^\d{12}$/.test(String(b.arn).split(":")[4] ?? "")) why.push("arn without an account");
         if (!SHA.test(b.resolvedSourceVersion ?? ""))
           why.push(`resolvedSourceVersion ${b.resolvedSourceVersion}`);
@@ -1291,14 +1298,14 @@ async function ciResults() {
       new ListPipelineExecutionsCommand({ pipelineName: pipeline, maxResults: 5 }),
       cp,
     );
-    const runs = list.ok ? (list.out.pipelineExecutionSummaries ?? []) : [];
+    const executions = list.ok ? (list.out.pipelineExecutionSummaries ?? []) : [];
     if (!list.ok) record("ci.codepipeline", `Executions of ${pipeline}`, "FAIL", ok(list));
-    else if (runs.length === 0)
+    else if (executions.length === 0)
       record("ci.codepipeline", `Executions of ${pipeline}`, "SKIP", "no executions yet");
     else {
-      const odd = runs.flatMap((e) => {
+      const odd = executions.flatMap((e) => {
         const why = [];
-        if (!EXECUTION_STATUSES.includes(e.status)) why.push(`status ${e.status}`);
+        if (!EXECUTION_STATUSES.has(e.status)) why.push(`status ${e.status}`);
         const revs = (e.sourceRevisions ?? []).map((r) => r.revisionId);
         if (!revs.some((r) => SHA.test(r ?? "")))
           why.push(`no 40-hex revisionId in [${revs.join(", ")}]`);
@@ -1308,7 +1315,7 @@ async function ciResults() {
         "ci.codepipeline",
         "Executions carry a known status and a commit ID among sourceRevisions (aws/ci.ts)",
         odd.length ? "DIFF" : "PASS",
-        odd.length ? odd.join("; ") : `${runs.length} executions`,
+        odd.length ? odd.join("; ") : `${executions.length} executions`,
       );
     }
   }
@@ -1322,9 +1329,9 @@ async function ciResults() {
   try {
     writeFileSync(configFile, JSON.stringify({ ci: { [repoName]: ci("") } }));
     const view = lazy("pr view (ci)", ["pr", "view", state.pr1, "--json"], { cwd: state.seed });
-    const runs = view.json?.checks?.runs ?? [];
+    const found = view.json?.checks?.runs ?? [];
     // This repository's commits are new, so no run of an existing project matches them.
-    if (view.exit !== 0 || runs.length === 0 || runs.some((r) => r.state !== "none"))
+    if (view.exit !== 0 || found.length === 0 || found.some((r) => r.state !== "none"))
       record(
         "ci.view",
         "pr view with ci reads the runs and finds none on the PR's commit",
@@ -1346,7 +1353,7 @@ async function ciResults() {
     record(
       "ci.absent",
       "A misspelt project or pipeline is an error line, and pr view still exits 0",
-      absent.exit === 0 && errors.length === runs.length && runs.length > 0 ? "PASS" : "FAIL",
+      absent.exit === 0 && errors.length === found.length && found.length > 0 ? "PASS" : "FAIL",
       errors.map((r) => `${r.provider}: ${r.message}`).join("; ") || `exit ${absent.exit}`,
     );
   } finally {

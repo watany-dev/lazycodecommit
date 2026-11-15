@@ -536,9 +536,9 @@ export function startMockServer(gitRoot) {
         return;
       }
       const [prefix, op] = target.split(".");
-      const service = /^CodeBuild/.test(prefix)
+      const service = prefix.startsWith("CodeBuild")
         ? "codebuild"
-        : /^CodePipeline/.test(prefix)
+        : prefix.startsWith("CodePipeline")
           ? "codepipeline"
           : "codecommit";
       try {
