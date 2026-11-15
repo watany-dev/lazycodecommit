@@ -251,6 +251,8 @@ export async function postComment(
       filePosition: number;
       relativeFileVersion: "BEFORE" | "AFTER";
     };
+    /** The same token and parameters return the first post instead of posting again. */
+    clientRequestToken?: string;
   },
 ): Promise<Comment> {
   const command = new PostCommentForPullRequestCommand({
@@ -266,6 +268,7 @@ export async function postComment(
           relativeFileVersion: params.location.relativeFileVersion,
         }
       : undefined,
+    clientRequestToken: params.clientRequestToken,
   });
   const response = await client.send(command);
   if (!response.comment) throw new Error("Empty comment response from CodeCommit API.");
@@ -277,11 +280,13 @@ export async function postCommentReply(
   params: {
     inReplyTo: string;
     content: string;
+    clientRequestToken?: string;
   },
 ): Promise<Comment> {
   const command = new PostCommentReplyCommand({
     inReplyTo: params.inReplyTo,
     content: params.content,
+    clientRequestToken: params.clientRequestToken,
   });
   const response = await client.send(command);
   if (!response.comment) throw new Error("Empty reply response from CodeCommit API.");

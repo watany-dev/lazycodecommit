@@ -128,3 +128,23 @@ describe("file modes", () => {
     }
   });
 });
+
+describe("drafts", () => {
+  it("keeps each PR's list, removes an emptied one, and writes the file user-only", async () => {
+    const s = state();
+    expect(await s.drafts.get("r/1")).toBeUndefined();
+    await s.drafts.set("r/1", [{ id: "a" }]);
+    await s.drafts.set("r/2", [{ id: "b" }]);
+    expect(await s.drafts.get("r/1")).toEqual([{ id: "a" }]);
+    await s.drafts.set("r/1", []);
+    expect(JSON.parse(await readFile(join(dir, "drafts.json"), "utf8"))).toEqual({
+      "r/2": [{ id: "b" }],
+    });
+    expect((await stat(join(dir, "drafts.json"))).mode & 0o777).toBe(0o600);
+  });
+
+  it("reads a corrupt file as empty", async () => {
+    await put("drafts.json", "{not json");
+    expect(await state().drafts.get("r/1")).toBeUndefined();
+  });
+});
