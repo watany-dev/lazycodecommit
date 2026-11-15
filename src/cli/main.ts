@@ -7,7 +7,7 @@ import { branchActions, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { lazyCiClient, pullRequestChecks, repositoryRuns } from "../core/checks.js";
 import { cloneRepository } from "../core/clone.js";
-import { draftStorage } from "../core/commentDrafts.js";
+import { type DraftStorage, draftStorage } from "../core/commentDrafts.js";
 import {
   type AccountContext,
   type ContextInput,
@@ -257,7 +257,8 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     }
     let command: string;
     let commandArgs: readonly string[];
-    if (noun === undefined || noun.startsWith("-")) {
+    const bare = noun === undefined || noun.startsWith("-");
+    if (bare) {
       // Bare lazycc (flags allowed) opens the home screen, or prints it as status
       // text when there is no terminal (spec: 出力と終了コード).
       command = io.interactive ? "home" : "status";
@@ -285,11 +286,12 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     }
     const { values, positionals } = parse(command, commandArgs);
     if (values["help"]) {
-      io.out(commandUsage(command));
+      // Bare lazycc is home or status by the terminal; its help is the same either way.
+      io.out(bare ? USAGE : commandUsage(command));
       return 0;
     }
     if (command === "clone") {
-      if (positionals[0] === undefined) throw new UsageError("clone needs a repository name");
+      if (!positionals[0]) throw new UsageError("clone needs a repository name");
       values["repo"] = positionals[0];
       positionals.push(...passthrough);
     }
@@ -311,6 +313,8 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
         throw new UsageError("Pass the repository once: as the argument or with --repo");
       values["repo"] = positionals[0];
     }
+    // An empty name (-R "$UNSET") would otherwise fall back to the clone's remote.
+    if (values["repo"] === "") throw new UsageError("--repo needs a repository name");
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
     }
@@ -349,7 +353,8 @@ async function runCommand(
     const fromConfig = !input.repo && Boolean(config.repos?.length);
     const account = await resolveAccountContext({ ...input, outsideClone: fromConfig });
     onContext(account);
-    return command === "status"
+    // --json prints, on a terminal too (spec: 出力と終了コード).
+    return command === "status" || json
       ? runStatus(str(values, "repo"), account, config, json, deps)
       : runTop({ start: "home", flagRepo: str(values, "repo"), ctx: account, config, git }, deps);
   }
@@ -532,7 +537,8 @@ async function runCommand(
         throw new UsageError("--state must be open or closed");
       const limitText = str(values, "limit") ?? "30";
       const limit = Number(limitText);
-      if (!Number.isInteger(limit) || limit < 1)
+      // Digits only: Number() also takes "0x10", "1e1" and " 2".
+      if (!/^\d+$/.test(limitText) || limit < 1)
         throw new UsageError(`--limit must be a positive integer: ${limitText}`);
       const prs = await listPullRequests({ state, limit }, prDeps);
       if (json) print(prs.map((pr) => prJson(pr, region)));
@@ -731,6 +737,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
             checks: (pr: { repository: string; sourceCommit: string }) =>
               pullRequestChecks(config, homeCi, pr),
             markSeen: markSeenFor(state, homeRegion),
+            drafts: draftsIn(state, homeRegion),
           },
         }
       : {}),
@@ -826,6 +833,17 @@ function markSeenFor(state: LocalState, region: string | Promise<string>) {
   return (pr: SeenPr) => {
     // The read mark only feeds home's ● marker; failing to save it is not an error.
     void (async () => markSeenIn(state, await region, pr, new Date()))().catch(() => {});
+  };
+}
+
+/** drafts.json for the PRs of an account whose region is still being resolved. */
+function draftsIn(state: LocalState, region: Promise<string>): DraftStorage {
+  const storage = region.then((r) => draftStorage(state.drafts, r));
+  // The failure shows when a review loads drafts, not as an unhandled rejection.
+  storage.catch(() => {});
+  return {
+    load: async (key) => (await storage).load(key),
+    save: async (key, drafts) => (await storage).save(key, drafts),
   };
 }
 

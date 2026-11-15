@@ -69,4 +69,33 @@ describe("pr list columns", () => {
       ),
     );
   });
+
+  it("line up with emoji (gitmoji) and combining marks in titles", () => {
+    // What a terminal shows: emoji take two cells, combining marks none.
+    const width: Record<string, number> = {
+      a: 1,
+      "🚀": 2,
+      "✅": 2,
+      "✨": 2,
+      "🐛": 2,
+      "́": 0,
+      "゙": 0,
+      "️": 0,
+    };
+    const emojiCells = (s: string) => [...s].reduce((n, ch) => n + (width[ch] ?? 1), 0);
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ unit: fc.constantFrom(...Object.keys(width)) }), {
+          minLength: 1,
+          maxLength: 5,
+        }),
+        (titles) => {
+          const lines = listLines(
+            titles.map((title, i) => pullRequest({ id: String(i + 1), title: `x${title}` })),
+          );
+          expect(new Set(lines.map(emojiCells)).size).toBe(1);
+        },
+      ),
+    );
+  });
 });
