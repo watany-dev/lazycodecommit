@@ -20,3 +20,8 @@ updates:
     groups:
       bun-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Types for the oldest supported Node (engines.node), so they never
+      # offer an API that Node 20 lacks.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
