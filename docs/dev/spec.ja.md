@@ -49,24 +49,24 @@ git が知らないことだけを扱い、git でできることは git に任�
 
 ## コマンド体系
 
-サブコマンドは gh に合わせた「名詞 動詞」形式にし、引数なしで TUI を開く。コマンド名は仮に ccm とする(cc は C コンパイラと衝突するため避けた。正式名は未決事項)。
+サブコマンドは gh に合わせた「名詞 動詞」形式にし、引数なしで TUI を開く。コマンド名は lazycc、npm パッケージ名は lazycodecommit とする(ADR 0001)。
 | コマンド | 動作 | clone 外での利用 |
 |---|---|---|
-| ccm | ホーム(受信箱)の TUI を開く | 可 |
-| ccm status | ホームと同じ内容をテキストで出す | 可 |
-| ccm pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
-| ccm pr list | PR 一覧を出す | 可 |
-| ccm pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
-| ccm pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す | 不可 |
-| ccm pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
-| ccm pr comment <id> | PR にコメントする | 可 |
-| ccm pr approve <id> | 承認する。--revoke で取り消す | 可 |
-| ccm pr merge <id> | マージする。方式は --ff、--squash、--three-way | 可 |
-| ccm pr close <id> | マージせずに閉じる | 可 |
-| ccm branch | ブランチ×PR 対応表を開く | 可 |
-| ccm browse [repo] | clone なしでコードを読む | 可 |
-| ccm clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
-| ccm completion <shell> | bash、zsh、fish の補完スクリプトを出す | 可 |
+| lazycc | ホーム(受信箱)の TUI を開く | 可 |
+| lazycc status | ホームと同じ内容をテキストで出す | 可 |
+| lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
+| lazycc pr list | PR 一覧を出す | 可 |
+| lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
+| lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す | 不可 |
+| lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
+| lazycc pr comment <id> | PR にコメントする | 可 |
+| lazycc pr approve <id> | 承認する。--revoke で取り消す | 可 |
+| lazycc pr merge <id> | マージする。方式は --ff、--squash、--three-way | 可 |
+| lazycc pr close <id> | マージせずに閉じる | 可 |
+| lazycc branch | ブランチ×PR 対応表を開く | 可 |
+| lazycc browse [repo] | clone なしでコードを読む | 可 |
+| lazycc clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
+| lazycc completion <shell> | bash、zsh、fish の補完スクリプトを出す | 可 |
 
 ### 共通フラグ
 | フラグ | 意味 |
@@ -97,7 +97,7 @@ remote URL は次の3形式を解釈し、リージョンとプロファイル�
 
 ## PR 作成
 
-ccm pr create は、clone 内なら引数なしで push から PR 作成まで終える。
+lazycc pr create は、clone 内なら引数なしで push から PR 作成まで終える。
 
 ### 手順
 - 現在のブランチを取得する。detached HEAD ならエラーにする。
@@ -146,7 +146,7 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 
 ## ブランチ×PR 対応表
 
-ccm branch は、各ブランチに PR があるか、消してよいかを1画面で示す。
+lazycc branch は、各ブランチに PR があるか、消してよいかを1画面で示す。
 
 ### 表示項目
 | 列 | 内容 | 取得元 |
@@ -185,7 +185,7 @@ clone 内ではリモート追跡ブランチの情報を使う。Ctrl+r で git
 
 ## ホーム(受信箱)
 
-引数なしの ccm は、監視対象リポジトリを横断して「自分が動くべき PR」を先頭に出す。
+引数なしの lazycc は、監視対象リポジトリを横断して「自分が動くべき PR」を先頭に出す。
 
 ### 区分
 | 区分 | 条件 | 表示項目 |
@@ -210,11 +210,11 @@ clone 内ではリモート追跡ブランチの情報を使う。Ctrl+r で git
 - ListPullRequests は ID しか返さないため、GetPullRequest を並列(既定 8)で呼ぶ。
 - 前回の結果をディスクにキャッシュし、起動直後はキャッシュを表示して裏で更新する。
 - 承認状態、承認ルールの評価、コンフリクト確認は PR ごとに追加の呼び出しが要るため、一覧表示後に遅延取得する。
-- ccm status は同じ内容をテキストで出し、--json に対応する。
+- lazycc status は同じ内容をテキストで出し、--json に対応する。
 
 ## clone なしブラウズ
 
-ccm browse は、clone していないリポジトリのツリーとファイルを API だけで読む。主な用途は CloudShell と、手元にないリポジトリの確認。
+lazycc browse は、clone していないリポジトリのツリーとファイルを API だけで読む。主な用途は CloudShell と、手元にないリポジトリの確認。
 
 ### 範囲
 | 機能 | 内容 | API |
@@ -226,11 +226,11 @@ ccm browse は、clone していないリポジトリのツリーとファイル
 | URL 表示 | 開いている場所のコンソール URL を出す | なし |
 
 ### 起動
-- ccm browse は、clone 内ではそのリポジトリを、clone 外ではリポジトリ選択を開く。
-- ccm browse my-repo --ref develop --path src/ で開始位置を指定できる。
+- lazycc browse は、clone 内ではそのリポジトリを、clone 外ではリポジトリ選択を開く。
+- lazycc browse my-repo --ref develop --path src/ で開始位置を指定できる。
 
 ### 作らないもの
-- blame、ファイル履歴、全文検索は作らない。必要なら ccm clone で手元に落とす。
+- blame、ファイル履歴、全文検索は作らない。必要なら lazycc clone で手元に落とす。
 - API のサイズ上限を超えるファイルは表示せず、clone を案内する。
 - git タグの一覧を返す API がないため、ref の選択肢にタグは出さない。
 - clone 内でも動くが、表示するのはリモートの状態。作業ツリーの閲覧はエディタに任せる。
@@ -249,10 +249,10 @@ ccm browse は、clone していないリポジトリのツリーとファイル
 ### 変更点
 | 項目 | 現行 | 新 |
 |---|---|---|
-| 入口 | リポジトリ選択 → PR 一覧 | ホーム、ブランチ表、ccm pr view、PR 作成直後 |
+| 入口 | リポジトリ選択 → PR 一覧 | ホーム、ブランチ表、lazycc pr view、PR 作成直後 |
 | diff の取得 | API | clone 内は git、clone 外は API |
 | 既読管理 | なし | 開いた時点で最終閲覧時刻を更新する |
-| PR 一覧画面 | 起動時の主画面 | ccm pr list とリポジトリ選択から開く副画面 |
+| PR 一覧画面 | 起動時の主画面 | lazycc pr list とリポジトリ選択から開く副画面 |
 
 ### clone 内の diff
 - ソースとベースのコミットがローカルになければ git fetch origin <source> <destination> を実行する。
@@ -320,7 +320,7 @@ ccm browse は、clone していないリポジトリのツリーとファイル
 
 ### 設定ファイル
 
-場所は ~/.config/ccm/config.json(XDG_CONFIG_HOME に従う)。
+場所は ~/.config/lazycc/config.json(XDG_CONFIG_HOME に従う)。
 
 ```json
 {
@@ -352,7 +352,7 @@ remote URL を環境変数より優先するのは、リポジトリのリージ
 
 ### ローカル状態
 
-場所は ~/.local/state/ccm/(XDG_STATE_HOME に従う)。
+場所は ~/.local/state/lazycc/(XDG_STATE_HOME に従う)。
 | ファイル | 内容 |
 |---|---|
 | seen.json | PR ごとの最終閲覧時刻 |
@@ -431,9 +431,9 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 最優先の PR 作成を TUI なしで先に出し、現行ツールと並行して使い始める。
 | フェーズ | 範囲 | 完了条件 |
 |---|---|---|
-| 1. CLI 基盤と PR 作成 | リポジトリ推定、設定、git/ 層、pr create、pr list、pr view(テキスト)、pr status、--json | clone 内で ccm pr create --fill --push がコンソールなしで完結する |
+| 1. CLI 基盤と PR 作成 | リポジトリ推定、設定、git/ 層、pr create、pr list、pr view(テキスト)、pr status、--json | clone 内で lazycc pr create --fill --push がコンソールなしで完結する |
 | 2. TUI とブランチ表 | TUI の枠組み、レビュー画面の移植、branch、pr checkout、clone | ブランチ表から PR 作成とレビューに進める。現行のレビュー機能がすべて動く |
-| 3. ホーム | 横断取得、キャッシュ、既読、status、リポジトリ選択と監視対象 | 承認待ちと自分の PR の確認が ccm の起動だけで済む |
+| 3. ホーム | 横断取得、キャッシュ、既読、status、リポジトリ選択と監視対象 | 承認待ちと自分の PR の確認が lazycc の起動だけで済む |
 | 4. ブラウズと残りの CLI | browse、pr comment、pr approve、pr merge、pr close、シェル補完 | CloudShell で clone なしにコードを読める |
 
 ## 決定事項
@@ -442,7 +442,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 
 | 論点 | 結論 | ADR |
 |---|---|---|
-| コマンド名とパッケージ名 | 確認中（推奨はパッケージ `lazycodecommit`、コマンド `lazycodecommit` と `ccm`） | [0001](../adr/0001-command-and-package-name.md) |
+| コマンド名とパッケージ名 | コマンドは `lazycc`、npm パッケージは `lazycodecommit` | [0001](../adr/0001-command-and-package-name.md) |
 | 言語 | TypeScript を継続し、Go には移さない | [0002](../adr/0002-language-and-runtime.md) |
 | 設定ファイル形式 | JSON | [0003](../adr/0003-config-format.md) |
 | PR テンプレートの置き場所 | `.codecommit/pull_request_template.md` を既定にし、設定で変更できる | [0004](../adr/0004-pr-template-location.md) |
