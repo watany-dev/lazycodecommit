@@ -203,9 +203,10 @@ describe("describeFailure", () => {
   it("calls an answer below 500 a refusal and anything else unknown", () => {
     expect(describeFailure(awsError("InvalidFilePositionException", 400)).kind).toBe("failed");
     expect(describeFailure(awsError("InternalFailure", 500)).kind).toBe("unknown");
-    expect(describeFailure(awsError("TimeoutError"))).toEqual({
+    expect(describeFailure(awsError("TimeoutError")).kind).toBe("unknown");
+    expect(describeFailure(awsError("ECONNRESET"))).toEqual({
       kind: "unknown",
-      message: "TimeoutError message",
+      message: "ECONNRESET message",
     });
     expect(describeFailure("boom")).toEqual({ kind: "unknown", message: "boom" });
     expect(describeFailure(null).kind).toBe("unknown");
