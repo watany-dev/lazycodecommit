@@ -1,12 +1,12 @@
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import React, { memo, useEffect, useMemo, useState } from "react";
 import type { PrActivityEvent } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 
-/** Match PullRequestDetail's default viewport so j/k cost stays constant. */
-const VISIBLE_EVENT_COUNT = 30;
+/** The title and key lines, each with a blank row above the list or below it. */
+const CHROME_LINES = 4;
 
 interface Props {
   pullRequestTitle: string;
@@ -28,6 +28,8 @@ export function ActivityTimeline({
   onBack,
 }: Props) {
   const [cursorIndex, setCursorIndex] = useState(0);
+  const { stdout } = useStdout();
+  const visibleCount = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
 
   // A retry after an expired page token starts the list over, shorter.
   useEffect(() => {
@@ -57,13 +59,13 @@ export function ActivityTimeline({
   });
 
   const scrollOffset = useMemo(() => {
-    const halfVisible = Math.floor(VISIBLE_EVENT_COUNT / 2);
-    const maxOffset = Math.max(0, events.length - VISIBLE_EVENT_COUNT);
+    const halfVisible = Math.floor(visibleCount / 2);
+    const maxOffset = Math.max(0, events.length - visibleCount);
     const idealOffset = cursorIndex - halfVisible;
     return Math.max(0, Math.min(idealOffset, maxOffset));
-  }, [cursorIndex, events.length]);
+  }, [cursorIndex, events.length, visibleCount]);
 
-  const visibleEvents = events.slice(scrollOffset, scrollOffset + VISIBLE_EVENT_COUNT);
+  const visibleEvents = events.slice(scrollOffset, scrollOffset + visibleCount);
 
   if (isLoading && events.length === 0) {
     return (

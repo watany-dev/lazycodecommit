@@ -1,5 +1,5 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CHECK_COLOR, CHECK_MARK, type Checks, noRun } from "../../core/checks.js";
 import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
@@ -19,6 +19,7 @@ import {
   COMMENT_LINE_TYPES,
   countLines,
   DIFF_CHUNK_SIZE,
+  diffLimitKey,
   FOLD_THRESHOLD,
   getThreadKey,
   LARGE_DIFF_THRESHOLD,
@@ -314,7 +315,24 @@ export function PullRequestDetail({
       reactionTarget ||
       showDrafts,
   );
-  const visibleLineCount = dialogOpen || showFileList ? 20 : 30;
+  const { stdout } = useStdout();
+  const hasRules =
+    (approval.evaluation?.approvalRulesSatisfied?.length ?? 0) +
+      (approval.evaluation?.approvalRulesNotSatisfied?.length ?? 0) >
+    0;
+  // The rows around the diff: padding, the header lines, the key line (two
+  // rows when it wraps), and the optional rules, CI and commit lines.
+  const chromeLines =
+    10 +
+    (hasRules ? 2 : 0) +
+    (checks ? 2 + checks.runs.length : 0) +
+    (commits.length > 0 || commitsAvailable ? (viewIndex >= 0 ? 2 : 1) : 0) +
+    (isLoadingCommitDiff && viewIndex >= 0 ? 1 : 0);
+  // A box, prompt or list below the diff takes about ten more.
+  const visibleLineCount = Math.max(
+    (stdout.rows || 24) - chromeLines - (dialogOpen || showFileList ? 10 : 0),
+    3,
+  );
 
   useKeys((input, key) => {
     // File list mode: handle its own keys before the modal guard
@@ -415,13 +433,14 @@ export function PullRequestDetail({
       if (!texts) return;
       const totalLines = countLines(texts.before) + countLines(texts.after);
       if (totalLines <= LARGE_DIFF_THRESHOLD) return;
-      const currentLimit = diffLineLimits.get(diffKey) ?? DIFF_CHUNK_SIZE;
+      const limitKey = diffLimitKey(currentLine.filePath ?? "", diffKey);
+      const currentLimit = diffLineLimits.get(limitKey) ?? DIFF_CHUNK_SIZE;
       /* v8 ignore next -- requires many t-presses to reach full expansion */
       if (currentLimit >= totalLines) return;
       const nextLimit = Math.min(currentLimit + DIFF_CHUNK_SIZE, totalLines);
       setDiffLineLimits((prev) => {
         const next = new Map(prev);
-        next.set(diffKey, nextLimit);
+        next.set(limitKey, nextLimit);
         return next;
       });
       return;
@@ -490,8 +509,11 @@ export function PullRequestDetail({
       const defaultCollapsed = thread.comments.length >= FOLD_THRESHOLD;
       const collapsing = defaultCollapsed && !(collapsedThreads.get(threadKey) ?? true);
       // Folding from a reply removes the cursor's row: stay on the thread's fold line.
+      // The fold line follows the root comment's rows, one per line of it.
       const root = rootRowOf(lines, cursorIndex);
-      if (collapsing && cursorIndex > root) setCursorIndex(root + 1);
+      let foldRow = root + 1;
+      while (lines[foldRow]?.commentId === lines[root]!.commentId) foldRow++;
+      if (collapsing && cursorIndex >= foldRow) setCursorIndex(foldRow);
       setCollapsedThreads((prev) => {
         const next = new Map(prev);
         next.set(threadKey, !(prev.get(threadKey) ?? defaultCollapsed));
@@ -502,9 +524,11 @@ export function PullRequestDetail({
     if (input === "R") {
       const currentLine = lines[cursorIndex];
       if (!currentLine) return;
-      const replyTo = getReplyTargetFromLine(currentLine);
-      if (!replyTo) return;
-      setReplyTarget(replyTo);
+      const commentId = commentIdOf(currentLine);
+      if (!commentId) return;
+      // A comment's first row names its author.
+      const first = lines.find((l) => l.commentId === commentId) as DisplayLine;
+      setReplyTarget(getReplyTargetFromLine(first));
       return;
     }
     if (input === "a") {
@@ -958,11 +982,12 @@ function findCommentContent(commentThreads: CommentThread[], commentId: string):
 }
 /* v8 ignore stop */
 
-function getReplyTargetFromLine(
-  line: DisplayLine,
-): { commentId: string; author: string; content: string } | null {
-  const commentId = commentIdOf(line);
-  if (!commentId) return null;
+function getReplyTargetFromLine(line: DisplayLine): {
+  commentId: string;
+  author: string;
+  content: string;
+} {
+  const commentId = line.commentId as string;
 
   // Extract author from line text
   const text = line.text;

@@ -8059,4 +8059,126 @@ describe("PullRequestDetail", () => {
       expect(screen.lastFrame()).toMatch(/> +\[\+3 replies\]/);
     });
   });
+
+  describe("found by property and model checks", () => {
+    const renderDetail = (extra: Record<string, unknown>) =>
+      render(
+        <PullRequestDetail
+          pullRequest={pullRequest as any}
+          differences={[] as any}
+          commentThreads={[]}
+          diffTexts={new Map()}
+          onBack={vi.fn()}
+          onHelp={vi.fn()}
+          onShowActivity={vi.fn()}
+          comment={defaultCommentProps}
+          reply={defaultReplyProps}
+          approval={defaultApprovalProps}
+          merge={defaultMergeProps}
+          close={defaultCloseProps}
+          commitView={defaultCommitProps}
+          editComment={defaultEditCommentProps}
+          deleteComment={defaultDeleteCommentProps}
+          reaction={defaultReactionProps}
+          {...(extra as any)}
+        />,
+      );
+
+    it("t shows more of the file at the cursor only, when another file has the same contents", async () => {
+      const text = Array.from({ length: 1600 }, (_, i) => `line ${i + 1}`).join("\n");
+      const { stdin, lastFrame } = renderDetail({
+        differences: [
+          { afterBlob: { blobId: "same", path: "a.txt" } },
+          { afterBlob: { blobId: "same", path: "b.txt" } },
+        ],
+        diffTexts: new Map([[":same", { before: "", after: text }]]),
+      });
+      // a.txt: header, separator, 300 lines, truncate-context, truncation (row 303).
+      await press(stdin, "n", "k", "k");
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/> +\[t\] show next 300 lines/));
+      await press(stdin, "t");
+      await vi.waitFor(() => expect(lastFrame()).toContain("+line 302"));
+      await press(stdin, "G");
+      // The last rows are b.txt's.
+      await vi.waitFor(() => expect(lastFrame()).toContain("... truncated"));
+      expect(lastFrame()).toContain("... truncated 300/1600 lines");
+      expect(lastFrame()).not.toContain("... truncated 600/1600 lines");
+    });
+
+    it("fits the screen in a short terminal, with the cursor on it", async () => {
+      const text = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
+      const screen = renderDetail({
+        differences: [{ afterBlob: { blobId: "x", path: "a.txt" } }],
+        diffTexts: new Map([[":x", { before: "", after: text }]]),
+      });
+      Object.defineProperty(screen.stdout, "rows", { value: 24, configurable: true });
+      await press(screen, "j", "k");
+      const frame = () => screen.lastFrame()!.split("\n");
+      expect(frame().length).toBeLessThanOrEqual(24);
+      expect(frame().some((l) => /^ *> +a\.txt/.test(l))).toBe(true);
+      await press(screen, "G");
+      expect(frame().length).toBeLessThanOrEqual(24);
+      expect(frame().some((l) => /^ *>/.test(l))).toBe(true);
+    });
+
+    it("replies to the author of a comment from any of its lines", async () => {
+      const screen = renderDetail({
+        commentThreads: [
+          {
+            location: null,
+            comments: [
+              {
+                commentId: "c1",
+                authorArn: "arn:aws:iam::1:user/taro",
+                content: "first: line\nsecond: line",
+              },
+            ],
+          },
+        ],
+      });
+      // Rows: separator, "Comments (1):", then the comment's two lines.
+      await press(screen, "j", "j", "j");
+      await vi.waitFor(() => expect(screen.lastFrame()).toMatch(/> +second: line/));
+      await press(screen, "R");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("Replying to taro: first: line"));
+    });
+
+    it("lands on the fold line after folding from a reply under a multi-line comment", async () => {
+      const user = "arn:aws:iam::1:user/u";
+      const screen = renderDetail({
+        commentThreads: [
+          {
+            location: null,
+            comments: [
+              { commentId: "root", authorArn: user, content: "root one\nroot two" },
+              { commentId: "r1", authorArn: user, content: "r1", inReplyTo: "root" },
+              { commentId: "r2", authorArn: user, content: "r2", inReplyTo: "root" },
+              { commentId: "r3", authorArn: user, content: "r3", inReplyTo: "root" },
+            ],
+          },
+        ],
+      });
+      // Rows: separator, "Comments (4):", the root's two lines, then the fold line.
+      await press(screen, "j", "j", "j", "j", "o");
+      expect(screen.lastFrame()).toContain("u: r3");
+      await press(screen, "j");
+      expect(screen.lastFrame()).toMatch(/> +└ u: r2/);
+      await press(screen, "o");
+      expect(screen.lastFrame()).toMatch(/> +\[\+3 replies\]/);
+    });
+
+    it("fits the screen in a short terminal with the file list open", async () => {
+      const files = Array.from({ length: 30 }, (_, i) => ({
+        afterBlob: { blobId: `x${i}`, path: `file${i}.txt` },
+      }));
+      const screen = renderDetail({
+        differences: files,
+        diffTexts: new Map(files.map((_, i) => [`:x${i}`, { before: "", after: "x\n" }])),
+      });
+      Object.defineProperty(screen.stdout, "rows", { value: 30, configurable: true });
+      await press(screen, "j", "f");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("Files (30):"));
+      expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(30);
+    });
+  });
 });

@@ -19,6 +19,14 @@ export const FOLD_THRESHOLD = 4;
 const SEPARATOR_TEXT = "─".repeat(50);
 
 /**
+ * What `t` grows a file's shown lines under: two files can have the same
+ * contents, and so the same blob key, but each is shown in full on its own.
+ */
+export function diffLimitKey(filePath: string, diffKey: string): string {
+  return `${filePath}\0${diffKey}`;
+}
+
+/**
  * The lines of a file: a final newline ends the last line rather than starting
  * an empty one, and an empty file (or the missing side of an add or delete) has none.
  */
@@ -77,14 +85,22 @@ function appendThreadLines(
   const isCollapsed = collapsedThreads.get(threadKey) ?? shouldFold;
 
   const inline = mode === "inline";
-  const push = (comment: Comment, type: DisplayLine["type"], prefix: string) =>
+  // One row per line of the comment: a row is one line on the screen. The
+  // first names the author; R, e, d and g work from any of them.
+  const push = (comment: Comment, type: DisplayLine["type"], prefix: string) => {
+    const [first, ...rest] = commentText(comment).split("\n");
     lines.push({
       type,
-      text: `${prefix}${shortArn(comment.authorArn ?? "unknown")}: ${commentText(comment)}`,
+      text: `${prefix}${shortArn(comment.authorArn ?? "unknown")}: ${first}`,
       threadIndex,
       commentId: comment.commentId,
       reactionText: formatReactionBadge(reactionsByComment.get(comment.commentId ?? "")),
     });
+    const indent = " ".repeat(prefix.length);
+    for (const text of rest) {
+      lines.push({ type, text: `${indent}${text}`, threadIndex, commentId: comment.commentId });
+    }
+  };
 
   push(rootComment, inline ? "inline-comment" : "comment", inline ? "💬 " : "");
 
@@ -100,14 +116,19 @@ function appendThreadLines(
   for (const reply of replies) push(reply, inline ? "inline-reply" : "comment-reply", "└ ");
 }
 
-function getSliceLimits(beforeCount: number, afterCount: number, totalLimit: number) {
-  if (totalLimit <= 0) return { beforeLimit: 0, afterLimit: 0 };
-  const total = beforeCount + afterCount;
-  if (total <= totalLimit) return { beforeLimit: beforeCount, afterLimit: afterCount };
-  let beforeLimit = Math.min(beforeCount, Math.round((totalLimit * beforeCount) / total));
-  const afterLimit = Math.min(afterCount, totalLimit - beforeLimit);
-  beforeLimit = Math.min(beforeCount, totalLimit - afterLimit);
-  return { beforeLimit, afterLimit };
+/**
+ * The first rows of a whole diff that show at most `limit` lines of the two
+ * files: an unchanged row shows a line of each. Cutting each file on its own
+ * instead would show the lines past one file's cut as deleted or added.
+ */
+function firstRows(rows: DisplayLine[], limit: number): DisplayLine[] {
+  let used = 0;
+  let end = 0;
+  for (; end < rows.length; end++) {
+    used += rows[end]!.type === "context" ? 2 : 1;
+    if (used > limit) break;
+  }
+  return end === rows.length ? rows : rows.slice(0, end);
 }
 
 type ThreadEntry = { thread: CommentThread; index: number };
@@ -197,7 +218,7 @@ export function buildDisplayLines(
       const afterCount = countLines(texts.after);
       const totalLines = beforeCount + afterCount;
       const defaultLimit = totalLines > LARGE_DIFF_THRESHOLD ? DIFF_CHUNK_SIZE : totalLines;
-      const currentLimit = diffLineLimits.get(key) ?? defaultLimit;
+      const currentLimit = diffLineLimits.get(diffLimitKey(filePath, key)) ?? defaultLimit;
       const displayLimit = Math.min(currentLimit, totalLines);
       // Two files can share a blob key (e.g. two empty files added in one PR), so the
       // key must include the path: cached lines carry `filePath` for inline comments.
@@ -205,20 +226,10 @@ export function buildDisplayLines(
       let diffLines = diffCache?.get(cacheKey);
       if (!diffLines) {
         // Split only on cache miss; the warm path never needs the line arrays
-        const beforeLines = splitLines(texts.before);
-        const afterLines = splitLines(texts.after);
-        const { beforeLimit, afterLimit } = getSliceLimits(
-          beforeLines.length,
-          afterLines.length,
+        diffLines = firstRows(
+          computeSimpleDiff(splitLines(texts.before), splitLines(texts.after)),
           displayLimit,
         );
-        // Skip the slice copy when the limit already covers the whole array
-        // (the common non-truncated case); computeSimpleDiff never mutates its inputs.
-        const beforeSlice =
-          beforeLimit === beforeLines.length ? beforeLines : beforeLines.slice(0, beforeLimit);
-        const afterSlice =
-          afterLimit === afterLines.length ? afterLines : afterLines.slice(0, afterLimit);
-        diffLines = computeSimpleDiff(beforeSlice, afterSlice);
         // Enrich once here so the hot loop below can push lines without per-call copies
         for (const dl of diffLines) {
           dl.filePath = filePath;

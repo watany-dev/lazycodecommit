@@ -363,14 +363,20 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   const [activityEvents, setActivityEvents] = useState<PrActivityEvent[]>([]);
   const [activityNextToken, setActivityNextToken] = useState<string | undefined>(undefined);
+  // A load answered after a newer one began (the timeline left and opened
+  // again, maybe on another PR) is dropped.
+  const activityLoadRef = useRef(0);
   const activityAction = useAsyncAction(
     async (pullRequestId: string, nextToken?: string) => {
+      const loadId = ++activityLoadRef.current;
+      const isStale = () => activityLoadRef.current !== loadId;
       try {
         const result = await service.getPullRequestActivity({
           pullRequestId,
           ...(nextToken !== undefined ? { nextToken } : {}),
           maxResults: 50,
         });
+        if (isStale()) return;
         if (nextToken) {
           setActivityEvents((prev) => [...prev, ...result.events]);
         } else {
@@ -378,12 +384,14 @@ export function App({ service, repository, start, onExit }: AppProps) {
         }
         setActivityNextToken(result.nextToken);
       } catch (err) {
+        if (isStale()) return;
         if (err instanceof Error && err.name === "InvalidContinuationTokenException") {
           setActivityEvents([]);
           setActivityNextToken(undefined);
           // Retry from the start inside this action so execute() is not re-entered
           // (that would flicker loading / risk a retry loop).
           const retry = await service.getPullRequestActivity({ pullRequestId, maxResults: 50 });
+          if (isStale()) return;
           setActivityEvents(retry.events);
           setActivityNextToken(retry.nextToken);
           return;
