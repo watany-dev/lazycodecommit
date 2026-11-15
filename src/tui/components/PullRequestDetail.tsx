@@ -1,7 +1,7 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { CHECK_COLOR, CHECK_MARK, type Checks } from "../../core/checks.js";
+import { CHECK_COLOR, CHECK_MARK, type Checks, noRun } from "../../core/checks.js";
 import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
 import type {
   CommentThread,
@@ -1057,7 +1057,7 @@ function ChecksLines({ checks }: { checks: Checks }) {
             {r.state === "error"
               ? printable(r.message ?? "")
               : r.state === "none"
-                ? `no run on ${checks.commit.slice(0, 7)}`
+                ? noRun(checks.commit)
                 : `${r.status} ${r.url ?? ""}`}
           </Text>
         </Text>

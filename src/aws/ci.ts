@@ -47,6 +47,21 @@ export function executionUrl(region: string, pipeline: string, id: string): stri
   );
 }
 
+const COMMIT_ID = /^[0-9a-f]{40}$/;
+
+/**
+ * resolvedSourceVersion is set only once the build has downloaded its source,
+ * so a queued build, such as a re-run, would match nothing and the PR would
+ * show the older result. Until then a commit ID it was started on stands in.
+ */
+function builtCommits(b: {
+  resolvedSourceVersion?: string | undefined;
+  sourceVersion?: string | undefined;
+}): string[] {
+  if (b.resolvedSourceVersion) return [b.resolvedSourceVersion];
+  return b.sourceVersion && COMMIT_ID.test(b.sourceVersion) ? [b.sourceVersion] : [];
+}
+
 export function createCiApi(options: { region?: string; profile?: string }): CiApi {
   const config = clientConfig(options);
   const build = new CodeBuildClient(config);
@@ -72,7 +87,7 @@ export function createCiApi(options: { region?: string; profile?: string }): CiA
           {
             id,
             status: b.buildStatus ?? "",
-            commits: b.resolvedSourceVersion ? [b.resolvedSourceVersion] : [],
+            commits: builtCommits(b),
             startedAt: b.startTime,
             endedAt: b.endTime,
             url: buildUrl(region, b.arn ?? "", project, id),
