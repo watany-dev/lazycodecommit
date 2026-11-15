@@ -95,7 +95,7 @@ lazycc keeps a few files under `~/.local/state/lazycc/`
 | `seen.json` | When you last opened each PR (by region, account and PR id), for the unread marker |
 | `cache.json` | The home screen's last result, shown while it refreshes |
 | `identity.json` | Your ARN per set of credentials (keyed by a hash of the access key ID), from `sts:GetCallerIdentity` |
-| `drafts.json` | Review comments kept as drafts (`Tab` in a comment box) until you post them |
+| `drafts.json` | Review comments kept as drafts (`Tab` in a comment box) until you post them, per PR (by region, account and PR id) |
 
 The directory and files are created readable only by you (`0700` / `0600`).
 They are safe to delete, except that deleting `drafts.json` loses drafts you
