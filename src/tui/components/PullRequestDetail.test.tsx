@@ -8168,12 +8168,12 @@ describe("PullRequestDetail", () => {
     });
 
     it("fits the screen in a short terminal with the file list open", async () => {
-      const differences = Array.from({ length: 30 }, (_, i) => ({
+      const files = Array.from({ length: 30 }, (_, i) => ({
         afterBlob: { blobId: `x${i}`, path: `file${i}.txt` },
       }));
       const screen = renderDetail({
-        differences,
-        diffTexts: new Map(differences.map((_, i) => [`:x${i}`, { before: "", after: "x\n" }])),
+        differences: files,
+        diffTexts: new Map(files.map((_, i) => [`:x${i}`, { before: "", after: "x\n" }])),
       });
       Object.defineProperty(screen.stdout, "rows", { value: 30, configurable: true });
       await press(screen, "j", "f");

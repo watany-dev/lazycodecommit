@@ -5474,6 +5474,43 @@ describe("App", () => {
       expect(screen.lastFrame()).toContain("event of 43");
       expect(screen.lastFrame()).not.toContain("event of 42");
     });
+    it.each([
+      ["answered", (d: ReturnType<typeof createDeferred<unknown>>) => d.resolve({ events: [] })],
+      ["refused", (d: ReturnType<typeof createDeferred<unknown>>) => d.reject(new Error("late"))],
+    ])("drops a next page %s after the timeline was opened again", async (_, settleSlow) => {
+      setupPRListAndDetail();
+      const event = (description: string) => ({
+        eventDate: new Date("2026-02-13T10:00:00Z"),
+        eventType: "PULL_REQUEST_CREATED",
+        actorArn: "arn:aws:iam::123456789012:user/watany",
+        description,
+      });
+      const slow = createDeferred<unknown>();
+      let firstPages = 0;
+      vi.mocked(getPullRequestActivity).mockImplementation(async ({ nextToken }) => {
+        if (nextToken === "t1") {
+          await slow.promise;
+          return { events: [event("stale page two")] };
+        }
+        firstPages++;
+        return { events: [event(`first page ${firstPages}`)], nextToken: "t1" };
+      });
+
+      const screen = render(<App service={svc} repository="my-service" start={null} />);
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("fix: login timeout"));
+      await press(screen, "\r");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR #42"));
+      await press(screen, "A");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("first page 1"));
+      await press(screen, "n", "q", "A");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("first page 2"));
+
+      settleSlow(slow);
+      await settle();
+      expect(screen.lastFrame()).toContain("first page 2");
+      expect(screen.lastFrame()).not.toContain("stale page two");
+      expect(screen.lastFrame()).not.toContain("Failed to load activity");
+    });
   });
 
   describe("starting on one pull request", () => {

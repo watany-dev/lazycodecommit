@@ -101,7 +101,7 @@ const lineArrays = fc.array(fc.constantFrom("a", "b", "c", "d", ""), { maxLength
 const fileOf = (l: string[]) => (l.length === 0 ? "" : `${l.join("\n")}\nx`);
 
 /** The diff rows of one modified file shown with at most `limit` lines (undefined: all). */
-function diffRows(before: string[], after: string[], limit?: number): string[] {
+function shownRows(before: string[], after: string[], limit?: number): string[] {
   const differences: Difference[] = [
     { beforeBlob: { blobId: "b", path: "f" }, afterBlob: { blobId: "a", path: "f" } },
   ];
@@ -124,8 +124,8 @@ describe("buildDisplayLines truncation", () => {
   it("shows a prefix of the whole diff", () => {
     fc.assert(
       fc.property(lineArrays, lineArrays, fc.nat(80), (before, after, limit) => {
-        const all = diffRows(before, after);
-        const shown = diffRows(before, after, limit);
+        const all = shownRows(before, after);
+        const shown = shownRows(before, after, limit);
         expect(shown).toEqual(all.slice(0, shown.length));
       }),
       { numRuns: 2000 },
@@ -135,7 +135,7 @@ describe("buildDisplayLines truncation", () => {
   it("does not mark an unchanged line as deleted when the cut falls after an added line", () => {
     const before = ["one", "two", "three", "four"];
     const after = ["new", ...before];
-    expect(diffRows(before, after, 4)).not.toContain("-two|2|undefined");
+    expect(shownRows(before, after, 4)).not.toContain("-two|2|undefined");
   });
 });
 
@@ -149,7 +149,7 @@ describe("buildDisplayLines comments", () => {
         fc.boolean(),
         (parts, inline) => {
           const content = parts.join("\n");
-          const thread = {
+          const commented = {
             location: inline
               ? { filePath: "f", filePosition: 1, relativeFileVersion: "AFTER" as const }
               : null,
@@ -160,7 +160,7 @@ describe("buildDisplayLines comments", () => {
             new Map([[":a", { before: "", after: "line\n" }]]),
             new Map([[":a", "loaded" as const]]),
             new Map(),
-            [thread],
+            [commented],
             new Map(),
             new Map(),
           );
