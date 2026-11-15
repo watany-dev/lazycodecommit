@@ -5,6 +5,8 @@ import type { MergeStrategy } from "../../core/review.js";
 interface Props {
   sourceRef: string;
   destRef: string;
+  /** Where the cursor starts: the config's pr.mergeOption. */
+  initial?: MergeStrategy | undefined;
   onSelect: (strategy: MergeStrategy) => void;
   onCancel: () => void;
 }
@@ -15,8 +17,13 @@ const STRATEGIES: { key: MergeStrategy; label: string }[] = [
   { key: "three-way", label: "Three-way merge" },
 ];
 
-export function MergeStrategySelector({ sourceRef, destRef, onSelect, onCancel }: Props) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+export function MergeStrategySelector({ sourceRef, destRef, initial, onSelect, onCancel }: Props) {
+  const [selectedIndex, setSelectedIndex] = useState(() =>
+    Math.max(
+      0,
+      STRATEGIES.findIndex((s) => s.key === initial),
+    ),
+  );
 
   useInput((input, key) => {
     if (input === "j" || key.downArrow) {

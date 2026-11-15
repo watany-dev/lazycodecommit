@@ -61,7 +61,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
 | lazycc pr comment [id] | PR にコメントする。本文は -b、-F、端末ではエディタ。閉じた PR にもコメントできる | ID 指定で可 |
 | lazycc pr approve [id] | 承認する。--revoke で取り消す | ID 指定で可 |
-| lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つを必ず指定する。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
+| lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つで指定する。省略したときは設定の pr.mergeOption を使い、それもなければエラーにする。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
 | lazycc pr close [id] | マージせずに閉じる | ID 指定で可 |
 | lazycc branch | ブランチ×PR 対応表を開く | 可 |
 | lazycc browse [repo] | clone なしでコードを読む | 可 |
@@ -346,6 +346,8 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 }
 ```
 
+- pr.mergeOption("ff"、"squash"、"three-way")は、pr merge でフラグを省略したときの方式と、レビュー画面のマージで最初に選ばれている方式になる。
+
 ### プロファイルとリージョンの優先順位
 - --profile、--region フラグ。
 - clone 内では git remote URL から読み取った値。
@@ -450,7 +452,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 
 ## 決定事項
 
-仕様書の初版で未決だった8つの論点の結論。詳細と根拠は各 ADR にある。
+仕様書の初版で未決だった8つの論点と、その後に決めたことの結論。詳細と根拠は各 ADR にある。
 
 | 論点 | 結論 | ADR |
 |---|---|---|
@@ -462,3 +464,4 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | 未読判定の検証 | フェーズ3の完了条件として実機で確認する | [0006](../adr/0006-unread-detection.md) |
 | CI 結果の表示 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
 | コメントの下書き一括投稿 | フェーズ1〜4に入れない | [0007](../adr/0007-out-of-phase-features.md) |
+| マージ方式の既定値 | フラグがなければ設定の `pr.mergeOption` を使う | [0008](../adr/0008-merge-option-default.md) |

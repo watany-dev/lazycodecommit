@@ -694,7 +694,11 @@ export function App({ service, repository, start, onExit }: AppProps) {
           inlineComment={postInlineCommentAction}
           reply={postReplyAction}
           approval={{ ...approvalAction, approvals, evaluation: approvalEvaluation }}
-          merge={{ ...mergeAction, onCheckConflicts: handleCheckConflicts }}
+          merge={{
+            ...mergeAction,
+            onCheckConflicts: handleCheckConflicts,
+            preferred: service.mergeStrategy,
+          }}
           close={closePRAction}
           commitView={{
             commits,
