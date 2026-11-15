@@ -26,7 +26,7 @@ import {
   UpdatePullRequestApprovalStateCommand,
   UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
-import { MERGE_COMMANDS, type MergeStrategy } from "./codecommit.js";
+import { clientConfig, MERGE_COMMANDS, type MergeStrategy } from "./codecommit.js";
 import { mapLimit } from "./mapLimit.js";
 
 const textDecoder = new TextDecoder();
@@ -67,14 +67,7 @@ export interface PullRequestDetail {
 }
 
 export function createClient(config: CodeCommitConfig): CodeCommitClient {
-  return new CodeCommitClient({
-    ...(config.region && { region: config.region }),
-    ...(config.profile && { profile: config.profile }),
-    requestHandler: {
-      requestTimeout: 10_000,
-      connectionTimeout: 5_000,
-    },
-  });
+  return new CodeCommitClient(clientConfig(config));
 }
 
 export async function listPullRequests(

@@ -23,7 +23,12 @@ import {
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, describe, expect, it } from "vitest";
-import { createCodeCommitApi, type PullRequest, toPullRequest } from "./codecommit.js";
+import {
+  clientConfig,
+  createCodeCommitApi,
+  type PullRequest,
+  toPullRequest,
+} from "./codecommit.js";
 import { mapLimit } from "./mapLimit.js";
 
 const cc = mockClient(CodeCommitClient);
@@ -56,6 +61,24 @@ const sdkPr = (id: string, extra: object = {}) => ({
 });
 
 const pr: PullRequest = toPullRequest(sdkPr("7"));
+
+describe("clientConfig", () => {
+  it("gives every client the same timeouts, with region and profile when set", () => {
+    const timeouts = {
+      requestHandler: {
+        requestTimeout: 10_000,
+        connectionTimeout: 5_000,
+        throwOnRequestTimeout: true,
+      },
+    };
+    expect(clientConfig({ region: "eu-west-1", profile: "dev" })).toEqual({
+      region: "eu-west-1",
+      profile: "dev",
+      ...timeouts,
+    });
+    expect(clientConfig({})).toEqual(timeouts);
+  });
+});
 
 describe("toPullRequest", () => {
   it("flattens the first target", () => {

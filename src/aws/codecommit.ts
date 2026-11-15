@@ -169,18 +169,31 @@ export function toPullRequest(pr: SdkPullRequest | undefined): PullRequest {
   };
 }
 
-export function createCodeCommitApi(options: { region?: string; profile?: string }): CodeCommitApi {
-  const clientConfig = {
+/** Every client, CLI and TUI alike: an unreachable endpoint fails in seconds instead of hanging. */
+export function clientConfig(options: {
+  region?: string | undefined;
+  profile?: string | undefined;
+}) {
+  return {
     ...(options.region ? { region: options.region } : {}),
     ...(options.profile ? { profile: options.profile } : {}),
+    requestHandler: {
+      requestTimeout: 10_000,
+      connectionTimeout: 5_000,
+      throwOnRequestTimeout: true,
+    },
   };
-  const client = new CodeCommitClient(clientConfig);
+}
+
+export function createCodeCommitApi(options: { region?: string; profile?: string }): CodeCommitApi {
+  const config = clientConfig(options);
+  const client = new CodeCommitClient(config);
 
   return {
     region: () => client.config.region(),
 
     async callerArn() {
-      const sts = new STSClient({ ...clientConfig, region: await client.config.region() });
+      const sts = new STSClient({ ...config, region: await client.config.region() });
       const out = await sts.send(new GetCallerIdentityCommand({}));
       if (!out.Arn) throw new Error("sts:GetCallerIdentity returned no ARN");
       return out.Arn;
