@@ -38,28 +38,24 @@ function lineEndingsNote(before: Text, after: Text, sameBlob: boolean): string |
 /**
  * A file with a binary side is one line instead of a diff: its size, both
  * sizes, or "text" for the side of a file that became binary or stopped being.
+ * A blob that did not change (a rename or a mode change) shows one size.
  */
 function toTexts(
   diff: Difference,
   before: BlobContent | undefined,
   after: BlobContent | undefined,
 ): BlobTexts {
+  const sameBlob = diff.beforeBlob?.blobId === diff.afterBlob?.blobId;
   if ((!before || "text" in before) && (!after || "text" in after)) {
     const texts = { before: before?.text ?? "", after: after?.text ?? "" };
-    const sameBlob = diff.beforeBlob?.blobId === diff.afterBlob?.blobId;
     const note = before && after && lineEndingsNote(before, after, sameBlob);
     return note ? { ...texts, note } : texts;
   }
-  let sizes: string;
-  if (before && after) {
-    sizes =
-      "binarySize" in before && "binarySize" in after
-        ? `${before.binarySize} → ${after.binarySize} bytes`
-        : `${describe(before)} → ${describe(after)}`;
-  } else {
-    sizes = describe((before ?? after)!);
-  }
-  return { before: "", after: "", note: `(binary file, ${sizes})` };
+  const sides =
+    before && after && !sameBlob
+      ? `${describe(before)} → ${describe(after)}`
+      : describe((before ?? after)!);
+  return { before: "", after: "", note: `(binary file, ${sides})` };
 }
 
 async function loadBlobPair(

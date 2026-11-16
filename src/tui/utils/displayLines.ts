@@ -241,13 +241,8 @@ export function buildDisplayLines(
       }
       // Only files that actually have inline threads pay the per-line lookup cost.
       const fileThreads = inlineThreadsByFile.get(filePath);
-      for (const dl of diffLines) {
-        lines.push(dl);
-
-        if (!fileThreads) continue;
-        const matchingEntries = findMatchingThreadEntries(fileThreads, dl);
-        if (!matchingEntries) continue;
-        for (const { thread, index: threadIdx } of matchingEntries) {
+      const appendThreads = (entries: ThreadEntry[]) => {
+        for (const { thread, index: threadIdx } of entries) {
           appendThreadLines(
             lines,
             thread,
@@ -258,6 +253,21 @@ export function buildDisplayLines(
             reactionsByComment,
           );
         }
+      };
+      for (const dl of diffLines) {
+        lines.push(dl);
+
+        if (!fileThreads) continue;
+        const matchingEntries = findMatchingThreadEntries(fileThreads, dl);
+        if (matchingEntries) appendThreads(matchingEntries);
+      }
+      // A binary file has no line to anchor a thread to: its threads go under its note.
+      if (fileThreads && texts.note && totalLines === 0) {
+        appendThreads(
+          [...fileThreads.before.values(), ...fileThreads.after.values()]
+            .flat()
+            .toSorted((a, b) => a.index - b.index),
+        );
       }
       if (totalLines > displayLimit) {
         const moreCount = Math.min(DIFF_CHUNK_SIZE, totalLines - displayLimit);

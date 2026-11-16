@@ -1042,10 +1042,9 @@ function getLocationFromLine(line: DisplayLine): InlineLocation | null {
     };
   }
 
-  /* v8 ignore start -- diff lines always have line numbers */
+  // A note or placeholder row under a file's name: no line to comment on.
   return null;
 }
-/* v8 ignore stop */
 
 /** The diff row an inline draft was written on, or -1 when it is not shown. */
 function findDraftLine(lines: DisplayLine[], draft: CommentDraft): number {

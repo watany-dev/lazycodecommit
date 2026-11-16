@@ -245,6 +245,11 @@ describe("buildDisplayLines line endings", () => {
   });
 });
 
+const pngThread = (id: string, version: "BEFORE" | "AFTER", filePosition: number) => ({
+  location: { filePath: "logo.png", filePosition, relativeFileVersion: version },
+  comments: [{ commentId: id, content: id, authorArn: "arn:aws:iam::1:user/alice" }],
+});
+
 describe("buildDisplayLines notes", () => {
   it("shows a file's note under its header, on a line that takes no inline comment", () => {
     const differences: Difference[] = [{ afterBlob: { blobId: "a", path: "logo.png" } }];
@@ -269,6 +274,28 @@ describe("buildDisplayLines notes", () => {
       filePath: "logo.png",
       diffKey: ":a",
     });
+  });
+
+  it("shows inline threads on a file with no lines (binary) under its note, in thread order", () => {
+    const lines = buildDisplayLines(
+      [
+        {
+          beforeBlob: { blobId: "b", path: "logo.png" },
+          afterBlob: { blobId: "a", path: "logo.png" },
+        },
+      ],
+      new Map([["b:a", { before: "", after: "", note: "(binary file, 4 bytes → 5 bytes)" }]]),
+      new Map([["b:a", "loaded" as const]]),
+      new Map(),
+      [pngThread("first", "AFTER", 3), pngThread("second", "BEFORE", 1)],
+      new Map(),
+      NO_REACTIONS,
+    );
+    expect(lines.slice(2, 5).map((l) => l.text)).toEqual([
+      "(binary file, 4 bytes → 5 bytes)",
+      "💬 alice: first",
+      "💬 alice: second",
+    ]);
   });
 });
 

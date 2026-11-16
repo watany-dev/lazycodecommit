@@ -247,7 +247,11 @@ describe("binary files", () => {
   it("shows both sizes of a modified binary file", async () => {
     expect(
       await textsOf({ beforeBlob: { blobId: "png1" }, afterBlob: { blobId: "png2" } }),
-    ).toEqual(shown("(binary file, 1200 → 1350 bytes)"));
+    ).toEqual(shown("(binary file, 1200 bytes → 1350 bytes)"));
+    // A rename or a mode change keeps the blob.
+    expect(
+      await textsOf({ beforeBlob: { blobId: "png1" }, afterBlob: { blobId: "png1" } }),
+    ).toEqual(shown("(binary file, 1200 bytes)"));
   });
 
   it("shows a file that became binary, or stopped being, without diffing its text side", async () => {

@@ -430,10 +430,10 @@ describe("App", () => {
       <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} />,
     );
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(binary file, 1200 → 1350 bytes)");
+      expect(lastFrame()).toContain("(binary file, 1200 bytes → 1350 bytes)");
     });
     await press(stdin, "j", "j");
-    expect(lastFrame()).toMatch(/> .*\(binary file, 1200 → 1350 bytes\)/);
+    expect(lastFrame()).toMatch(/> .*\(binary file, 1200 bytes → 1350 bytes\)/);
     await press(stdin, "C");
     expect(lastFrame()).not.toContain("Inline comment on");
   });
