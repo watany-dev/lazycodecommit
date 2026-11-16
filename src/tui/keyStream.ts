@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 
 // One key: a CSI or SS3 sequence, Alt plus a key, a lone Esc, or one code point.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal input is control characters
@@ -52,8 +53,10 @@ export function keyStream(source: Source): Source {
     // too short under load, when Ink's useInput still waited for a passive effect.
     setTimeout(next, 0);
   };
+  // A read can end inside a character's UTF-8 bytes; the decoder keeps them for the next one.
+  const decoder = new StringDecoder("utf8");
   const onData = (data: Buffer | string) => {
-    queue.push(...deliveries(typeof data === "string" ? data : data.toString("utf8")));
+    queue.push(...deliveries(typeof data === "string" ? data : decoder.write(data)));
     if (!waiting) next();
   };
   return Object.assign(stream, {

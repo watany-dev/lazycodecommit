@@ -93,6 +93,24 @@ describe("keyStream", () => {
     expect(t.source.unref).toHaveBeenCalled();
   });
 
+  it("keeps a character whose UTF-8 bytes arrive in two reads", async () => {
+    const t = terminal();
+    const stdin = keyStream(t.source as unknown as NodeJS.ReadStream);
+    const app = render(
+      <KeysProvider>
+        <Counter />
+      </KeysProvider>,
+      { stdin, stdout: t.stdout as unknown as NodeJS.WriteStream, debug: true },
+    );
+    // 日 is three bytes and 本 three more: the first read ends inside 本.
+    const bytes = Buffer.from("日本");
+    t.source.write(bytes.subarray(0, 4));
+    await new Promise((r) => setTimeout(r, 20));
+    t.source.write(bytes.subarray(4));
+    await vi.waitFor(() => expect(t.frame()).toContain("typed=日本"), { timeout: 2000 });
+    app.unmount();
+  });
+
   it("takes a lone Esc and the key after it as two keys", async () => {
     // Ink holds a lone Esc until the next turn, to tell it from the start of a
     // sequence; the next key must not reach it in time to make an Alt chord.
