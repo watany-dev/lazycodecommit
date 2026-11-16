@@ -1,7 +1,7 @@
 import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { settle } from "../../testing/keys.js";
+import { press, settle } from "../../testing/keys.js";
 import { COMMENT_MAX_LENGTH, CommentInput } from "./CommentInput.js";
 
 describe("CommentInput", () => {
@@ -79,6 +79,44 @@ describe("CommentInput", () => {
       // Counter should still show max, not max+1
       expect(lastFrame()).toContain(`${COMMENT_MAX_LENGTH}/${COMMENT_MAX_LENGTH}`);
     });
+  });
+
+  it("cuts a paste that goes past the limit at the cursor, and says so", async () => {
+    const onSubmit = vi.fn();
+    const screen = render(
+      <CommentInput
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isPosting={false}
+        error={null}
+        onClearError={vi.fn()}
+        initialValue={`${"a".repeat(COMMENT_MAX_LENGTH - 3)}z`}
+      />,
+    );
+    // ← puts the cursor before z; the paste fits two code units, so the emoji
+    // (two units) after "b" does not fit and is not split.
+    await press(screen, "\u001b[D", "b😀cdefghijk");
+    expect(screen.lastFrame()).toContain("cut to 10240 characters");
+    expect(screen.lastFrame()).toContain(`${COMMENT_MAX_LENGTH - 1}/${COMMENT_MAX_LENGTH}`);
+    await press(screen, "\r");
+    expect(onSubmit).toHaveBeenCalledWith(`${"a".repeat(COMMENT_MAX_LENGTH - 3)}bz`);
+  });
+
+  it("drops the note at the next edit", async () => {
+    const screen = render(
+      <CommentInput
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isPosting={false}
+        error={null}
+        onClearError={vi.fn()}
+        initialValue={"a".repeat(COMMENT_MAX_LENGTH)}
+      />,
+    );
+    await press(screen, "x");
+    expect(screen.lastFrame()).toContain("cut to 10240 characters");
+    await press(screen, "\u007f");
+    expect(screen.lastFrame()).not.toContain("cut to");
   });
 
   it("calls onCancel on Escape key", async () => {

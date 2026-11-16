@@ -1069,6 +1069,44 @@ async function draftTokens() {
   );
 }
 
+/**
+ * #99: CommentInput (COMMENT_MAX_LENGTH) counts UTF-16 code units, so it lets
+ * through 10,240 ASCII or Japanese characters and 5,120 emoji (2 units each),
+ * and stops at 10,241. Whether CodeCommit counts the same way is unknown.
+ */
+async function commentLimits() {
+  const t = (await getPr(state.pr1))?.pullRequestTargets?.[0];
+  if (!t) return record("comment.limit", "Comment length limit", "SKIP", "PR 1 unreadable");
+  const cases = [
+    ["ascii-10240", "10,240 ASCII characters", "a".repeat(10240), true],
+    ["ascii-10241", "10,241 ASCII characters", "a".repeat(10241), false],
+    ["japanese-10240", "10,240 Japanese characters (30,720 UTF-8 bytes)", "あ".repeat(10240), true],
+    ["emoji-5120", "5,120 emoji (10,240 UTF-16 units, 20,480 bytes)", "😀".repeat(5120), true],
+  ];
+  for (const [id, what, content, fits] of cases) {
+    const r = await api(
+      "PostCommentForPullRequest (limit)",
+      new cc.PostCommentForPullRequestCommand({
+        pullRequestId: state.pr1,
+        repositoryName: repoName,
+        beforeCommitId: t.destinationCommit,
+        afterCommitId: t.sourceCommit,
+        content,
+      }),
+    );
+    // Accepted but stored shorter would mean CodeCommit cuts instead of refusing.
+    const kept = r.ok && r.out.comment?.content === content;
+    record(
+      `comment.limit.${id}`,
+      `A comment of ${what}: lazycc ${fits ? "lets it through" : "stops it"} (tui/components/CommentInput.tsx)`,
+      r.ok === fits && (!r.ok || kept) ? "PASS" : "DIFF",
+      r.ok
+        ? `accepted, stored ${kept ? "whole" : `as ${r.out.comment?.content?.length} UTF-16 units`}`
+        : ok(r),
+    );
+  }
+}
+
 async function merges() {
   const dir = state.seed;
   if (!state.pr2) return record("merge", "Merge checks", "SKIP", "no second PR");
@@ -1760,6 +1798,7 @@ try {
   await merges();
   await failures();
   await ciResults();
+  await commentLimits();
   await close();
   await renames();
 } catch (error) {

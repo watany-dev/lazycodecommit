@@ -69,12 +69,19 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+// lazycc assumes CodeCommit counts UTF-16 units, as CommentInput does (#99).
+function checkSize(content) {
+  if (content.length > 10240)
+    throw new ApiError("CommentContentSizeLimitExceededException", "comment too long");
+}
+
 export function startMockServer(gitRoot) {
   mkdirSync(gitRoot, { recursive: true });
   const repos = new Map();
   const prs = new Map();
   const comments = [];
   const postComment = (input, c) => {
+    checkSize(input.content);
     const pr = prOf(input.pullRequestId);
     const comment = newComment(input.content, c.caller.arn);
     comments.push({ ...input, comment });
@@ -91,6 +98,7 @@ export function startMockServer(gitRoot) {
   const postReply = ({ inReplyTo, content }, c) => {
     const parent = comments.find((x) => x.comment.commentId === inReplyTo);
     if (!parent) throw new ApiError("CommentDoesNotExistException", "no such comment");
+    checkSize(content);
     const comment = { ...newComment(content, c.caller.arn), inReplyTo };
     comments.push({ ...parent, comment });
     touch(prOf(parent.pullRequestId), "PULL_REQUEST_COMMENT", c.caller.arn);
