@@ -34,7 +34,7 @@ lazycc runs without any configuration. Everything here is optional.
 | `pr.template` | string | `.codecommit/pull_request_template.md` | PR body template for `pr create`, relative to the clone's root |
 | `pr.mergeOption` | `"ff"`, `"squash"` or `"three-way"` | none | The merge strategy `pr merge` uses when given none of `--ff`, `--squash`, `--three-way`, and the one selected first in the review screen's merge picker. Without it, `pr merge` needs a flag |
 | `branch.closedPrLookback` | positive integer | 100 | How many recent closed PRs the branch table checks to tell whether a branch was merged |
-| `concurrency` | positive integer | 8 | How many API calls run at once when reading many repositories or PRs |
+| `concurrency` | positive integer | 8 | How many CodeCommit API calls run at once for one profile and region, counted across everything a screen or command reads in parallel (home, `status`, the branch table, browse, `pr` commands). The review screen's own reads and CI lookups (CodeBuild, CodePipeline) are not counted |
 | `ci.<repo>.codebuild`, `ci.<repo>.codepipeline` | arrays of strings | none | CodeBuild projects and CodePipeline pipelines whose runs are the repository's CI results. See [CI results](#ci-results) |
 
 A config file that is not valid JSON, or has a value of the wrong type, stops

@@ -22,7 +22,7 @@ import {
   UpdatePullRequestStatusCommand,
 } from "@aws-sdk/client-codecommit";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
-import { mapLimit } from "./mapLimit.js";
+import { limiter, mapLimit } from "./mapLimit.js";
 
 export type PullRequestStatus = "OPEN" | "CLOSED";
 
@@ -187,9 +187,24 @@ export function clientConfig(options: {
   };
 }
 
-export function createCodeCommitApi(options: { region?: string; profile?: string }): CodeCommitApi {
+/**
+ * `concurrency` caps the calls this client has in flight, across every caller
+ * at once: the config's `concurrency` is a promise about the wire, which
+ * screens that fan out several lists in parallel would otherwise multiply. A
+ * call holds its slot through the SDK's retries and their backoff.
+ */
+export function createCodeCommitApi(options: {
+  region?: string;
+  profile?: string;
+  concurrency: number;
+}): CodeCommitApi {
   const config = clientConfig(options);
   const client = new CodeCommitClient(config);
+  const run = limiter(options.concurrency);
+  client.middlewareStack.add((next) => (args) => run(() => next(args)), {
+    step: "initialize",
+    name: "lazyccConcurrency",
+  });
 
   return {
     region: () => client.config.region(),

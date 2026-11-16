@@ -1,4 +1,5 @@
 import React from "react";
+import stringWidth from "string-width";
 import { describe, expect, it, vi } from "vitest";
 import { press, render, settle } from "../../testing/keys.js";
 import { PullRequestList } from "./PullRequestList.js";
@@ -483,5 +484,22 @@ describe("PullRequestList", () => {
       expect(frame).toMatch(/> #\d+/);
     }
     expect(screen.lastFrame()).toContain("> #25");
+  });
+
+  it("keeps long titles to one row each in an 80x24 terminal", async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({
+      pullRequestId: String(i + 1),
+      title: `${"日本語のタイトル".repeat(6)} ${i + 1}`,
+      authorArn: "arn:aws:iam::1:user/u",
+      creationDate: new Date("2026-02-13T10:00:00Z"),
+      status: "OPEN" as const,
+    }));
+    const screen = render(<PullRequestList {...defaultProps} pullRequests={many} />);
+    Object.defineProperty(screen.stdout, "columns", { value: 80, configurable: true });
+    await press(screen, "j");
+    const rows = screen.lastFrame()!.split("\n");
+    expect(rows.length).toBeLessThanOrEqual(24);
+    for (const row of rows) expect(stringWidth(row)).toBeLessThanOrEqual(80);
+    expect(screen.lastFrame()).toMatch(/> #2 /);
   });
 });

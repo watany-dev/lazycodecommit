@@ -245,6 +245,60 @@ describe("buildDisplayLines line endings", () => {
   });
 });
 
+const pngThread = (id: string, version: "BEFORE" | "AFTER", filePosition: number) => ({
+  location: { filePath: "logo.png", filePosition, relativeFileVersion: version },
+  comments: [{ commentId: id, content: id, authorArn: "arn:aws:iam::1:user/alice" }],
+});
+
+describe("buildDisplayLines notes", () => {
+  it("shows a file's note under its header, on a line that takes no inline comment", () => {
+    const differences: Difference[] = [{ afterBlob: { blobId: "a", path: "logo.png" } }];
+    const lines = buildDisplayLines(
+      differences,
+      new Map([[":a", { before: "", after: "", note: "(binary file, 4 bytes)" }]]),
+      new Map([[":a", "loaded" as const]]),
+      new Map(),
+      [],
+      new Map(),
+      NO_REACTIONS,
+    );
+    expect(lines.map((l) => l.text)).toEqual([
+      "logo.png",
+      expect.any(String),
+      "(binary file, 4 bytes)",
+      "",
+    ]);
+    expect(lines[2]).toEqual({
+      type: "context",
+      text: "(binary file, 4 bytes)",
+      filePath: "logo.png",
+      diffKey: ":a",
+    });
+  });
+
+  it("shows inline threads on a file with no lines (binary) under its note, in thread order", () => {
+    const lines = buildDisplayLines(
+      [
+        {
+          beforeBlob: { blobId: "b", path: "logo.png" },
+          afterBlob: { blobId: "a", path: "logo.png" },
+        },
+      ],
+      new Map([["b:a", { before: "", after: "", note: "(binary file, 4 bytes → 5 bytes)" }]]),
+      new Map([["b:a", "loaded" as const]]),
+      new Map(),
+      [pngThread("first", "AFTER", 3), pngThread("second", "BEFORE", 1)],
+      new Map(),
+      NO_REACTIONS,
+    );
+    expect(lines.slice(2, 5).map((l) => l.text)).toEqual([
+      "(binary file, 4 bytes → 5 bytes)",
+      "💬 alice: first",
+      "💬 alice: second",
+    ]);
+  });
+});
+
 describe("buildDisplayLines file paths", () => {
   it("makes control characters in a path visible in its header, and keeps the path for the API", () => {
     const path = "a\x1b]52;c;aGk=\x07.txt";

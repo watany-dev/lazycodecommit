@@ -1,7 +1,7 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useApp } from "ink";
 import React, { useEffect, useRef, useState } from "react";
-import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
+import { type BlobTexts, blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import type { Checks } from "../core/checks.js";
 import {
   type CommentDraft,
@@ -14,6 +14,7 @@ import {
   newDraft,
   postAnyway,
   reanchor,
+  type StoredDrafts,
   submitDrafts,
 } from "../core/commentDrafts.js";
 import {
@@ -107,9 +108,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const [prDetail, setPrDetail] = useState<PullRequest | null>(null);
   const [prDifferences, setPrDifferences] = useState<Difference[]>([]);
   const [commentThreads, setCommentThreads] = useState<CommentThread[]>([]);
-  const [diffTexts, setDiffTexts] = useState<Map<string, { before: string; after: string }>>(
-    new Map(),
-  );
+  const [diffTexts, setDiffTexts] = useState<Map<string, BlobTexts>>(new Map());
   const [diffTextStatus, setDiffTextStatus] = useState<Map<string, "loading" | "loaded" | "error">>(
     new Map(),
   );
@@ -134,9 +133,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [commitDifferences, setCommitDifferences] = useState<Difference[]>([]);
-  const [commitDiffTexts, setCommitDiffTexts] = useState<
-    Map<string, { before: string; after: string }>
-  >(new Map());
+  const [commitDiffTexts, setCommitDiffTexts] = useState<Map<string, BlobTexts>>(new Map());
   const [isLoadingCommitDiff, setIsLoadingCommitDiff] = useState(false);
 
   const detailLoadRef = useRef(0);
@@ -151,6 +148,9 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const draftsRef = useRef<readonly CommentDraft[]>([]);
   const draftsForRef = useRef<string | null>(null);
   const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  // Kept for the session: the moved file is the user's to look at.
+  const [draftsSetAside, setDraftsSetAside] = useState<string | null>(null);
+  const [draftsHidden, setDraftsHidden] = useState(0);
   const [isPostingDrafts, setIsPostingDrafts] = useState(false);
   const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -166,17 +166,22 @@ export function App({ service, repository, start, onExit }: AppProps) {
     draftsRef.current = next;
     setDrafts(next);
     try {
-      const saved = (await service.drafts?.save(key, next)) ?? next;
+      const stored = await service.drafts?.save(key, next);
       setDraftSaveError(null);
-      if (draftsForRef.current === key) {
-        draftsRef.current = saved;
-        setDrafts(saved);
-      }
-      return saved;
+      if (!stored) return next;
+      if (draftsForRef.current === key) showStored(stored);
+      return stored.drafts;
     } catch (err) {
       setDraftSaveError(formatErrorMessage(err));
       throw err;
     }
+  }
+
+  function showStored(stored: StoredDrafts) {
+    draftsRef.current = stored.drafts;
+    setDrafts(stored.drafts);
+    setDraftsHidden(stored.hidden);
+    if (stored.setAside) setDraftsSetAside(stored.setAside);
   }
 
   /** Edits from the screen: a failed write shows in the header, the drafts stay in memory. */
@@ -196,13 +201,12 @@ export function App({ service, repository, start, onExit }: AppProps) {
     draftsForRef.current = key;
     draftsRef.current = [];
     setDrafts([]);
+    setDraftsHidden(0);
     setDraftError(null);
     if (!service.drafts) return;
     try {
-      const list = await service.drafts.load(key);
-      if (draftsForRef.current !== key) return;
-      draftsRef.current = list;
-      setDrafts(list);
+      const stored = await service.drafts.load(key);
+      if (draftsForRef.current === key) showStored(stored);
     } catch (err) {
       setDraftSaveError(formatErrorMessage(err));
     }
@@ -223,8 +227,14 @@ export function App({ service, repository, start, onExit }: AppProps) {
       const old = tipOf(prDetail);
       moved =
         old?.afterCommitId !== tip.afterCommitId || old?.beforeCommitId !== tip.beforeCommitId;
-      const lineAt = await lineReader(draftsRef.current, tip, detail.differences, (blobId) =>
-        service.getBlobContent(selectedRepo, blobId),
+      const lineAt = await lineReader(
+        draftsRef.current,
+        tip,
+        detail.differences,
+        async (blobId) => {
+          const blob = await service.getBlobContent(selectedRepo, blobId);
+          return "text" in blob ? blob.text : undefined;
+        },
       );
       const anchored = await storeDrafts(key, reanchor(draftsRef.current, tip, lineAt));
       const result = await submitDrafts(anchored, {
@@ -558,7 +568,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
       // Background: blob texts (batched so each arrival does not rebuild all lines)
       type BlobUpdate =
-        | { key: string; status: "loaded"; texts: { before: string; after: string } }
+        | { key: string; status: "loaded"; texts: BlobTexts }
         | { key: string; status: "error" };
       const blobBatcher = createBatcher<BlobUpdate>((updates) => {
         /* v8 ignore next -- stale-load guard hard to test deterministically */
@@ -859,6 +869,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
           drafts={{
             list: drafts,
             saveError: draftSaveError,
+            setAside: draftsSetAside,
+            hidden: draftsHidden,
             add: addDraft,
             edit: (id, content) =>
               changeDrafts((list) => list.map((d) => (d.id === id ? editDraft(d, content) : d))),

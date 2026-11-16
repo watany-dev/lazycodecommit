@@ -158,7 +158,7 @@ describe("mapLimit", () => {
 });
 
 describe("createCodeCommitApi", () => {
-  const api = createCodeCommitApi({ region: "ap-northeast-1", profile: "dev" });
+  const api = createCodeCommitApi({ region: "ap-northeast-1", profile: "dev", concurrency: 8 });
 
   it("passes region and profile to the client", async () => {
     cc.on(GetRepositoryCommand).resolves({ repositoryMetadata: { defaultBranch: "main" } });
@@ -166,7 +166,7 @@ describe("createCodeCommitApi", () => {
     expect(cc.commandCalls(GetRepositoryCommand)[0]?.args[0].input).toEqual({
       repositoryName: "demo",
     });
-    expect(await createCodeCommitApi({}).defaultBranch("demo")).toBe("main");
+    expect(await createCodeCommitApi({ concurrency: 8 }).defaultBranch("demo")).toBe("main");
   });
 
   it("reports the region the client resolved", async () => {

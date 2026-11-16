@@ -1,11 +1,11 @@
 import { Box, Text, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import React, { useEffect, useMemo, useState } from "react";
 import type { PullRequestDisplayStatus, PullRequestSummary } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 import { windowStart } from "./FilterLine.js";
+import { TextField } from "./TextField.js";
 
 interface PaginationViewState {
   currentPage: number;
@@ -175,13 +175,13 @@ export function PullRequestList({
       {isSearching && (
         <Box marginBottom={1}>
           <Text>Search: </Text>
-          <TextInput value={searchQuery} onChange={onChangeSearchQuery} />
+          <TextField value={searchQuery} onChange={onChangeSearchQuery} />
         </Box>
       )}
 
       {/* PR list header */}
       <Box marginBottom={1}>
-        <Text bold>
+        <Text bold wrap="truncate">
           {label} Pull Requests{searchQuery ? ` matching "${searchQuery}"` : ""} (
           {filteredPullRequests.length}):
         </Text>
@@ -201,7 +201,7 @@ export function PullRequestList({
           const index = top + i;
           return (
             <Box key={pr.pullRequestId}>
-              <Text {...(index === cursor ? { color: "green" as const } : {})}>
+              <Text {...(index === cursor ? { color: "green" as const } : {})} wrap="truncate">
                 {index === cursor ? "> " : "  "}#{pr.pullRequestId} {statusBadge(pr.status)}
                 {pr.title}
                 {"  "}

@@ -115,6 +115,7 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | clone URL が `core/remote.ts` の形にあうか、呼び出し元 ARN の形 | `core/remote.ts`、`core/inbox.ts` |
 | push の後に、新しい先端の組で `GetCommentsForPullRequest` を呼んでも push 前のコメントが返るか（返らなければレビュー画面から消える） | `aws/review.ts` getComments |
 | rename したファイルを `GetDifferences` がどう返すか、その変更前側へのコメントを旧パス・新パスのどちらで受けるか、手で: コンソールがどちらをどこに出すか | `tui/components/PullRequestDetail.tsx` getLocationFromLine、`core/commentDrafts.ts` lineReader |
+| 10,240 文字の ASCII・日本語、5,120 個の絵文字（UTF-16 で 10,240）のコメントが通り、10,241 文字が拒否されるか（上限が何で数えるか） | `tui/components/CommentInput.tsx` COMMENT_MAX_LENGTH、#99 |
 | 151 文字のタイトルが拒否されるか、3 バイト文字 150 文字が通るか（上限が文字数か） | `core/pr.ts` checkLengths |
 | 手で: トークンを何日覚えているか（自動では確かめない。日をまたいだ再試行で二重投稿しないかは使って確かめる） | ADR 0009 |
 | 手で: コンソール URL（PR、browse、短い ID）、BEFORE 側インラインコメントの行、GovCloud・中国リージョンの URL | #8、#10、#22、#23 |

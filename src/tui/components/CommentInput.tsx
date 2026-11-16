@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
 import React, { useState } from "react";
 import { useKeys } from "../hooks/useKeys.js";
+import { TextField } from "./TextField.js";
 
 interface Props {
   onSubmit: (content: string) => void;
@@ -32,6 +32,7 @@ export function CommentInput({
   onDraft,
 }: Props) {
   const [value, setValue] = useState(initialValue);
+  const [cut, setCut] = useState(false);
 
   useKeys((_input, key) => {
     if (error) {
@@ -50,10 +51,11 @@ export function CommentInput({
     }
   });
 
-  function handleChange(newValue: string) {
-    if (newValue.length <= COMMENT_MAX_LENGTH) {
-      setValue(newValue);
-    }
+  // A paste past the limit keeps what fits and says so; the user can still
+  // edit what is left before posting it.
+  function handleChange(newValue: string, wasCut: boolean) {
+    setValue(newValue);
+    setCut(wasCut);
   }
 
   function handleSubmit(text: string) {
@@ -86,8 +88,18 @@ export function CommentInput({
       <Text bold>{label}</Text>
       <Box>
         <Text>&gt; </Text>
-        <TextInput value={value} onChange={handleChange} onSubmit={handleSubmit} />
+        <TextField
+          value={value}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          maxLength={COMMENT_MAX_LENGTH}
+        />
       </Box>
+      {cut && (
+        <Text color="yellow">
+          The text went past the limit and was cut to {COMMENT_MAX_LENGTH} characters.
+        </Text>
+      )}
       <Text dimColor>
         Enter submit{onDraft ? " Tab save as draft" : ""} Esc cancel ({value.trim().length}/
         {COMMENT_MAX_LENGTH})

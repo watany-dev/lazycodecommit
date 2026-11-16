@@ -1,6 +1,8 @@
 import React from "react";
+import stringWidth from "string-width";
 import { describe, expect, it, vi } from "vitest";
 import type { MergeStrategy } from "../../core/review.js";
+import { printable } from "../../core/text.js";
 import { press, render, settle } from "../../testing/keys.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { PullRequestDetail } from "./PullRequestDetail.js";
@@ -5039,7 +5041,7 @@ describe("PullRequestDetail", () => {
         expect(lastFrame()).toContain("[Commit 1/3]");
       });
       expect(lastFrame()).toContain("aaa1234");
-      expect(lastFrame()).toContain("Fix input validation");
+      expect(lastFrame()).toContain("Fix input validation watany ");
       expect(onLoadCommitDiff).toHaveBeenCalledWith(0);
     });
 
@@ -8119,6 +8121,113 @@ describe("PullRequestDetail", () => {
       await press(screen, "G");
       expect(frame().length).toBeLessThanOrEqual(24);
       expect(frame().some((l) => /^ *>/.test(l))).toBe(true);
+    });
+
+    it("makes room for a long conflict-check error of several lines", async () => {
+      const text = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
+      const message = `first line\n${"word ".repeat(40)}\nlast line`;
+      const screen = renderDetail({
+        differences: [{ afterBlob: { blobId: "x", path: "a.txt" } }],
+        diffTexts: new Map([[":x", { before: "", after: text }]]),
+        merge: { ...defaultMergeProps, onCheckConflicts: vi.fn().mockRejectedValue(message) },
+      });
+      Object.defineProperty(screen.stdout, "rows", { value: 24, configurable: true });
+      Object.defineProperty(screen.stdout, "columns", { value: 80, configurable: true });
+      await press(screen, "m", "\r");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("last line"));
+      expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(24);
+    });
+
+    it("counts the key line's rows as it wraps at word breaks, at every width", async () => {
+      const text = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
+      const commit = {
+        commitId: "c",
+        shortId: "c",
+        message: "m",
+        authorName: "a",
+        authorDate: new Date(),
+      };
+      const screen = renderDetail({
+        differences: [{ afterBlob: { blobId: "x", path: "a.txt" } }],
+        diffTexts: new Map([[":x", { before: "", after: text }]]),
+        commitView: { ...defaultCommitProps, commits: [commit] },
+      });
+      Object.defineProperty(screen.stdout, "rows", { value: 24, configurable: true });
+      // At 74 columns the words take three rows where the characters fit in two.
+      for (const columns of [26, 50, 74, 120]) {
+        Object.defineProperty(screen.stdout, "columns", { value: columns, configurable: true });
+        await press(screen, "j", "k");
+        expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(24);
+      }
+    });
+
+    // Ink wraps a row wider than the terminal, and measures a tab as zero
+    // columns where a terminal draws up to eight: either way the frame grows
+    // past the screen and Ink can no longer redraw it in place.
+    describe.each([
+      ["long ASCII", (i: number) => `${"x".repeat(200)} ${i}`],
+      ["Japanese", (i: number) => `${"日本語のとても長い行".repeat(10)} ${i}`],
+      ["emoji", (i: number) => `${"🎉".repeat(60)} ${i}`],
+      ["tabs", (i: number) => `${"\t".repeat(12)}tab ${i}`],
+    ])("%s lines in an 80x24 terminal", (_name, lineOf) => {
+      const longText = Array.from({ length: 100 }, (_, i) => lineOf(i + 1)).join("\n");
+      const sized = (screen: ReturnType<typeof render>) => {
+        Object.defineProperty(screen.stdout, "rows", { value: 24, configurable: true });
+        Object.defineProperty(screen.stdout, "columns", { value: 80, configurable: true });
+        return () => screen.lastFrame()!.split("\n");
+      };
+      const fits = (rows: string[]) => {
+        expect(rows.length).toBeLessThanOrEqual(24);
+        for (const row of rows) {
+          expect(row).not.toContain("\t");
+          expect(stringWidth(row)).toBeLessThanOrEqual(80);
+        }
+        expect(rows.some((l) => /^ *>/.test(l))).toBe(true);
+      };
+
+      it("keeps the diff to one row per line, with the cursor marker shown", async () => {
+        const screen = renderDetail({
+          differences: [{ afterBlob: { blobId: "x", path: "a.txt" } }],
+          diffTexts: new Map([[":x", { before: "", after: longText }]]),
+        });
+        const frame = sized(screen);
+        await press(screen, "j", "j", "j");
+        fits(frame());
+        await press(screen, "G");
+        fits(frame());
+      });
+
+      it("keeps comments, the title and the branch names to one row each", async () => {
+        const long = lineOf(0);
+        const screen = renderDetail({
+          pullRequest: {
+            ...pullRequest,
+            // As the review service hands it over: a title is one line.
+            title: printable(long),
+            pullRequestTargets: [
+              {
+                sourceReference: `refs/heads/${"s".repeat(60)}`,
+                destinationReference: `refs/heads/${"d".repeat(60)}`,
+              },
+            ],
+          },
+          differences: [{ afterBlob: { blobId: "x", path: "a.txt" } }],
+          diffTexts: new Map([[":x", { before: "", after: "one\ntwo" }]]),
+          commentThreads: Array.from({ length: 30 }, (_, i) => ({
+            location: null,
+            comments: [
+              { commentId: `c${i}`, authorArn: "arn:aws:iam::1:user/a", content: long },
+              { commentId: `r${i}`, authorArn: "arn:aws:iam::1:user/b", content: long },
+            ],
+          })),
+        });
+        const frame = sized(screen);
+        await press(screen, "j");
+        fits(frame());
+        await press(screen, "G");
+        fits(frame());
+        expect(screen.lastFrame()).toContain("└ b: ");
+      });
     });
 
     it("replies to the author of a comment from any of its lines", async () => {

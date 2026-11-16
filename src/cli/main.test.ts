@@ -137,10 +137,12 @@ describe("top level", () => {
 describe("context and errors", () => {
   it("passes region and profile from the remote and flags to the SDK", async () => {
     const r = await cli(["pr", "list", "--profile", "p"]);
-    expect(r.apiOptions).toEqual([{ region: "ap-northeast-1", profile: "p" }]);
+    expect(r.apiOptions).toEqual([{ region: "ap-northeast-1", profile: "p", concurrency: 8 }]);
     expect((await cli(["pr", "list", "-R", "x", "--region", "us-west-2"])).apiOptions).toEqual([
-      { region: "us-west-2" },
+      { region: "us-west-2", concurrency: 8 },
     ]);
+    const capped = await cli(["pr", "list"], { config: { concurrency: 3 } });
+    expect(capped.apiOptions).toEqual([{ region: "ap-northeast-1", concurrency: 3 }]);
   });
 
   it("uses the SDK's region for URLs when none was given", async () => {
@@ -980,7 +982,7 @@ describe("clone", () => {
     expect(cloned).toEqual([
       ["https://git-codecommit.us-west-2.amazonaws.com/v1/repos/other", ["dir", "--depth", "1"]],
     ]);
-    expect(r.apiOptions).toEqual([{}]);
+    expect(r.apiOptions).toEqual([{ concurrency: 8 }]);
   });
 
   it("builds a git-remote-codecommit URL from the flags and prints JSON", async () => {
@@ -1041,7 +1043,7 @@ describe("the review screen on a terminal", () => {
       api: fakeApi([pullRequest({ id: "3" })]),
     });
     await r.reviews[0]?.drafts?.save("3", []);
-    expect(await r.reviews[0]?.drafts?.load("3")).toEqual([]);
+    expect(await r.reviews[0]?.drafts?.load("3")).toEqual({ drafts: [], hidden: 0 });
     const b = await cli(["branch"], { interactive: true, state });
     expect(b.tops[0]?.drafts).toBeDefined();
   });
@@ -1282,7 +1284,7 @@ describe("status", () => {
       api: api(),
       config: { repos: ["infra"], region: "eu-west-1" },
     });
-    expect(r.apiOptions).toEqual([{ region: "eu-west-1" }]);
+    expect(r.apiOptions).toEqual([{ region: "eu-west-1", concurrency: 8 }]);
     expect(r.out).toContain("Elsewhere");
   });
 
@@ -1393,7 +1395,7 @@ describe("home", () => {
       interactive: true,
       git: { topLevel: async () => null },
     });
-    expect(r.apiOptions).toEqual([{ profile: "p" }]);
+    expect(r.apiOptions).toEqual([{ profile: "p", concurrency: 8 }]);
     expect((await r.tops[0]?.views.home())?.initial).toBeUndefined();
     expect(r.tops[0]).not.toHaveProperty("cloneRepository");
   });
@@ -1417,7 +1419,7 @@ describe("home", () => {
       // ...while home, as from bare lazycc, uses the config's.
       const home = await top?.views.home();
       expect(home).toMatchObject({ region: "us-west-2", initial: ["a"] });
-      expect(r.apiOptions).toContainEqual({ region: "us-west-2", profile: "cfg" });
+      expect(r.apiOptions).toContainEqual({ region: "us-west-2", profile: "cfg", concurrency: 8 });
       expect(top?.home).toMatchObject({ region: "us-west-2", profile: "cfg" });
     },
   );

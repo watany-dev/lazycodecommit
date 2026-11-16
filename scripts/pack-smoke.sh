@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the packed tarball the way a user would (npm, not Bun) and run its bin:
-# --version from both names, then the SDK and TUI paths (smoke-dist.mjs).
+# --version from both names, then the paths --version never loads (smoke-dist.mjs).
 # Usage: pack-smoke.sh [package.tgz]   (packs the working tree when omitted)
 set -euo pipefail
 
@@ -27,6 +27,6 @@ if [ ! -s "$work/prefix/node_modules/lazycodecommit/dist/THIRD_PARTY_LICENSES.tx
   echo "pack-smoke: the package ships no dist/THIRD_PARTY_LICENSES.txt" >&2
   exit 1
 fi
-# --version loads neither the AWS SDK nor the TUI; this runs both from the package.
+# --version loads neither the AWS SDK nor the TUI; this runs them from the package.
 node "$root/scripts/smoke-dist.mjs" "$work/prefix/node_modules/.bin/lazycc"
 echo "pack-smoke: ok ($(node --version), $want)"

@@ -1,11 +1,11 @@
 import { Box, Text, useApp, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import { useEffect, useState } from "react";
 import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
 import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
 import { HelpScreen, type HelpSection } from "./components/Help.js";
+import { TextField } from "./components/TextField.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { screenErrorText } from "./utils/formatError.js";
@@ -373,7 +373,7 @@ function RefPickerView(props: {
     <>
       <Box>
         <Text>ref: </Text>
-        <TextInput value={picker.input} onChange={props.onInput} />
+        <TextField value={picker.input} onChange={props.onInput} />
       </Box>
       {picker.branches === null ? (
         <Text color="cyan">Loading branches...</Text>

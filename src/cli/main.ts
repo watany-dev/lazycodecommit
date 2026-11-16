@@ -74,7 +74,12 @@ export interface Io {
 export interface Deps {
   readonly io: Io;
   createGit(cwd: string): Git;
-  createApi(options: { region?: string; profile?: string }): Promise<CodeCommitApi>;
+  /** `concurrency` caps the client's calls in flight (docs/configuration.md). */
+  createApi(options: {
+    region?: string;
+    profile?: string;
+    concurrency: number;
+  }): Promise<CodeCommitApi>;
   /** CodeBuild and CodePipeline; loaded only for a repository the config's ci lists (ADR 0010). */
   createCiApi(options: { region?: string; profile?: string }): Promise<CiApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
@@ -379,7 +384,7 @@ async function runCommand(
   const ctx = await resolveContext(input);
   onContext(ctx);
   // The region is for console URLs; resolving it also fails early, with advice, when none is set.
-  const { api, region } = await openAccount(deps, ctx);
+  const { api, region } = await openAccount(deps, ctx, config);
   const prDeps = prDepsFor(io, { git, api, ctx, config });
   const print = (value: unknown) => printJson(io, value);
   const ci = ciClient(deps, region, ctx.profile);
@@ -662,7 +667,7 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
   const { io } = deps;
   const { ctx, config, git } = top;
   const cloneRepo = ctx.clone ? ctx.repository : undefined;
-  const { api, region } = await openAccount(deps, ctx, top.api);
+  const { api, region } = await openAccount(deps, ctx, config, top.api);
   const state = deps.createState(io.env);
   // Home reads the config's repos in the config's account, which a clone of
   // another region or profile does not share.
@@ -670,7 +675,9 @@ async function runTop(top: TopStart, deps: Deps): Promise<number> {
     top.homeCtx && (top.homeCtx.region !== ctx.region || top.homeCtx.profile !== ctx.profile)
       ? top.homeCtx
       : undefined;
-  const homeAccount = homeCtx ? openAccount(deps, homeCtx) : Promise.resolve({ api, region });
+  const homeAccount = homeCtx
+    ? openAccount(deps, homeCtx, config)
+    : Promise.resolve({ api, region });
   const homeRegion = homeAccount.then((a) => a.region);
   // A failure shows when home opens, not before the branch table or browse.
   homeRegion.catch(() => {});
@@ -774,7 +781,7 @@ async function runStatus(
       `No repositories to watch. Add "repos" to ${configPath(io.env)}, run inside a clone, or pass --repo.`,
     );
   }
-  const { api, region } = await openAccount(deps, ctx);
+  const { api, region } = await openAccount(deps, ctx, config);
   const state = deps.createState(io.env);
   const me = await resolveMe(api, state.identity);
   const limit = concurrency(config);
@@ -819,6 +826,7 @@ async function runStatus(
 async function openAccount(
   deps: Deps,
   ctx: { region?: string; profile?: string },
+  config: Config,
   created?: CodeCommitApi,
 ) {
   const api =
@@ -826,6 +834,7 @@ async function openAccount(
     (await deps.createApi({
       ...optional("region", ctx.region),
       ...optional("profile", ctx.profile),
+      concurrency: concurrency(config),
     }));
   return { api, region: ctx.region ?? (await api.region()) };
 }

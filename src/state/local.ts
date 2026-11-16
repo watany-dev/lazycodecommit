@@ -15,16 +15,39 @@ export function stateDir(env: Env): string {
 
 type Obj = Record<string, unknown>;
 
+const asObj = (raw: unknown): Obj | undefined =>
+  typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Obj) : undefined;
+
 /**
- * State files are ours, not the user's: a missing, unreadable or corrupt one
- * reads as empty and is rewritten on the next save (spec: ローカル状態).
+ * Seen marks, the cache and identities are ours, not the user's: a missing,
+ * unreadable or corrupt file reads as empty and is rewritten on the next save
+ * (spec: ローカル状態).
  */
 async function readObject(path: string): Promise<Obj> {
   try {
-    const raw: unknown = JSON.parse(await readFile(path, "utf8"));
-    return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Obj) : {};
+    return asObj(JSON.parse(await readFile(path, "utf8"))) ?? {};
   } catch {
     return {};
+  }
+}
+
+/**
+ * drafts.json holds comments not yet sent, so it is stricter: a missing file
+ * is empty, a corrupt one is undefined (for the caller to move aside), and
+ * one that cannot be read (EACCES, EIO) throws, as nothing is known of it.
+ */
+async function readDraftsFile(path: string): Promise<Obj | undefined> {
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+  try {
+    return asObj(JSON.parse(text));
+  } catch {
+    return undefined;
   }
 }
 
@@ -59,16 +82,30 @@ interface CacheStore {
 }
 
 /**
+ * What a read of drafts.json found. `setAside` is where a file that was not
+ * a JSON object was moved (its name plus `.bad-<time>`) before being read as
+ * empty: the user may want back what it held.
+ */
+export interface DraftsRead<T> {
+  readonly value: T;
+  readonly setAside?: string;
+}
+
+/**
  * Unposted review comments, keyed like seen. Entries are checked by the
- * reader (core/commentDrafts.ts); an empty list removes the key.
+ * reader (core/commentDrafts.ts); an empty list removes the key. A file that
+ * cannot be read rejects both calls and is left as it is.
  */
 interface DraftStore {
-  get(key: string): Promise<unknown>;
+  get(key: string): Promise<DraftsRead<unknown>>;
   /**
    * Replaces the key's list with what `change` makes of the list on disk,
    * read and written under the lock, and returns what was written.
    */
-  update(key: string, change: (current: unknown) => readonly unknown[]): Promise<unknown[]>;
+  update(
+    key: string,
+    change: (current: unknown) => readonly unknown[],
+  ): Promise<DraftsRead<unknown[]>>;
 }
 
 export interface LocalState {
@@ -130,16 +167,25 @@ export function createLocalState(env: Env): LocalState {
   // another screen's section) wrote is kept; the last writer wins per key.
   // Saves from this process run one at a time so none reads a stale file.
   let queue: Promise<unknown> = Promise.resolve();
-  const update = (name: string, change: (o: Obj) => void): Promise<void> => {
-    const run = queue.then(() =>
-      withLock(path(name), async () => {
-        const o = await readObject(path(name));
-        change(o);
-        await writeObject(path(name), o);
-      }),
-    );
+  const locked = <T>(name: string, work: () => Promise<T>): Promise<T> => {
+    const run = queue.then(() => withLock(path(name), work));
     queue = run.catch(() => {});
     return run;
+  };
+  const update = (name: string, change: (o: Obj) => void): Promise<void> =>
+    locked(name, async () => {
+      const o = await readObject(path(name));
+      change(o);
+      await writeObject(path(name), o);
+    });
+  const drafts = path("drafts.json");
+  /** Under the lock: drafts.json, a corrupt one moved aside and read as empty. */
+  const openDrafts = async (): Promise<DraftsRead<Obj>> => {
+    const value = await readDraftsFile(drafts);
+    if (value) return { value };
+    const setAside = `${drafts}.bad-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    await rename(drafts, setAside);
+    return { value: {}, setAside };
   };
   return {
     flush: () => queue.then(() => {}),
@@ -182,17 +228,20 @@ export function createLocalState(env: Env): LocalState {
       async get(key) {
         // A save just made (posting one draft) must be in what is read next.
         await queue;
-        return (await readObject(path("drafts.json")))[key];
+        const o = await readDraftsFile(drafts);
+        if (o) return { value: o[key] };
+        const { value, setAside } = await locked("drafts.json", openDrafts);
+        return { value: value[key], ...(setAside ? { setAside } : {}) };
       },
-      async update(key, change) {
-        let next: readonly unknown[] = [];
-        await update("drafts.json", (o) => {
-          next = change(o[key]);
+      update: (key, change) =>
+        locked("drafts.json", async () => {
+          const { value: o, setAside } = await openDrafts();
+          const next = [...change(o[key])];
           if (next.length === 0) delete o[key];
           else o[key] = next;
-        });
-        return [...next];
-      },
+          await writeObject(drafts, o);
+          return { value: next, ...(setAside ? { setAside } : {}) };
+        }),
     },
     cache: {
       get: async (section) => (await readObject(path("cache.json")))[section],

@@ -10,7 +10,7 @@ const STALE_LOCK_MS = 5_000;
  * between this one's read and its rename and then overwrite what it wrote.
  * The lock is a file created exclusively; no dependency is needed.
  */
-export async function withLock(path: string, work: () => Promise<void>): Promise<void> {
+export async function withLock<T>(path: string, work: () => Promise<T>): Promise<T> {
   const lock = `${path}.lock`;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   for (;;) {
@@ -29,7 +29,7 @@ export async function withLock(path: string, work: () => Promise<void>): Promise
     }
   }
   try {
-    await work();
+    return await work();
   } finally {
     await rm(lock, { force: true });
   }

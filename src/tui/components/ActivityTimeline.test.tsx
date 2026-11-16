@@ -1,5 +1,6 @@
 import { render } from "ink-testing-library";
 import React from "react";
+import stringWidth from "string-width";
 import { describe, expect, it, vi } from "vitest";
 import type { PrActivityEvent } from "../../core/review.js";
 import { settle } from "../../testing/keys.js";
@@ -364,5 +365,25 @@ describe("ActivityTimeline", () => {
     for (let i = 0; i < 49; i++) screen.stdin.write("j");
     await vi.waitFor(() => expect(screen.lastFrame()).toMatch(/> .*event-49/));
     expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(12);
+  });
+
+  it("keeps a long title and long events to one row each in an 80x12 terminal", async () => {
+    const long = `${"日本語の長い説明".repeat(8)} ${"x".repeat(80)}`;
+    const events = Array.from({ length: 50 }, (_, i) => makeEvent({ description: `${i} ${long}` }));
+    const screen = render(
+      <ActivityTimeline {...defaultProps} pullRequestTitle={long} events={events} />,
+    );
+    Object.defineProperty(screen.stdout, "rows", { value: 12, configurable: true });
+    Object.defineProperty(screen.stdout, "columns", { value: 80, configurable: true });
+    screen.rerender(
+      <ActivityTimeline {...defaultProps} pullRequestTitle={long} events={[...events]} />,
+    );
+    await settle();
+    const rows = screen.lastFrame()!.split("\n");
+    expect(rows.length).toBeLessThanOrEqual(12);
+    for (const row of rows) expect(stringWidth(row)).toBeLessThanOrEqual(80);
+    expect(screen.lastFrame()).toMatch(/> 📝 watany +0 日本語/);
+    // The time is cut along with the end of the row.
+    expect(screen.lastFrame()).not.toContain("3h ago");
   });
 });

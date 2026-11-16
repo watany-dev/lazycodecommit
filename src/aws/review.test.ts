@@ -1192,26 +1192,15 @@ describe("evaluateApprovalRules", () => {
 });
 
 describe("getBlobContent", () => {
-  it("decodes blob content", async () => {
-    const encoder = new TextEncoder();
-    mockSend.mockResolvedValueOnce({
-      content: encoder.encode("const x = 1;"),
-    });
-    const content = await getBlobContent("my-service", "blob1");
-    expect(content).toBe("const x = 1;");
+  it("returns the blob's bytes", async () => {
+    const bytes = new TextEncoder().encode("const x = 1;");
+    mockSend.mockResolvedValueOnce({ content: bytes });
+    expect(await getBlobContent("my-service", "blob1")).toBe(bytes);
   });
 
-  it("returns empty string when no content", async () => {
+  it("returns no bytes when there is no content", async () => {
     mockSend.mockResolvedValueOnce({ content: undefined });
-    const content = await getBlobContent("my-service", "blob1");
-    expect(content).toBe("");
-  });
-
-  it("returns placeholder for oversized content (>1MB)", async () => {
-    const largeContent = new Uint8Array(1024 * 1024 + 1);
-    mockSend.mockResolvedValueOnce({ content: largeContent });
-    const content = await getBlobContent("my-service", "blob1");
-    expect(content).toBe("[File too large to display]");
+    expect(await getBlobContent("my-service", "blob1")).toEqual(new Uint8Array());
   });
 });
 
