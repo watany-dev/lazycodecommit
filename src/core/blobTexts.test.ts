@@ -259,3 +259,51 @@ describe("binary files", () => {
     );
   });
 });
+
+describe("line endings", () => {
+  const blobs: Record<string, BlobContent> = {
+    crlf: { text: "a\nb\n", lineEndings: "CRLF" },
+    lf: { text: "a\nb\n", lineEndings: "LF" },
+    mixed1: { text: "a\nb\n", lineEndings: "mixed" },
+    mixed2: { text: "a\nb\n", lineEndings: "mixed" },
+    edited: { text: "a\nc\n", lineEndings: "LF" },
+    oneLine: { text: "a" },
+  };
+  async function textsOf(before: string | undefined, after: string | undefined) {
+    vi.mocked(getBlobContent).mockImplementation(async (_repo, blobId) => blobs[blobId]!);
+    const diff: Difference = {
+      ...(before ? { beforeBlob: { blobId: before } } : {}),
+      ...(after ? { afterBlob: { blobId: after } } : {}),
+    };
+    return (await fetchBlobTexts(mockClient, "my-repo", [diff])).get(blobKey(diff));
+  }
+
+  it("says the line endings changed when that is all that changed", async () => {
+    expect(await textsOf("crlf", "lf")).toEqual({
+      before: "a\nb\n",
+      after: "a\nb\n",
+      note: "(line endings changed: CRLF → LF)",
+    });
+    expect((await textsOf("lf", "crlf"))?.note).toBe("(line endings changed: LF → CRLF)");
+    expect((await textsOf("mixed1", "lf"))?.note).toBe("(line endings changed: mixed → LF)");
+    // Both mixed, but the blobs differ while their texts read the same.
+    expect((await textsOf("mixed1", "mixed2"))?.note).toBe("(line endings changed)");
+  });
+
+  it("says so above the diff when the lines changed as well", async () => {
+    expect(await textsOf("crlf", "edited")).toEqual({
+      before: "a\nb\n",
+      after: "a\nc\n",
+      note: "(line endings changed: CRLF → LF)",
+    });
+  });
+
+  it("says nothing for an added or deleted file, a file with no line break, or the same blob", async () => {
+    expect((await textsOf(undefined, "crlf"))?.note).toBeUndefined();
+    expect((await textsOf("crlf", undefined))?.note).toBeUndefined();
+    expect((await textsOf("oneLine", "crlf"))?.note).toBeUndefined();
+    // A mode change keeps the blob.
+    expect((await textsOf("mixed1", "mixed1"))?.note).toBeUndefined();
+    expect((await textsOf("lf", "edited"))?.note).toBeUndefined();
+  });
+});

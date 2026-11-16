@@ -14,16 +14,37 @@ import { printable } from "./text.js";
 
 export type { SeenPr };
 
-/** A blob as the diff shows it: its text, display-safe, or only the size of a binary file. */
-export type BlobContent = { readonly text: string } | { readonly binarySize: number };
+type LineEndings = "LF" | "CRLF" | "mixed";
+
+/**
+ * A blob as the diff shows it: its text, display-safe with CRLF made LF, and
+ * the line endings it had (none for text with no line break); or only the size
+ * of a binary file.
+ */
+export type BlobContent =
+  | { readonly text: string; readonly lineEndings?: LineEndings }
+  | { readonly binarySize: number };
 
 const MAX_BLOB_SIZE = 1024 * 1024; // 1MB limit for TUI display
 const textDecoder = new TextDecoder();
 
+function lineEndings(text: string): LineEndings | undefined {
+  let lf = 0;
+  let crlf = 0;
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) {
+    lf++;
+    if (text[i - 1] === "\r") crlf++;
+  }
+  if (lf === 0) return undefined;
+  return crlf === 0 ? "LF" : crlf === lf ? "CRLF" : "mixed";
+}
+
 function blobContent(bytes: Uint8Array): BlobContent {
   if (isBinary(bytes)) return { binarySize: bytes.byteLength };
   if (bytes.byteLength > MAX_BLOB_SIZE) return { text: "[File too large to display]" };
-  return { text: printable(textDecoder.decode(bytes), true) };
+  const text = textDecoder.decode(bytes);
+  const endings = lineEndings(text);
+  return { text: printable(text, true), ...(endings ? { lineEndings: endings } : {}) };
 }
 
 /** What the review screen calls: aws/review.ts's calls, and what the screen is given besides. */

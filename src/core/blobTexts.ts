@@ -20,13 +20,35 @@ export function blobKey(diff: Difference): string {
 
 const describe = (b: BlobContent) => ("text" in b ? "text" : `${b.binarySize} bytes`);
 
+type Text = Extract<BlobContent, { text: string }>;
+
+/**
+ * The texts compare with CRLF made LF, so a change of line endings alone
+ * leaves no changed line. Two mixed files whose texts read the same can only
+ * differ in which lines end in CRLF.
+ */
+function lineEndingsNote(before: Text, after: Text, sameBlob: boolean): string | undefined {
+  const [from, to] = [before.lineEndings, after.lineEndings];
+  if (!from || !to) return undefined;
+  if (from !== to) return `(line endings changed: ${from} → ${to})`;
+  if (from === "mixed" && before.text === after.text && !sameBlob) return "(line endings changed)";
+  return undefined;
+}
+
 /**
  * A file with a binary side is one line instead of a diff: its size, both
  * sizes, or "text" for the side of a file that became binary or stopped being.
  */
-function toTexts(before: BlobContent | undefined, after: BlobContent | undefined): BlobTexts {
+function toTexts(
+  diff: Difference,
+  before: BlobContent | undefined,
+  after: BlobContent | undefined,
+): BlobTexts {
   if ((!before || "text" in before) && (!after || "text" in after)) {
-    return { before: before?.text ?? "", after: after?.text ?? "" };
+    const texts = { before: before?.text ?? "", after: after?.text ?? "" };
+    const sameBlob = diff.beforeBlob?.blobId === diff.afterBlob?.blobId;
+    const note = before && after && lineEndingsNote(before, after, sameBlob);
+    return note ? { ...texts, note } : texts;
   }
   let sizes: string;
   if (before && after) {
@@ -52,7 +74,7 @@ async function loadBlobPair(
     beforeBlobId ? service.getBlobContent(repoName, beforeBlobId) : undefined,
     afterBlobId ? service.getBlobContent(repoName, afterBlobId) : undefined,
   ]);
-  return { key, texts: toTexts(before, after) };
+  return { key, texts: toTexts(diff, before, after) };
 }
 
 export async function fetchBlobTexts(

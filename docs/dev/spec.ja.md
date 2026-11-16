@@ -275,8 +275,9 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 
 インラインコメントの位置は、取得元にかかわらず CodeCommit の filePath、filePosition、relativeFileVersion(BEFORE / AFTER)に対応させる。
 
-### diff にしないファイル
+### 行の diff に出ない変更
 取得元にかかわらず同じに扱う。
+- 改行は CRLF を LF にそろえてから比べる。行番号とインラインコメントの位置はそろえた後の行で数える(CRLF でも 1 行は 1 行)。改行だけが変わると変わった行がなくなるため、両側に改行があって改行の種類が変わったファイルは、ファイル名の下に `(line endings changed: CRLF → LF)` の 1 行を出す(種類は LF、CRLF、mixed)。両側とも mixed で行の中身が同じなら `(line endings changed)` と出す。行の中身も変わっていれば、この行の下に diff を続ける。単独の CR は改行として扱わず ^M と出す。
 - バイナリ(先頭 8000 バイトに NUL がある。ファイル表示と同じ判定)は diff を出さず、ファイル名の下に `(binary file, 1200 bytes)` の 1 行だけを出す。変更なら `(binary file, 1200 → 1350 bytes)`、テキストとの間で変わったなら `(binary file, text → 1200 bytes)` のように片側を text と書く。この行にはインラインコメントを付けられない。
 - 1 MB を超えるテキストは中身の代わりに `[File too large to display]` を出す。
 

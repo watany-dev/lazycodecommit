@@ -220,7 +220,10 @@ describe("text written by other people", () => {
       ],
     });
     const local = createReviewService(fakeApi(), git);
-    expect(await local.getBlobContent("demo", "b")).toEqual({ text: `${SHOWN}\nx` });
+    expect(await local.getBlobContent("demo", "b")).toEqual({
+      text: `${SHOWN}\nx`,
+      lineEndings: "CRLF",
+    });
     expect(await local.getCommitsForPR("demo", "s", "m")).toMatchObject([
       { message: SHOWN, authorName: SHOWN },
     ]);
@@ -229,6 +232,13 @@ describe("text written by other people", () => {
     expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({ text: SHOWN });
   });
 });
+
+/** A blob from the API with these bytes, as the review screen gets it. */
+async function read(raw: string) {
+  api = fakeApi();
+  vi.mocked(api.getBlobContent).mockResolvedValueOnce(Buffer.from(raw));
+  return createReviewService(api).getBlobContent("demo", "b");
+}
 
 describe("blob contents", () => {
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
@@ -239,6 +249,14 @@ describe("blob contents", () => {
     api = fakeApi();
     vi.mocked(api.getBlobContent).mockResolvedValueOnce(PNG);
     expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({ binarySize: 10 });
+  });
+
+  it("says which line endings a text blob had before CRLF became LF", async () => {
+    expect(await read("a\r\nb\r\n")).toEqual({ text: "a\nb\n", lineEndings: "CRLF" });
+    expect(await read("a\nb")).toEqual({ text: "a\nb", lineEndings: "LF" });
+    expect(await read("a\r\nb\n")).toEqual({ text: "a\nb\n", lineEndings: "mixed" });
+    // A lone CR is not a line break: it shows as ^M and leaves the line count alone.
+    expect(await read("a\rb")).toEqual({ text: "a^Mb" });
   });
 
   it("says a large text blob is too large, but still knows a large binary one", async () => {
