@@ -388,6 +388,7 @@ D で下書きの一覧を開き、その中の S でまとめて投稿する(�
 
 - ci はリポジトリ名をキーに、CI 結果を読む CodeBuild プロジェクト(codebuild)と CodePipeline のパイプライン(codepipeline)を並べる。
 - pr.mergeOption("ff"、"squash"、"three-way")は、pr merge でフラグを省略したときの方式と、レビュー画面のマージで最初に選ばれている方式になる。
+- concurrency は、ひとつのプロファイルとリージョンについて同時に飛ばす CodeCommit API 呼び出しの上限。画面やコマンドが並列に読むもの(ブランチ表のブランチの先頭・open PR・closed PR・承認ルール、ホームの PR・承認ルール・コンフリクト)を合わせて数え、SDK の再試行とその待ちの間も枠を占める。レビュー画面の読み込みと CI の参照(CodeBuild、CodePipeline)は数えない。
 
 ### プロファイルとリージョンの優先順位
 - --profile、--region フラグ。

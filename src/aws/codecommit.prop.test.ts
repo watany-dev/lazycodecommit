@@ -31,7 +31,7 @@ describe("listPullRequestIds", () => {
               ...(end < total ? { nextToken: String(end) } : {}),
             };
           });
-          const api = createCodeCommitApi({ region: "us-east-1" });
+          const api = createCodeCommitApi({ region: "us-east-1", concurrency: 8 });
           // A service that keeps returning empty pages would never end; cap it.
           if (pageSizes.every((s) => s === 0) && total > 0) return;
           const ids = await api.listPullRequestIds("demo", "OPEN", limit);
