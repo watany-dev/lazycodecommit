@@ -87,6 +87,15 @@ function setAt(root: unknown, path: (string | number)[], v: unknown): unknown {
 }
 
 describe("the home screen's cache", () => {
+  it("is dropped when a date in it is not a string, an object with keys included", () => {
+    const saved = toCache(
+      { me: ME, repositories: ["demo"], items: [], errors: [], fetchedAt: new Date() },
+      REGION,
+    ) as Record<string, unknown>;
+    const broken = onDisk({ ...saved, fetchedAt: { toString: null } });
+    expect(fromCache(broken, ME, REGION, ["demo"])).toBeUndefined();
+  });
+
   it("reads back what was saved, through JSON on disk", () => {
     fc.assert(
       fc.property(inbox, (saved) => {
