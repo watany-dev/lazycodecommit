@@ -1,9 +1,10 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { blobKey, fetchBlobTexts, streamBlobTexts } from "./blobTexts.js";
+import { type BlobTexts, blobKey, fetchBlobTexts, streamBlobTexts } from "./blobTexts.js";
+import type { BlobContent } from "./review.js";
 
-const getBlobContent = vi.fn<(repo: string, blobId: string) => Promise<string>>();
+const getBlobContent = vi.fn<(repo: string, blobId: string) => Promise<BlobContent>>();
 const mockClient = { getBlobContent };
 
 beforeEach(() => {
@@ -13,7 +14,7 @@ beforeEach(() => {
 function streamCallbacks(
   overrides: Partial<{
     isStale: () => boolean;
-    onLoaded: (key: string, texts: { before: string; after: string }) => void;
+    onLoaded: (key: string, texts: BlobTexts) => void;
     onError: (key: string) => void;
   }> = {},
 ) {
@@ -40,7 +41,7 @@ describe("blobKey", () => {
 describe("fetchBlobTexts", () => {
   it("fetches before and after blob content for each diff", async () => {
     vi.mocked(getBlobContent).mockImplementation((_repo, blobId) =>
-      Promise.resolve(`content-of-${blobId}`),
+      Promise.resolve({ text: `content-of-${blobId}` }),
     );
 
     const diffs: Difference[] = [
@@ -56,7 +57,7 @@ describe("fetchBlobTexts", () => {
   });
 
   it("handles missing beforeBlob (new file)", async () => {
-    vi.mocked(getBlobContent).mockResolvedValue("new-content");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "new-content" });
 
     const diffs: Difference[] = [{ beforeBlob: undefined, afterBlob: { blobId: "a1" } }];
 
@@ -66,7 +67,7 @@ describe("fetchBlobTexts", () => {
   });
 
   it("handles missing afterBlob (deleted file)", async () => {
-    vi.mocked(getBlobContent).mockResolvedValue("old-content");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "old-content" });
 
     const diffs: Difference[] = [{ beforeBlob: { blobId: "b1" }, afterBlob: undefined }];
 
@@ -92,7 +93,7 @@ describe("fetchBlobTexts", () => {
 
 describe("streamBlobTexts", () => {
   it("calls onLoaded incrementally as each blob pair completes", async () => {
-    const pending = new Map<string, { resolve: (value: string) => void }>();
+    const pending = new Map<string, { resolve: (value: BlobContent) => void }>();
     vi.mocked(getBlobContent).mockImplementation((_repo, blobId) => {
       return new Promise((resolve) => {
         pending.set(blobId, { resolve });
@@ -116,14 +117,14 @@ describe("streamBlobTexts", () => {
       expect(pending.size).toBe(4);
     });
 
-    pending.get("b1")!.resolve("before-1");
-    pending.get("a1")!.resolve("after-1");
+    pending.get("b1")!.resolve({ text: "before-1" });
+    pending.get("a1")!.resolve({ text: "after-1" });
     await vi.waitFor(() => {
       expect(loaded).toEqual(["b1:a1"]);
     });
 
-    pending.get("b2")!.resolve("before-2");
-    pending.get("a2")!.resolve("after-2");
+    pending.get("b2")!.resolve({ text: "before-2" });
+    pending.get("a2")!.resolve({ text: "after-2" });
     await done;
 
     expect(loaded).toEqual(["b1:a1", "b2:a2"]);
@@ -132,7 +133,7 @@ describe("streamBlobTexts", () => {
   it("calls onError with blobKey when a blob fetch fails", async () => {
     vi.mocked(getBlobContent).mockImplementation((_repo, blobId) => {
       if (blobId === "bad") return Promise.reject(new Error("fail"));
-      return Promise.resolve(`content-of-${blobId}`);
+      return Promise.resolve({ text: `content-of-${blobId}` });
     });
 
     const callbacks = streamCallbacks();
@@ -155,7 +156,7 @@ describe("streamBlobTexts", () => {
   it("skips onLoaded and onError when isStale is true", async () => {
     vi.mocked(getBlobContent).mockImplementation((_repo, blobId) => {
       if (blobId === "bad") return Promise.reject(new Error("fail"));
-      return Promise.resolve(`content-of-${blobId}`);
+      return Promise.resolve({ text: `content-of-${blobId}` });
     });
 
     const callbacks = streamCallbacks({ isStale: () => true });
@@ -182,7 +183,7 @@ describe("streamBlobTexts", () => {
 
   it("loads missing before/after blobs as empty strings without fetching them", async () => {
     vi.mocked(getBlobContent).mockImplementation((_repo, blobId) =>
-      Promise.resolve(`content-of-${blobId}`),
+      Promise.resolve({ text: `content-of-${blobId}` }),
     );
 
     const callbacks = streamCallbacks();
@@ -207,7 +208,7 @@ describe("streamBlobTexts", () => {
   });
 
   it("uses blobKey format for callback keys", async () => {
-    vi.mocked(getBlobContent).mockResolvedValue("text");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "text" });
 
     const callbacks = streamCallbacks();
     const diff: Difference = { beforeBlob: { blobId: "before" }, afterBlob: { blobId: "after" } };
@@ -218,5 +219,43 @@ describe("streamBlobTexts", () => {
       before: "text",
       after: "text",
     });
+  });
+});
+
+const shown = (note: string) => ({ before: "", after: "", note });
+
+describe("binary files", () => {
+  const blobs: Record<string, BlobContent> = {
+    png1: { binarySize: 1200 },
+    png2: { binarySize: 1350 },
+    txt: { text: "hello\n" },
+  };
+  async function textsOf(diff: Difference) {
+    vi.mocked(getBlobContent).mockImplementation(async (_repo, blobId) => blobs[blobId]!);
+    return (await fetchBlobTexts(mockClient, "my-repo", [diff])).get(blobKey(diff));
+  }
+
+  it("shows the size of an added or deleted binary file instead of a diff", async () => {
+    expect(await textsOf({ afterBlob: { blobId: "png1" } })).toEqual(
+      shown("(binary file, 1200 bytes)"),
+    );
+    expect(await textsOf({ beforeBlob: { blobId: "png1" } })).toEqual(
+      shown("(binary file, 1200 bytes)"),
+    );
+  });
+
+  it("shows both sizes of a modified binary file", async () => {
+    expect(
+      await textsOf({ beforeBlob: { blobId: "png1" }, afterBlob: { blobId: "png2" } }),
+    ).toEqual(shown("(binary file, 1200 → 1350 bytes)"));
+  });
+
+  it("shows a file that became binary, or stopped being, without diffing its text side", async () => {
+    expect(await textsOf({ beforeBlob: { blobId: "txt" }, afterBlob: { blobId: "png1" } })).toEqual(
+      shown("(binary file, text → 1200 bytes)"),
+    );
+    expect(await textsOf({ beforeBlob: { blobId: "png2" }, afterBlob: { blobId: "txt" } })).toEqual(
+      shown("(binary file, 1350 bytes → text)"),
+    );
   });
 });

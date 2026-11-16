@@ -275,6 +275,11 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 
 インラインコメントの位置は、取得元にかかわらず CodeCommit の filePath、filePosition、relativeFileVersion(BEFORE / AFTER)に対応させる。
 
+### diff にしないファイル
+取得元にかかわらず同じに扱う。
+- バイナリ(先頭 8000 バイトに NUL がある。ファイル表示と同じ判定)は diff を出さず、ファイル名の下に `(binary file, 1200 bytes)` の 1 行だけを出す。変更なら `(binary file, 1200 → 1350 bytes)`、テキストとの間で変わったなら `(binary file, text → 1200 bytes)` のように片側を text と書く。この行にはインラインコメントを付けられない。
+- 1 MB を超えるテキストは中身の代わりに `[File too large to display]` を出す。
+
 ### コメントの下書き
 
 コメントを溜めてまとめて投稿できる。詳細と根拠は [ADR 0009](../adr/0009-comment-drafts.md)。

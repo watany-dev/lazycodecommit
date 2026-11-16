@@ -14,7 +14,7 @@ function fakeApi() {
     })),
     getComments: vi.fn(async () => []),
     getAllDifferences: vi.fn(async () => [{ changeType: "M", afterBlob: { blobId: "api" } }]),
-    getBlobContent: vi.fn(async () => "from api"),
+    getBlobContent: vi.fn(async () => Buffer.from("from api")),
     getCommitsForPR: vi.fn(async () => [{ commitId: "api", message: "m", authorName: "n" }]),
     getPullRequestActivity: vi.fn(async () => ({ events: [] })),
   } as unknown as { [K in keyof ReviewApi]: ReturnType<typeof vi.fn> & ReviewApi[K] };
@@ -140,7 +140,7 @@ describe("createReviewService in a clone", () => {
         ],
       }),
     );
-    expect(await ok.getBlobContent("demo", "b")).toBe("from git");
+    expect(await ok.getBlobContent("demo", "b")).toEqual({ text: "from git" });
     expect(await ok.getAllDifferences("demo", "p", "c")).toHaveLength(1);
     expect(await ok.getCommitsForPR("demo", "src", "mb")).toEqual([
       {
@@ -157,7 +157,7 @@ describe("createReviewService in a clone", () => {
       fakeApi(),
       fakeGit({ blob: fail, diffTree: fail, firstParentLog: fail }),
     );
-    expect(await broken.getBlobContent("demo", "b")).toBe("from api");
+    expect(await broken.getBlobContent("demo", "b")).toEqual({ text: "from api" });
     expect(await broken.getAllDifferences("demo", "p", "c")).toEqual([
       { changeType: "M", afterBlob: { blobId: "api" } },
     ]);
@@ -220,12 +220,36 @@ describe("text written by other people", () => {
       ],
     });
     const local = createReviewService(fakeApi(), git);
-    expect(await local.getBlobContent("demo", "b")).toBe(`${SHOWN}\nx`);
+    expect(await local.getBlobContent("demo", "b")).toEqual({ text: `${SHOWN}\nx` });
     expect(await local.getCommitsForPR("demo", "s", "m")).toMatchObject([
       { message: SHOWN, authorName: SHOWN },
     ]);
     api = fakeApi();
-    vi.mocked(api.getBlobContent).mockResolvedValueOnce(EVIL);
-    expect(await createReviewService(api).getBlobContent("demo", "b")).toBe(SHOWN);
+    vi.mocked(api.getBlobContent).mockResolvedValueOnce(Buffer.from(EVIL));
+    expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({ text: SHOWN });
+  });
+});
+
+describe("blob contents", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+
+  it("gives only the size of a binary blob, from git and from the API", async () => {
+    const local = createReviewService(fakeApi(), fakeGit({ blob: async () => PNG }));
+    expect(await local.getBlobContent("demo", "b")).toEqual({ binarySize: 10 });
+    api = fakeApi();
+    vi.mocked(api.getBlobContent).mockResolvedValueOnce(PNG);
+    expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({ binarySize: 10 });
+  });
+
+  it("says a large text blob is too large, but still knows a large binary one", async () => {
+    api = fakeApi();
+    vi.mocked(api.getBlobContent).mockResolvedValueOnce(Buffer.alloc(1024 * 1024 + 1, 0x41));
+    expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({
+      text: "[File too large to display]",
+    });
+    vi.mocked(api.getBlobContent).mockResolvedValueOnce(Buffer.alloc(1024 * 1024 + 1));
+    expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({
+      binarySize: 1024 * 1024 + 1,
+    });
   });
 });

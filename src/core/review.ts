@@ -7,14 +7,29 @@ import { clientConfig, type MergeStrategy } from "../aws/codecommit.js";
 import * as aws from "../aws/review.js";
 import type { Git, TreeChange } from "../git/git.js";
 import type { SeenPr } from "../state/local.js";
+import { isBinary } from "./browse.js";
 import type { Checks } from "./checks.js";
 import type { DraftStorage } from "./commentDrafts.js";
 import { printable } from "./text.js";
 
 export type { SeenPr };
 
+/** A blob as the diff shows it: its text, display-safe, or only the size of a binary file. */
+export type BlobContent = { readonly text: string } | { readonly binarySize: number };
+
+const MAX_BLOB_SIZE = 1024 * 1024; // 1MB limit for TUI display
+const textDecoder = new TextDecoder();
+
+function blobContent(bytes: Uint8Array): BlobContent {
+  if (isBinary(bytes)) return { binarySize: bytes.byteLength };
+  if (bytes.byteLength > MAX_BLOB_SIZE) return { text: "[File too large to display]" };
+  return { text: printable(textDecoder.decode(bytes), true) };
+}
+
 /** What the review screen calls: aws/review.ts's calls, and what the screen is given besides. */
-export type ReviewService = aws.ReviewApi & {
+export type ReviewService = Omit<aws.ReviewApi, "getBlobContent"> & {
+  readonly getBlobContent: (repositoryName: string, blobId: string) => Promise<BlobContent>;
+
   /** Records that the user opened a PR, for the home screen's unread marks. */
   readonly markSeen?: (pr: SeenPr) => void;
   /** The config's pr.mergeOption: the merge dialog starts on it. */
@@ -42,7 +57,7 @@ export function createReviewService(api: aws.ReviewApi, git?: Git): ReviewServic
   return displaySafe(withGit(api, git));
 }
 
-function withGit(api: aws.ReviewApi, git?: Git): ReviewService {
+function withGit(api: aws.ReviewApi, git?: Git): aws.ReviewApi {
   if (!git) return api;
 
   async function ensureCommits(target: PullRequestTarget): Promise<void> {
@@ -79,7 +94,7 @@ function withGit(api: aws.ReviewApi, git?: Git): ReviewService {
       ),
     getBlobContent: (repositoryName, blobId) =>
       orApi(
-        async () => aws.blobText(await git.blob(blobId)),
+        () => git.blob(blobId),
         () => api.getBlobContent(repositoryName, blobId),
       ),
     getCommitsForPR: (repositoryName, sourceCommit, mergeBase) =>
@@ -113,7 +128,7 @@ function threads(list: aws.CommentThread[]): aws.CommentThread[] {
  * escape sequences through to the terminal. Identifiers such as file paths are
  * left alone, because they are sent back to the API.
  */
-function displaySafe(service: ReviewService): ReviewService {
+function displaySafe(service: aws.ReviewApi): ReviewService {
   return {
     ...service,
     listPullRequests: async (...a) => {
@@ -137,7 +152,7 @@ function displaySafe(service: ReviewService): ReviewService {
       };
     },
     getComments: async (...a) => threads(await service.getComments(...a)),
-    getBlobContent: async (...a) => printable(await service.getBlobContent(...a), true),
+    getBlobContent: async (...a) => blobContent(await service.getBlobContent(...a)),
     getCommitsForPR: async (...a) =>
       (await service.getCommitsForPR(...a)).map((c) => ({
         ...c,

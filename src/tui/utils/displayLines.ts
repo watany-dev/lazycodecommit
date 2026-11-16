@@ -1,5 +1,5 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
-import { blobKey } from "../../core/blobTexts.js";
+import { type BlobTexts, blobKey } from "../../core/blobTexts.js";
 import type { CommentThread, ReactionSummary, ReactionsByComment } from "../../core/review.js";
 import { printable, shortArn } from "../../core/text.js";
 import { computeSimpleDiff, type DisplayLine } from "./formatDiff.js";
@@ -172,7 +172,7 @@ function findMatchingThreadEntries(
 
 export function buildDisplayLines(
   differences: Difference[],
-  diffTexts: Map<string, { before: string; after: string }>,
+  diffTexts: Map<string, BlobTexts>,
   diffTextStatus: Map<string, "loading" | "loaded" | "error">,
   diffLineLimits: Map<string, number>,
   commentThreads: CommentThread[],
@@ -214,6 +214,8 @@ export function buildDisplayLines(
     const status = diffTextStatus.get(key) ?? "loading";
 
     if (texts) {
+      // No line numbers, so no inline comment can be put on it.
+      if (texts.note) lines.push({ type: "context", text: texts.note, filePath, diffKey: key });
       const beforeCount = countLines(texts.before);
       const afterCount = countLines(texts.after);
       const totalLines = beforeCount + afterCount;

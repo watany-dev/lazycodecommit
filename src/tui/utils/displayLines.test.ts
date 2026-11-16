@@ -245,6 +245,33 @@ describe("buildDisplayLines line endings", () => {
   });
 });
 
+describe("buildDisplayLines notes", () => {
+  it("shows a file's note under its header, on a line that takes no inline comment", () => {
+    const differences: Difference[] = [{ afterBlob: { blobId: "a", path: "logo.png" } }];
+    const lines = buildDisplayLines(
+      differences,
+      new Map([[":a", { before: "", after: "", note: "(binary file, 4 bytes)" }]]),
+      new Map([[":a", "loaded" as const]]),
+      new Map(),
+      [],
+      new Map(),
+      NO_REACTIONS,
+    );
+    expect(lines.map((l) => l.text)).toEqual([
+      "logo.png",
+      expect.any(String),
+      "(binary file, 4 bytes)",
+      "",
+    ]);
+    expect(lines[2]).toEqual({
+      type: "context",
+      text: "(binary file, 4 bytes)",
+      filePath: "logo.png",
+      diffKey: ":a",
+    });
+  });
+});
+
 describe("buildDisplayLines file paths", () => {
   it("makes control characters in a path visible in its header, and keeps the path for the API", () => {
     const path = "a\x1b]52;c;aGk=\x07.txt";

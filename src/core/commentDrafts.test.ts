@@ -463,6 +463,11 @@ describe("lineReader", () => {
     expect(lineAt(at("AFTER", "gone.ts"))).toBeUndefined();
     expect(lineAt(at("AFTER", "c.ts", 1))).toBeUndefined();
   });
+
+  it("reads no line in a file that became binary, not even an empty one", async () => {
+    const lineAt = await lineReader([inline()], NEW, files, async () => undefined);
+    expect(lineAt(at("AFTER", "a.ts", 1))).toBeUndefined();
+  });
 });
 
 describe("draftKey", () => {

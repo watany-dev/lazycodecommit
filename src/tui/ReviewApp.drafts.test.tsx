@@ -42,7 +42,7 @@ function setup(stored: CommentDraft[] = [], threads: unknown[] = []) {
   };
   const service = {
     getPullRequestDetail: vi.fn(async () => current),
-    getBlobContent: vi.fn(async (_repo: string, id: string) => current.blobs[id] ?? ""),
+    getBlobContent: vi.fn(async (_repo: string, id: string) => ({ text: current.blobs[id] ?? "" })),
     getComments: vi.fn(async () => []),
     getReactionsForComments: vi.fn(async () => new Map()),
     getCommitsForPR: vi.fn(async () => []),

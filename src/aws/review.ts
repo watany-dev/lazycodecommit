@@ -32,8 +32,6 @@ import { MERGE_COMMANDS, type MergeStrategy } from "./codecommit.js";
 import { markNotSent } from "./errors.js";
 import { mapLimit } from "./mapLimit.js";
 
-const textDecoder = new TextDecoder();
-
 /** Foreground list fetch: 25 IDs at 10-wide is 3 waves instead of 5. */
 const LIST_PULL_REQUEST_CONCURRENCY = 10;
 
@@ -134,14 +132,6 @@ const MERGE_OPTIONS = {
   squash: "SQUASH_MERGE",
   "three-way": "THREE_WAY_MERGE",
 } as const satisfies Record<MergeStrategy, string>;
-
-const MAX_BLOB_SIZE = 1024 * 1024; // 1MB limit for TUI display
-
-/** What the diff view shows for a blob's bytes, from the API or from git. */
-export function blobText(content: Uint8Array): string {
-  if (content.byteLength > MAX_BLOB_SIZE) return "[File too large to display]";
-  return textDecoder.decode(content);
-}
 
 export interface ConflictSummary {
   mergeable: boolean;
@@ -470,9 +460,9 @@ export function createReviewApi(client: CodeCommitClient) {
     return response.evaluation ?? null;
   }
 
-  async function getBlobContent(repositoryName: string, blobId: string): Promise<string> {
+  async function getBlobContent(repositoryName: string, blobId: string): Promise<Uint8Array> {
     const response = await client.send(new GetBlobCommand({ repositoryName, blobId }));
-    return response.content ? blobText(response.content) : "";
+    return response.content ?? new Uint8Array();
   }
 
   async function mergePullRequest(params: {

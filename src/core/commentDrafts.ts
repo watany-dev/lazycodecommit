@@ -143,7 +143,8 @@ export async function lineReader(
   drafts: readonly CommentDraft[],
   tip: Commits,
   files: readonly ChangedFile[],
-  readBlob: (blobId: string) => Promise<string>,
+  /** undefined for a file with no lines to comment on (binary). */
+  readBlob: (blobId: string) => Promise<string | undefined>,
 ): Promise<(location: DraftLocation) => string | undefined> {
   const blobOf = (l: DraftLocation) => {
     const side = (f: ChangedFile) =>
@@ -154,7 +155,8 @@ export async function lineReader(
   for (const d of drafts) {
     if (d.target.kind !== "inline" || sameCommits(d, tip)) continue;
     const blobId = blobOf(d.target.location);
-    if (blobId && !texts.has(blobId)) texts.set(blobId, (await readBlob(blobId)).split("\n"));
+    if (blobId && !texts.has(blobId))
+      texts.set(blobId, (await readBlob(blobId))?.split("\n") ?? []);
   }
   return (l) => {
     const blobId = blobOf(l);

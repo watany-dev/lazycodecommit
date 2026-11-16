@@ -349,8 +349,8 @@ describe("App", () => {
       commentThreads: [],
     });
     vi.mocked(getBlobContent)
-      .mockResolvedValueOnce("const timeout = 3000;")
-      .mockResolvedValueOnce("const timeout = 10000;");
+      .mockResolvedValueOnce({ text: "const timeout = 3000;" })
+      .mockResolvedValueOnce({ text: "const timeout = 10000;" });
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
@@ -394,7 +394,7 @@ describe("App", () => {
       ],
       commentThreads: [],
     });
-    vi.mocked(getBlobContent).mockResolvedValueOnce("const x = 1;");
+    vi.mocked(getBlobContent).mockResolvedValueOnce({ text: "const x = 1;" });
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
@@ -409,6 +409,33 @@ describe("App", () => {
     await vi.waitFor(() => {
       expect(getBlobContent).toHaveBeenCalledWith("my-service", "b2");
     });
+  });
+
+  it("shows a binary file as its size, and takes no inline comment on it", async () => {
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: { pullRequestId: "42", title: "feat: logo", pullRequestTargets: [] },
+      differences: [
+        {
+          beforeBlob: { blobId: "b1", path: "logo.png" },
+          afterBlob: { blobId: "b2", path: "logo.png" },
+        },
+      ],
+      commentThreads: [],
+    });
+    vi.mocked(getBlobContent)
+      .mockResolvedValueOnce({ binarySize: 1200 })
+      .mockResolvedValueOnce({ binarySize: 1350 });
+
+    const { lastFrame, stdin } = render(
+      <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} />,
+    );
+    await vi.waitFor(() => {
+      expect(lastFrame()).toContain("(binary file, 1200 → 1350 bytes)");
+    });
+    await press(stdin, "j", "j");
+    expect(lastFrame()).toMatch(/> .*\(binary file, 1200 → 1350 bytes\)/);
+    await press(stdin, "C");
+    expect(lastFrame()).not.toContain("Inline comment on");
   });
 
   it("shows error when PR detail loading fails", async () => {
@@ -472,7 +499,7 @@ describe("App", () => {
       ],
       commentThreads: [],
     });
-    vi.mocked(getBlobContent).mockResolvedValueOnce("old content");
+    vi.mocked(getBlobContent).mockResolvedValueOnce({ text: "old content" });
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
@@ -521,7 +548,7 @@ describe("App", () => {
       commentThreads: [],
     });
     vi.mocked(getBlobContent)
-      .mockResolvedValueOnce("const timeout = 3000;")
+      .mockResolvedValueOnce({ text: "const timeout = 3000;" })
       .mockRejectedValueOnce(new Error("blob failed"));
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
@@ -1962,8 +1989,8 @@ describe("App", () => {
       commentThreads: [],
     });
     vi.mocked(getBlobContent)
-      .mockResolvedValueOnce("const timeout = 3000;")
-      .mockResolvedValueOnce("const timeout = 10000;");
+      .mockResolvedValueOnce({ text: "const timeout = 3000;" })
+      .mockResolvedValueOnce({ text: "const timeout = 10000;" });
     const accessError = new Error("denied");
     accessError.name = "AccessDeniedException";
     vi.mocked(postComment).mockRejectedValue(accessError);
@@ -2031,8 +2058,8 @@ describe("App", () => {
       commentThreads: [],
     });
     vi.mocked(getBlobContent)
-      .mockResolvedValueOnce("const timeout = 3000;")
-      .mockResolvedValueOnce("const timeout = 10000;");
+      .mockResolvedValueOnce({ text: "const timeout = 3000;" })
+      .mockResolvedValueOnce({ text: "const timeout = 10000;" });
     vi.mocked(postComment).mockResolvedValue({
       commentId: "c1",
       content: "Fix this!",
@@ -2137,7 +2164,7 @@ describe("App", () => {
         },
       ],
     });
-    vi.mocked(getBlobContent).mockResolvedValue("");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "" });
 
     const replyError = new Error("comment not found");
     replyError.name = "CommentDoesNotExistException";
@@ -2219,7 +2246,7 @@ describe("App", () => {
         },
       ],
     });
-    vi.mocked(getBlobContent).mockResolvedValue("");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "" });
     vi.mocked(postCommentReply).mockResolvedValue({
       commentId: "reply-1",
       content: "Will do!",
@@ -2325,7 +2352,7 @@ describe("App", () => {
         },
       ],
     });
-    vi.mocked(getBlobContent).mockResolvedValue("");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "" });
 
     const sizeError = new Error("size limit");
     sizeError.name = "CommentContentSizeLimitExceededException";
@@ -2399,7 +2426,7 @@ describe("App", () => {
         },
       ],
     });
-    vi.mocked(getBlobContent).mockResolvedValue("");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "" });
 
     const emptyError = new Error("empty");
     emptyError.name = "CommentContentRequiredException";
@@ -2473,7 +2500,7 @@ describe("App", () => {
         },
       ],
     });
-    vi.mocked(getBlobContent).mockResolvedValue("");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "" });
 
     const idError = new Error("invalid id");
     idError.name = "InvalidCommentIdException";
@@ -3636,7 +3663,7 @@ describe("App", () => {
         afterBlob: { blobId: "cb2", path: "src/auth.ts" },
       },
     ]);
-    vi.mocked(getBlobContent).mockResolvedValue("content");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "content" });
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
@@ -3721,7 +3748,7 @@ describe("App", () => {
           afterBlob: { blobId: "b2", path: "src/edit.ts" },
         },
       ]);
-    vi.mocked(getBlobContent).mockResolvedValue("content");
+    vi.mocked(getBlobContent).mockResolvedValue({ text: "content" });
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
@@ -3810,11 +3837,11 @@ describe("App", () => {
         },
       ]);
     vi.mocked(getBlobContent).mockImplementation(async (_repo, blobId) => {
-      if (blobId === "commit1-before") return "old first";
-      if (blobId === "commit1-after") return "new first";
-      if (blobId === "commit2-before") return "old second";
-      if (blobId === "commit2-after") return "new second";
-      return "";
+      if (blobId === "commit1-before") return { text: "old first" };
+      if (blobId === "commit1-after") return { text: "new first" };
+      if (blobId === "commit2-before") return { text: "old second" };
+      if (blobId === "commit2-after") return { text: "new second" };
+      return { text: "" };
     });
 
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);

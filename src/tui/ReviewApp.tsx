@@ -1,7 +1,7 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useApp } from "ink";
 import React, { useEffect, useRef, useState } from "react";
-import { blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
+import { type BlobTexts, blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import type { Checks } from "../core/checks.js";
 import {
   type CommentDraft,
@@ -108,9 +108,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const [prDetail, setPrDetail] = useState<PullRequest | null>(null);
   const [prDifferences, setPrDifferences] = useState<Difference[]>([]);
   const [commentThreads, setCommentThreads] = useState<CommentThread[]>([]);
-  const [diffTexts, setDiffTexts] = useState<Map<string, { before: string; after: string }>>(
-    new Map(),
-  );
+  const [diffTexts, setDiffTexts] = useState<Map<string, BlobTexts>>(new Map());
   const [diffTextStatus, setDiffTextStatus] = useState<Map<string, "loading" | "loaded" | "error">>(
     new Map(),
   );
@@ -135,9 +133,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [commitDifferences, setCommitDifferences] = useState<Difference[]>([]);
-  const [commitDiffTexts, setCommitDiffTexts] = useState<
-    Map<string, { before: string; after: string }>
-  >(new Map());
+  const [commitDiffTexts, setCommitDiffTexts] = useState<Map<string, BlobTexts>>(new Map());
   const [isLoadingCommitDiff, setIsLoadingCommitDiff] = useState(false);
 
   const detailLoadRef = useRef(0);
@@ -231,8 +227,14 @@ export function App({ service, repository, start, onExit }: AppProps) {
       const old = tipOf(prDetail);
       moved =
         old?.afterCommitId !== tip.afterCommitId || old?.beforeCommitId !== tip.beforeCommitId;
-      const lineAt = await lineReader(draftsRef.current, tip, detail.differences, (blobId) =>
-        service.getBlobContent(selectedRepo, blobId),
+      const lineAt = await lineReader(
+        draftsRef.current,
+        tip,
+        detail.differences,
+        async (blobId) => {
+          const blob = await service.getBlobContent(selectedRepo, blobId);
+          return "text" in blob ? blob.text : undefined;
+        },
       );
       const anchored = await storeDrafts(key, reanchor(draftsRef.current, tip, lineAt));
       const result = await submitDrafts(anchored, {
@@ -566,7 +568,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
       // Background: blob texts (batched so each arrival does not rebuild all lines)
       type BlobUpdate =
-        | { key: string; status: "loaded"; texts: { before: string; after: string } }
+        | { key: string; status: "loaded"; texts: BlobTexts }
         | { key: string; status: "error" };
       const blobBatcher = createBatcher<BlobUpdate>((updates) => {
         /* v8 ignore next -- stale-load guard hard to test deterministically */
