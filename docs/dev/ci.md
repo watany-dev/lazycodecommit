@@ -6,6 +6,11 @@
 then actionlint, zizmor and Semgrep (through `uvx`; zizmor's online audits need
 `GH_TOKEN`, Semgrep downloads its rules from semgrep.dev).
 
+The property-based tests (fast-check, `*.prop.test.ts` and a few others) run a
+fixed number of cases in CI. `FC_RUNS_SCALE=10 bun run test` runs every
+property ten times as many (explicit `numRuns` and the default 100 alike), with
+the test timeouts scaled to match; use it to look for cases CI's runs miss.
+
 ## Workflows
 
 `ci.yml`, on every PR and push to `main`:
