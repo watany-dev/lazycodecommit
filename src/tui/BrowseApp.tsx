@@ -248,7 +248,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Text bold color="cyan" wrap="truncate">
-        lazycc — browse {actions.repository} @ {ref} : {screenText(where)}
+        lazycc — browse {actions.repository} @ {screenText(ref)} : {screenText(where)}
       </Text>
       {picker ? (
         <RefPickerView
