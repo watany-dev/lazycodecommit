@@ -16,15 +16,17 @@ then actionlint, zizmor and Semgrep (through `uvx`; zizmor's online audits need
 | `Audit (bun audit)`                      | Known advisories in dependencies; also runs daily                                                                                          |
 | `Test (ubuntu-24.04)`, `Test (macos-15)` | Vitest with the coverage gate, on Node 22 (Vitest runs on Node.js, and 22 is the oldest it supports)                                      |
 | `Package`                                | `bun run build` and `npm pack`; uploads the tarball                                                                                        |
-| `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, runs `pr list` from it against a stand-in CodeCommit endpoint (the SDK chunk) and `pr view` with a `ci` config against stand-in CodeBuild and CodePipeline (the CI chunk) and opens and quits the review screen on a pseudo-terminal (the TUI chunk), checks `dist/THIRD_PARTY_LICENSES.txt` ships, gates cold start (median of 15 `--version` runs) at the spec's 300 ms, and fails if the files every command loads contain Ink or React |
+| `Node 20` … `Node 26`                    | Installs that tarball with npm on plain Node.js, runs both bins, runs `pr list` from it against a stand-in CodeCommit endpoint (the SDK chunk), `pr view` with a `ci` config against stand-in CodeBuild and CodePipeline (the CI chunk), `pr create --dry-run` in a throwaway clone with a CodeCommit origin (git), two `status` runs at once against a held and a stale lock (state files), and opens the review screen on a pseudo-terminal, types a key burst and a character split across two reads, and quits (the TUI chunk and raw stdin), checks `dist/THIRD_PARTY_LICENSES.txt` ships, gates cold start (median of 15 `--version` runs) at the spec's 300 ms, and fails if the files every command loads contain Ink or React |
 | `Workflow lint (actionlint)`, `Zizmor`   | Workflow correctness and security; zizmor findings fail the job in its log                                                                 |
 | `Semgrep`                                | `p/default`, fails on findings; SARIF to code scanning except from fork PRs, whose token cannot upload                                     |
 
 The Node jobs are why the package can promise "runs on CloudShell's Node.js
 through npx, no Bun": Bun builds and tests, but nothing in the tarball needs it.
 `scripts/smoke-dist.mjs` (called by `pack-smoke.sh`) is the part that runs the
-bundled SDK and TUI, which `--version` never loads; it needs `python3` for the
-pseudo-terminal, locally too.
+bundled SDK and TUI, which `--version` never loads, and the code that leans on
+`node:` modules (git subprocesses, state files and their locks, raw stdin). On
+Node 20, below Vitest's floor, it is the only test that runs. It needs `git`, and
+`python3` for the pseudo-terminal, locally too.
 
 Every dependency is bundled, so `build.ts` writes the bundled packages' license
 texts to `dist/THIRD_PARTY_LICENSES.txt` and fails when a package ships none;
