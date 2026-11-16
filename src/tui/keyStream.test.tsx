@@ -214,6 +214,19 @@ describe("text fields behind keyStream", () => {
     t.app.unmount();
   });
 
+  it("turns line breaks in a paste into spaces and drops other control characters", async () => {
+    // A long chunk stays whole, Enter and Backspace in it too: they must not
+    // land in the one-line box, nor reach the terminal when it is drawn.
+    const onSubmit = vi.fn();
+    const t = comment(onSubmit);
+    t.source.write("first line\r\nsecond\tline\u007f\u009b2J");
+    await vi.waitFor(() => expect(t.frame()).toContain("> first line second line2J"), {
+      timeout: 2000,
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    t.app.unmount();
+  });
+
   it("edits at the cursor with keys from one chunk", async () => {
     const t = comment();
     // a b ← ← x → Backspace: "xab" with the cursor after a, then a deleted.

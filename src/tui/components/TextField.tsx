@@ -37,11 +37,12 @@ export function TextField({ value, onChange, onSubmit, maxLength = Infinity }: P
       onChange([...chars.slice(0, cursor - 1), ...chars.slice(cursor)].join(""), false);
     } else if (input && !key.ctrl && !key.meta && !key.tab) {
       // Up/Down, Esc, PageUp and the like arrive with no input and belong to the screen.
-      const fits = fit([...input], maxLength - value.length);
+      const typed = [...oneLine(input)];
+      const fits = fit(typed, maxLength - value.length);
       setOffset(cursor + fits.length);
       onChange(
         [...chars.slice(0, cursor), ...fits, ...chars.slice(cursor)].join(""),
-        fits.length < [...input].length,
+        fits.length < typed.length,
       );
     }
   });
@@ -53,6 +54,17 @@ export function TextField({ value, onChange, onSubmit, maxLength = Infinity }: P
       {chars.slice(cursor + 1).join("")}
     </Text>
   );
+}
+
+/**
+ * A paste arrives whole, Enter, Tab and Backspace in it included (keyStream
+ * keeps a long chunk together). Line breaks and tabs become spaces in the one-line
+ * box; other control characters would move the terminal's cursor when drawn.
+ */
+function oneLine(input: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: finding them is the point
+  // oxlint-disable-next-line no-control-regex -- finding them is the point
+  return input.replace(/\r\n|[\r\n\t]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "");
 }
 
 /** The leading characters that fit in room code units; a character is never split. */
