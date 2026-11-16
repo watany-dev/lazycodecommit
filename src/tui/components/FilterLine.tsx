@@ -1,6 +1,6 @@
 import { Box, type Key, Text } from "ink";
-import TextInput from "ink-text-input";
 import React, { useState } from "react";
+import { TextField } from "./TextField.js";
 
 /** The "/" filter of a list screen: typing narrows, Enter keeps it, Esc clears it. */
 export function useFilter() {
@@ -29,7 +29,7 @@ export function FilterLine({ state }: { state: ReturnType<typeof useFilter> }) {
       {state.filtering ? (
         <>
           <Text>/</Text>
-          <TextInput value={state.filter} onChange={state.setFilter} />
+          <TextField value={state.filter} onChange={state.setFilter} />
         </>
       ) : (
         <Text dimColor>{state.filter ? `filter: ${state.filter}` : " "}</Text>

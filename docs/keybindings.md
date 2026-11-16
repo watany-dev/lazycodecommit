@@ -11,6 +11,9 @@ Every screen lists its keys with `?`. This page collects them.
 | `Ctrl+c` | Quit at once |
 | `?` | Toggle help |
 
+In a text box (a comment, the `/` filter, a search or a ref), `←` / `→` move
+the cursor and `Backspace` deletes the character before it.
+
 ## Home, branch and browse screens
 
 | Key | Action |

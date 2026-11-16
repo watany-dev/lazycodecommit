@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
-import TextInput from "ink-text-input";
 import React, { useState } from "react";
 import { useKeys } from "../hooks/useKeys.js";
+import { TextField } from "./TextField.js";
 
 interface Props {
   onSubmit: (content: string) => void;
@@ -86,7 +86,7 @@ export function CommentInput({
       <Text bold>{label}</Text>
       <Box>
         <Text>&gt; </Text>
-        <TextInput value={value} onChange={handleChange} onSubmit={handleSubmit} />
+        <TextField value={value} onChange={handleChange} onSubmit={handleSubmit} />
       </Box>
       <Text dimColor>
         Enter submit{onDraft ? " Tab save as draft" : ""} Esc cancel ({value.trim().length}/

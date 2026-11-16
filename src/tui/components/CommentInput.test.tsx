@@ -228,7 +228,6 @@ describe("CommentInput", () => {
         initialValue="old"
       />,
     );
-    // ink-text-input replaces value with typed content
     stdin.write(" updated");
     await vi.waitFor(() => {
       stdin.write("\r");

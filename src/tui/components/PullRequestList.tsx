@@ -1,11 +1,11 @@
 import { Box, Text, useStdout } from "ink";
-import TextInput from "ink-text-input";
 import React, { useEffect, useMemo, useState } from "react";
 import type { PullRequestDisplayStatus, PullRequestSummary } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 import { windowStart } from "./FilterLine.js";
+import { TextField } from "./TextField.js";
 
 interface PaginationViewState {
   currentPage: number;
@@ -175,7 +175,7 @@ export function PullRequestList({
       {isSearching && (
         <Box marginBottom={1}>
           <Text>Search: </Text>
-          <TextInput value={searchQuery} onChange={onChangeSearchQuery} />
+          <TextField value={searchQuery} onChange={onChangeSearchQuery} />
         </Box>
       )}
 

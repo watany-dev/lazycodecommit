@@ -1,8 +1,11 @@
 import { PassThrough } from "node:stream";
 import * as fc from "fast-check";
 import { render, Text } from "ink";
+import type React from "react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { CommentInput } from "./components/CommentInput.js";
+import { FilterLine, useFilter } from "./components/FilterLine.js";
 import { KeysProvider, useKeys } from "./hooks/useKeys.js";
 import { deliveries, keyStream, splitKeys } from "./keyStream.js";
 
@@ -167,5 +170,71 @@ describe("keyStream", () => {
     stdin.unref();
     expect(t.source.listenerCount("data")).toBe(0);
     expect(stdin.setEncoding("utf8")).toBe(stdin);
+  });
+});
+
+// The path a key takes in the app (index.tsx): terminal, keyStream, Ink, KeysProvider.
+function mount(node: React.ReactNode) {
+  const t = terminal();
+  const app = render(<KeysProvider>{node}</KeysProvider>, {
+    stdin: keyStream(t.source as unknown as NodeJS.ReadStream),
+    stdout: t.stdout as unknown as NodeJS.WriteStream,
+    debug: true,
+  });
+  return { ...t, app };
+}
+
+describe("text fields behind keyStream", () => {
+  const comment = (onSubmit = vi.fn()) =>
+    mount(
+      <CommentInput
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isPosting={false}
+        error={null}
+        onClearError={vi.fn()}
+      />,
+    );
+
+  it("keeps every key of a chunk typed into the comment box", async () => {
+    // A burst over a slow link (CloudShell), or an IME commit of several characters.
+    const t = comment();
+    t.source.write("abc");
+    await vi.waitFor(() => expect(t.frame()).toContain("> abc"), { timeout: 2000 });
+    t.source.write("日本語");
+    await vi.waitFor(() => expect(t.frame()).toContain("> abc日本語"), { timeout: 2000 });
+    t.app.unmount();
+  });
+
+  it("posts the whole text when Enter comes in the same chunk", async () => {
+    const onSubmit = vi.fn();
+    const t = comment(onSubmit);
+    t.source.write("LGTM\r");
+    await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith("LGTM"), { timeout: 2000 });
+    t.app.unmount();
+  });
+
+  it("edits at the cursor with keys from one chunk", async () => {
+    const t = comment();
+    // a b ← ← x → Backspace: "xab" with the cursor after a, then a deleted.
+    t.source.write("ab\u001b[D\u001b[Dx\u001b[C\u007f");
+    await vi.waitFor(() => expect(t.frame()).toContain("> xb"), { timeout: 2000 });
+    t.app.unmount();
+  });
+
+  it("keeps every key of a chunk typed into the / filter", async () => {
+    function Filter() {
+      const state = useFilter();
+      useKeys((input, key) => {
+        if (!state.handleKey(key) && input === "/") state.start();
+      });
+      return <FilterLine state={state} />;
+    }
+    const t = mount(<Filter />);
+    t.source.write("/fix");
+    await vi.waitFor(() => expect(t.frame()).toContain("/fix"), { timeout: 2000 });
+    t.source.write("\r");
+    await vi.waitFor(() => expect(t.frame()).toContain("filter: fix"), { timeout: 2000 });
+    t.app.unmount();
   });
 });
