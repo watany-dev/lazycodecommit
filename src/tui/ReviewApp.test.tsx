@@ -5002,6 +5002,110 @@ describe("App", () => {
     });
   });
 
+  describe("reactions read only for comments CodeCommit counts reactions on (#101)", () => {
+    const openPr = async (comments: object[]) => {
+      vi.mocked(listPullRequests).mockResolvedValueOnce({
+        pullRequests: [
+          {
+            pullRequestId: "42",
+            title: "fix: login",
+            authorArn: "arn:aws:iam::123456789012:user/watany",
+            creationDate: new Date("2026-02-13T10:00:00Z"),
+            status: "OPEN" as const,
+          },
+        ],
+      });
+      vi.mocked(getPullRequestDetail).mockResolvedValueOnce({
+        pullRequest: {
+          pullRequestId: "42",
+          title: "fix: login",
+          pullRequestTargets: [
+            {
+              destinationReference: "refs/heads/main",
+              sourceReference: "refs/heads/feature/login",
+              sourceCommit: "src1",
+              destinationCommit: "dst1",
+              mergeBase: "base1",
+            },
+          ],
+          revisionId: "rev1",
+        },
+        differences: [],
+        commentThreads: [{ location: null, comments }],
+      } as any);
+      const r = render(<App service={svc} repository="my-service" start={null} />);
+      await vi.waitFor(() => expect(r.lastFrame()).toContain("fix: login"));
+      r.stdin.write("\r");
+      await vi.waitFor(() => expect(r.lastFrame()).toContain("PR #42"));
+      return r;
+    };
+    const taro = "arn:aws:iam::123456789012:user/taro";
+
+    it("reads none when no comment has a reaction", async () => {
+      const { lastFrame } = await openPr([
+        { commentId: "c1", authorArn: taro, content: "first", reactionCounts: {} },
+        { commentId: "c2", authorArn: taro, content: "second", reactionCounts: {} },
+      ]);
+      await vi.waitFor(() => expect(lastFrame()).toContain("taro: second"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(vi.mocked(getReactionsForComments)).not.toHaveBeenCalled();
+    });
+
+    it("reads only the comments with a reaction", async () => {
+      vi.mocked(getReactionsForComments).mockResolvedValueOnce(
+        new Map([["c2", [{ emoji: "👍", shortCode: ":thumbsup:", count: 1, userArns: [] }]]]),
+      );
+      const { lastFrame } = await openPr([
+        { commentId: "c1", authorArn: taro, content: "first", reactionCounts: {} },
+        { commentId: "c2", authorArn: taro, content: "second", reactionCounts: { "👍": 1 } },
+      ]);
+      await vi.waitFor(() => expect(lastFrame()).toContain("👍×1"));
+      expect(vi.mocked(getReactionsForComments)).toHaveBeenCalledWith(["c2"]);
+    });
+
+    it("re-reads only the reacted comment and keeps the others' badges", async () => {
+      vi.mocked(getReactionsForComments).mockResolvedValueOnce(
+        new Map([["c2", [{ emoji: "🎉", shortCode: ":hooray:", count: 2, userArns: [] }]]]),
+      );
+      const { lastFrame, stdin } = await openPr([
+        { commentId: "c1", authorArn: taro, content: "first", reactionCounts: {} },
+        { commentId: "c2", authorArn: taro, content: "second", reactionCounts: { "🎉": 2 } },
+      ]);
+      await vi.waitFor(() => expect(lastFrame()).toContain("🎉×2"));
+      for (let i = 0; i < 6; i++) stdin.write("j");
+      stdin.write("k");
+      await vi.waitFor(() => expect(lastFrame()).toContain(">  taro: first"));
+      stdin.write("g");
+      await vi.waitFor(() => expect(lastFrame()).toContain("React to comment:"));
+      vi.mocked(putReaction).mockResolvedValueOnce(undefined);
+      vi.mocked(getReactionsForComments).mockResolvedValueOnce(
+        new Map([["c1", [{ emoji: "👍", shortCode: ":thumbsup:", count: 1, userArns: [] }]]]),
+      );
+      stdin.write("\r");
+      await vi.waitFor(() => expect(lastFrame()).toContain("👍×1"));
+      expect(vi.mocked(getReactionsForComments)).toHaveBeenLastCalledWith(["c1"]);
+      expect(lastFrame()).toContain("🎉×2");
+    });
+
+    it("drops a comment's badge when its last reaction is taken back", async () => {
+      vi.mocked(getReactionsForComments).mockResolvedValueOnce(
+        new Map([["c1", [{ emoji: "👍", shortCode: ":thumbsup:", count: 1, userArns: [] }]]]),
+      );
+      const { lastFrame, stdin } = await openPr([
+        { commentId: "c1", authorArn: taro, content: "first", reactionCounts: { "👍": 1 } },
+      ]);
+      await vi.waitFor(() => expect(lastFrame()).toContain("👍×1"));
+      for (let i = 0; i < 6; i++) stdin.write("j");
+      await vi.waitFor(() => expect(lastFrame()).toContain(">  taro: first"));
+      stdin.write("g");
+      await vi.waitFor(() => expect(lastFrame()).toContain("React to comment:"));
+      vi.mocked(putReaction).mockResolvedValueOnce(undefined);
+      vi.mocked(getReactionsForComments).mockResolvedValueOnce(new Map());
+      stdin.write("\r");
+      await vi.waitFor(() => expect(lastFrame()).not.toContain("👍×1"));
+    });
+  });
+
   it("shows reaction error when putReaction fails with CommentDeletedException", async () => {
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [

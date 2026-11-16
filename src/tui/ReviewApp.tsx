@@ -36,6 +36,7 @@ import { useAsyncAction } from "./hooks/useAsyncAction.js";
 import { useKeys } from "./hooks/useKeys.js";
 import { createBatcher } from "./utils/batchUpdates.js";
 import { formatErrorMessage } from "./utils/formatError.js";
+import { reactedCommentIds } from "./utils/reactions.js";
 
 const BLOB_TEXT_BATCH_DELAY_MS = 16;
 
@@ -366,7 +367,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const reactAction = useAsyncAction(
     async (commentId: string, reactionValue: string) => {
       await service.putReaction({ commentId, reactionValue });
-      await reloadReactions(commentThreads);
+      await reloadReactionsOf(commentId);
     },
     (err) => formatErrorMessage(err, "reaction"),
   );
@@ -432,17 +433,22 @@ export function App({ service, repository, start, onExit }: AppProps) {
   }
 
   async function reloadReactions(threads: CommentThread[], loadId = detailLoadRef.current) {
-    const allCommentIds = threads.flatMap((t) =>
-      t.comments.map((c) => c.commentId).filter((id): id is string => !!id),
-    );
-    if (allCommentIds.length > 0) {
-      const reactions = await service.getReactionsForComments(allCommentIds);
-      if (isDetailLoadStale(loadId)) return;
-      setReactionsByComment(reactions);
-    } else {
-      if (isDetailLoadStale(loadId)) return;
-      setReactionsByComment(new Map());
-    }
+    const ids = reactedCommentIds(threads);
+    const reactions = ids.length > 0 ? await service.getReactionsForComments(ids) : new Map();
+    if (isDetailLoadStale(loadId)) return;
+    setReactionsByComment(reactions);
+  }
+
+  /** After a reaction only that comment changed: the others keep what was read. */
+  async function reloadReactionsOf(commentId: string, loadId = detailLoadRef.current) {
+    const reactions = (await service.getReactionsForComments([commentId])).get(commentId);
+    if (isDetailLoadStale(loadId)) return;
+    setReactionsByComment((prev) => {
+      const next = new Map(prev);
+      if (reactions) next.set(commentId, reactions);
+      else next.delete(commentId);
+      return next;
+    });
   }
 
   /**

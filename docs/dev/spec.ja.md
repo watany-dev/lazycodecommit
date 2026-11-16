@@ -267,6 +267,7 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 | diff の取得 | API | clone 内は git、clone 外は API |
 | 既読管理 | なし | 開いた時点で最終閲覧時刻を更新する |
 | PR 一覧画面 | 起動時の主画面 | lazycc pr list とリポジトリ選択から開く副画面 |
+| リアクションの取得 | 全コメントに GetCommentReactions、リアクションのたびに全件読み直す | コメントの reactionCounts が 1 以上のもの（フィールドがなければ読む）だけ。リアクションしたあとはそのコメントだけ読み直す |
 
 ### clone 内の diff
 - ソースとベースのコミットがローカルになければ git fetch origin <source> <destination> を実行する。
