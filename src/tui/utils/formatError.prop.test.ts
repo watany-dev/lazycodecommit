@@ -65,7 +65,7 @@ describe("error text on the review screen, for any error", () => {
           expect(shown.length).toBeGreaterThan(0);
           expect(shown).not.toContain(key);
           expect(shown).not.toContain(sec);
-          expect(shown).not.toMatch(new RegExp(`(?<![0-9])${acct}(?![0-9])`));
+          expect(shown.split(/[^0-9]+/)).not.toContain(acct);
           expect(screenErrorText(error)).not.toContain(key);
         },
       ),
