@@ -80,6 +80,8 @@ export function startMockServer(gitRoot) {
   const repos = new Map();
   const prs = new Map();
   const comments = [];
+  /** commentId → caller ARN → reaction value. */
+  const reactions = {};
   const postComment = (input, c) => {
     checkSize(input.content);
     const pr = prOf(input.pullRequestId);
@@ -354,13 +356,32 @@ export function startMockServer(gitRoot) {
     },
     PostCommentForPullRequest: (input, c) => idempotent(input, () => postComment(input, c)),
     PostCommentReply: (input, c) => idempotent(input, () => postReply(input, c)),
-    PutCommentReaction({ commentId }, c) {
+    // One reaction per user and comment, as CodeCommit keeps them; counted on
+    // the comment by short code (whether CodeCommit keys them so is a realcheck item).
+    PutCommentReaction({ commentId, reactionValue }, c) {
       const parent = comments.find((x) => x.comment.commentId === commentId);
       if (!parent) throw new ApiError("CommentDoesNotExistException", "no such comment");
+      const byUser = (reactions[commentId] ??= new Map());
+      if (reactionValue) byUser.set(c.caller.arn, reactionValue);
+      else byUser.delete(c.caller.arn);
+      const counts = {};
+      for (const v of byUser.values()) counts[v] = (counts[v] ?? 0) + 1;
+      parent.comment.reactionCounts = counts;
       touch(prOf(parent.pullRequestId), "PULL_REQUEST_COMMENT_REACTION", c.caller.arn);
       return {};
     },
-    GetCommentReactions: () => ({ reactionsForComment: [] }),
+    GetCommentReactions({ commentId }) {
+      const users = new Map();
+      for (const [arn, v] of reactions[commentId] ?? [])
+        users.set(v, [...(users.get(v) ?? []), arn]);
+      return {
+        reactionsForComment: [...users].map(([shortCode, reactionUsers]) => ({
+          reaction: { emoji: shortCode, shortCode },
+          reactionUsers,
+          reactionsFromDeletedUsersCount: 0,
+        })),
+      };
+    },
     GetCommentsForPullRequest({ pullRequestId }) {
       const groups = new Map();
       for (const x of comments.filter((y) => y.pullRequestId === String(pullRequestId))) {

@@ -658,6 +658,7 @@ async function lastActivity() {
       ),
     ),
   );
+  await reactionCounts(id, comments.inline);
   await step("self", "title update", async () =>
     ok(
       await api(
@@ -789,6 +790,36 @@ async function lastActivity() {
     "Newest comment time (the ADR 0006 fallback)",
     "INFO",
     latest.length ? new Date(Math.max(...latest)).toISOString() : (thread.name ?? "none"),
+  );
+}
+
+/**
+ * The review screen calls GetCommentReactions only for comments whose
+ * reactionCounts count something (#101), so a reacted comment must carry them.
+ */
+async function reactionCounts(id, commentId) {
+  const r = await api(
+    "GetCommentsForPullRequest (after reaction)",
+    new cc.GetCommentsForPullRequestCommand({ pullRequestId: id, repositoryName: repoName }),
+  );
+  const title = "A reacted comment's reactionCounts in GetCommentsForPullRequest";
+  if (!r.ok) return record("comments.reactionCounts", title, "FAIL", ok(r));
+  const comment = (r.out.commentsForPullRequestData ?? [])
+    .flatMap((d) => d.comments ?? [])
+    .find((c) => c.commentId === commentId);
+  const counts = comment?.reactionCounts;
+  if (!comment)
+    return record("comments.reactionCounts", title, "SKIP", "reacted comment not found");
+  if (counts === undefined)
+    return record("comments.reactionCounts", title, "PASS", "field left out: lazycc reads it");
+  const counted = Object.values(counts).some((n) => n > 0);
+  record(
+    "comments.reactionCounts",
+    title,
+    counted ? "PASS" : "DIFF",
+    counted
+      ? JSON.stringify(counts)
+      : `${JSON.stringify(counts)} — the review screen would not show this comment's reactions`,
   );
 }
 
