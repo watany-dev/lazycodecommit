@@ -245,11 +245,14 @@ export function HomeApp({
   const height = Math.max((stdout.rows || 24) - CHROME_LINES - notes, 3);
   const top = windowStart(index, height, rows.length);
   const visible = rows.slice(top, top + height);
-  const repoWidth = Math.min(Math.max(6, ...rows.map((i) => i.pr.repository.length)) + 2, 28);
+  const layout = rowLayout(
+    (stdout.columns || 80) - 2,
+    Math.max(6, ...rows.map((i) => i.pr.repository.length)) + 2,
+  );
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box>
+      <Text wrap="truncate">
         <Text bold color="cyan">
           lazycc — home{" "}
         </Text>
@@ -263,7 +266,7 @@ export function HomeApp({
           {repos ? (repos.length === 1 ? repos[0] : `${repos.length} repositories`) : ""}
           {refreshing ? "  refreshing…" : ""}
         </Text>
-      </Box>
+      </Text>
       <FilterLine state={filterBox} />
       {inbox?.errors.map((e) => (
         <Text key={e.repository} color="red" wrap="truncate">
@@ -286,12 +289,7 @@ export function HomeApp({
         </Text>
       ) : (
         visible.map((item) => (
-          <InboxLine
-            key={item.pr.id}
-            item={item}
-            selected={item === selected}
-            repoWidth={repoWidth}
-          />
+          <InboxLine key={item.pr.id} item={item} selected={item === selected} layout={layout} />
         ))
       )}
       {inbox && loadError ? <Text color="red">Refresh failed: {loadError}</Text> : null}
@@ -309,41 +307,73 @@ export function HomeApp({
   );
 }
 
+/** Cursor, unread mark, #id, author or rules, date: the columns beside the repository and title. */
+const FIXED = { cursor: 2, mark: 2, id: 7, detail: 22, date: 10 };
+const MIN_TITLE = 10;
+
+interface RowLayout {
+  readonly width: number;
+  readonly repoWidth: number;
+  readonly detail: boolean;
+  readonly date: boolean;
+}
+
+/**
+ * Column widths for a row `width` cells wide. The repository column gives way
+ * first, down to 6, then the date and the author or rules columns go, so the
+ * title keeps MIN_TITLE cells; a row narrower still is cut, never wrapped.
+ */
+function rowLayout(width: number, repoNatural: number): RowLayout {
+  const base = FIXED.cursor + FIXED.mark + FIXED.id;
+  const fits = (extra: number) => width - base - extra - MIN_TITLE;
+  const date = fits(FIXED.detail + FIXED.date + 6) >= 0;
+  const detail = fits(FIXED.detail + 6) >= 0;
+  const others = (detail ? FIXED.detail : 0) + (date ? FIXED.date : 0);
+  const repoWidth = Math.max(6, Math.min(repoNatural, 28, fits(others)));
+  return { width, repoWidth, detail, date };
+}
+
 function InboxLine({
   item,
   selected,
-  repoWidth,
+  layout,
 }: {
   item: InboxItem;
   selected: boolean;
-  repoWidth: number;
+  layout: RowLayout;
 }) {
   const { pr } = item;
   return (
-    <Box>
-      <Text color="cyan">{selected ? "> " : "  "}</Text>
-      <Box width={2} flexShrink={0}>
+    <Box width={layout.width} overflow="hidden">
+      <Box width={FIXED.cursor} flexShrink={0}>
+        <Text color="cyan">{selected ? ">" : " "}</Text>
+      </Box>
+      <Box width={FIXED.mark} flexShrink={0}>
         <Text color="yellow">{item.unread ? "●" : " "}</Text>
       </Box>
-      <Box width={repoWidth} flexShrink={0}>
+      <Box width={layout.repoWidth} flexShrink={0}>
         <Text dimColor wrap="truncate">
           {pr.repository}
         </Text>
       </Box>
-      <Box width={7} flexShrink={0}>
+      <Box width={FIXED.id} flexShrink={0}>
         <Text>#{pr.id}</Text>
       </Box>
-      <Box flexGrow={1} flexShrink={1}>
+      <Box flexGrow={1} flexShrink={1} flexBasis={0}>
         <Text bold={item.unread} wrap="truncate">
           {printable(pr.title)}
         </Text>
       </Box>
-      <Box width={22} flexShrink={0} justifyContent="flex-end">
-        <Detail item={item} />
-      </Box>
-      <Box width={10} flexShrink={0} justifyContent="flex-end">
-        <Text dimColor>{formatRelativeDate(pr.lastActivityDate)}</Text>
-      </Box>
+      {layout.detail ? (
+        <Box width={FIXED.detail} flexShrink={0} justifyContent="flex-end">
+          <Detail item={item} />
+        </Box>
+      ) : null}
+      {layout.date ? (
+        <Box width={FIXED.date} flexShrink={0} justifyContent="flex-end">
+          <Text dimColor>{formatRelativeDate(pr.lastActivityDate)}</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

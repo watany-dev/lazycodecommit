@@ -107,17 +107,23 @@ describe("screens, for any terminal size and titles", () => {
     );
   }, 120_000);
 
-  it("the home screen fits the terminal", async () => {
+  it("the home screen fits the terminal, one line per row and for its header (#104)", async () => {
+    // CodeCommit allows 100-character repository names; a split terminal can be narrow.
+    const repository = fc.constantFrom(
+      "demo",
+      "a-very-long-repository-name",
+      `platform-${"x".repeat(60)}`,
+    );
     await fc.assert(
       fc.asyncProperty(
-        size,
-        fc.array(
-          fc.tuple(title, fc.boolean(), fc.constantFrom("demo", "a-very-long-repository-name")),
-          {
-            minLength: 1,
-            maxLength: 30,
-          },
-        ),
+        fc.record({
+          columns: fc.integer({ min: 50, max: 160 }),
+          rows: fc.integer({ min: 24, max: 50 }),
+        }),
+        fc.array(fc.tuple(title, fc.boolean(), repository), {
+          minLength: 1,
+          maxLength: 30,
+        }),
         async (s, rows) => {
           const items: InboxItem[] = rows.map(([t, mine, repo], i) => ({
             section: mine ? "mine" : "awaiting",
@@ -173,10 +179,20 @@ describe("screens, for any terminal size and titles", () => {
           );
           try {
             await vi.waitFor(() => expect(t.frame()).toContain("Tab switch"));
-            expectFits(t.frame(), s.columns, s.rows);
-            t.source.write("G");
+            const expectOneLineEach = (frame: string) => {
+              expectFits(frame, s.columns, s.rows);
+              // Cut at the width, not wrapped (spec: 見出しの行は端末の幅で切り…折り返さない).
+              expect(frame).toContain("lazycc — home");
+              const lines = frame.split("\n");
+              const cursor = lines.find((l) => l.startsWith(" > "));
+              // A row is listed: the selected one shows the cursor, on the same line as its #id.
+              if (/#\d+/.test(frame)) expect(cursor).toMatch(/#\d+/);
+              for (const l of lines) expect(l.trim()).not.toBe(">");
+            };
+            expectOneLineEach(t.frame());
+            t.source.write("\t");
             await new Promise((r) => setTimeout(r, 30));
-            expectFits(t.frame(), s.columns, s.rows);
+            expectOneLineEach(t.frame());
           } finally {
             t.app.unmount();
           }
