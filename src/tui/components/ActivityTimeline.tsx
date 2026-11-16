@@ -70,7 +70,9 @@ export function ActivityTimeline({
   if (isLoading && events.length === 0) {
     return (
       <Box flexDirection="column">
-        <Text bold>Activity: {pullRequestTitle}</Text>
+        <Text bold wrap="truncate">
+          Activity: {pullRequestTitle}
+        </Text>
         <Text color="cyan">Loading activity...</Text>
       </Box>
     );
@@ -79,7 +81,9 @@ export function ActivityTimeline({
   if (error) {
     return (
       <Box flexDirection="column">
-        <Text bold>Activity: {pullRequestTitle}</Text>
+        <Text bold wrap="truncate">
+          Activity: {pullRequestTitle}
+        </Text>
         <Text color="red">Failed to load activity:</Text>
         <Text color="red">{error}</Text>
         <Text dimColor>Press q to go back</Text>
@@ -90,7 +94,9 @@ export function ActivityTimeline({
   if (events.length === 0) {
     return (
       <Box flexDirection="column">
-        <Text bold>Activity: {pullRequestTitle}</Text>
+        <Text bold wrap="truncate">
+          Activity: {pullRequestTitle}
+        </Text>
         <Text dimColor>No activity events found.</Text>
         <Text dimColor>q back</Text>
       </Box>
@@ -99,7 +105,9 @@ export function ActivityTimeline({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Activity: {pullRequestTitle}</Text>
+      <Text bold wrap="truncate">
+        Activity: {pullRequestTitle}
+      </Text>
       <Box flexDirection="column" marginTop={1}>
         {visibleEvents.map((event, i) => {
           const globalIndex = scrollOffset + i;
@@ -137,14 +145,14 @@ const ActivityEventRow = memo(function ActivityEventRow({
   const actorName = shortArn(event.actorArn);
   const actorDisplay = actorName.length > 12 ? `${actorName.slice(0, 11)}…` : actorName.padEnd(12);
 
+  // One row, cut at the edge: visibleCount counts rows.
   return (
-    <Box>
-      <Text>{isCursor ? "> " : "  "}</Text>
-      <Text>{icon} </Text>
-      <Text color="cyan">{actorDisplay} </Text>
-      <Text>{event.description.padEnd(40)}</Text>
+    <Text wrap="truncate">
+      {isCursor ? "> " : "  "}
+      {icon} <Text color="cyan">{actorDisplay} </Text>
+      {event.description.padEnd(40)}
       <Text dimColor>{timeAgo}</Text>
-    </Box>
+    </Text>
   );
 });
 

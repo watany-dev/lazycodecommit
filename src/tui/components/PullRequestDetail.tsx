@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useStdout } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import wrapAnsi from "wrap-ansi";
 import { CHECK_COLOR, CHECK_MARK, type Checks, noRun } from "../../core/checks.js";
 import type { CommentDraft, DraftTarget } from "../../core/commentDrafts.js";
 import type {
@@ -325,19 +326,36 @@ export function PullRequestDetail({
     (approval.evaluation?.approvalRulesSatisfied?.length ?? 0) +
       (approval.evaluation?.approvalRulesNotSatisfied?.length ?? 0) >
     0;
-  // The rows around the diff: padding, the header lines, the key line (two
-  // rows when it wraps), and the optional rules, CI, drafts and commit lines.
+  const keyLine =
+    dialogOpen || showFileList
+      ? ""
+      : pendingBracket
+        ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
+        : viewIndex >= 0
+          ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help${hasTruncation ? " t more" : ""}`
+          : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`;
+  const conflictError =
+    conflictCheckError && `Could not check for conflicts: ${conflictCheckError}`;
+  // The key line and an error wrap rather than lose words: count their rows.
+  const width = Math.max((stdout.columns || 80) - 2, 1);
+  // The rows around the diff: padding, the header lines, the key line, and
+  // the optional rules, CI, drafts, commit and error lines.
   const chromeLines =
-    10 +
+    8 +
     (drafts?.setAside ? 1 : 0) +
     (drafts && drafts.hidden > 0 ? 1 : 0) +
+    wrappedRows(keyLine, width) +
+    wrappedRows(conflictError || "", width) +
     (hasRules ? 2 : 0) +
     (checks ? 2 + checks.runs.length : 0) +
     (commits.length > 0 || commitsAvailable ? (viewIndex >= 0 ? 2 : 1) : 0) +
     (isLoadingCommitDiff && viewIndex >= 0 ? 1 : 0);
-  // A box, prompt or list below the diff takes about ten more.
+  // The file list takes its rows plus a title and a key line; a box or prompt
+  // below the diff takes about ten more.
   const visibleLineCount = Math.max(
-    (stdout.rows || 24) - chromeLines - (dialogOpen || showFileList ? 10 : 0),
+    (stdout.rows || 24) -
+      chromeLines -
+      (showFileList ? Math.min(fileNames.length, FILE_LIST_ROWS) + 2 : dialogOpen ? 10 : 0),
     3,
   );
 
@@ -608,44 +626,49 @@ export function PullRequestDetail({
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Box marginBottom={0}>
-        <Text bold color="cyan">
-          PR #{prId}: {title}
-        </Text>
-      </Box>
-      <Box>
-        <Text>
-          Author: {author} Status: {status} {creationDate}
-        </Text>
-      </Box>
+      {/* Each header line is one row, cut at the edge: chromeLines counts them. */}
+      <Text bold color="cyan" wrap="truncate">
+        PR #{prId}: {title}
+      </Text>
+      <Text wrap="truncate">
+        Author: {author} Status: {status} {creationDate}
+      </Text>
       <Box marginBottom={1}>
-        <Text dimColor>
+        {/* Long branch names give way to the file count and the drafts. */}
+        <Text dimColor wrap="truncate">
           {destRef} ← {sourceRef}
         </Text>
-        {filePosition.total > 0 && (
-          <Text dimColor>
+        <Box flexShrink={0}>
+          {filePosition.total > 0 && (
+            <Text dimColor>
+              {" "}
+              File {filePosition.current}/{filePosition.total}
+            </Text>
+          )}
+          {drafts && drafts.list.length > 0 && (
+            <Text color="yellow"> Drafts: {drafts.list.length} (D)</Text>
+          )}
+        </Box>
+        {drafts?.saveError && (
+          <Text color="red" wrap="truncate">
             {" "}
-            File {filePosition.current}/{filePosition.total}
+            Drafts not saved: {drafts.saveError}
           </Text>
         )}
-        {drafts && drafts.list.length > 0 && (
-          <Text color="yellow"> Drafts: {drafts.list.length} (D)</Text>
-        )}
-        {drafts?.saveError && <Text color="red"> Drafts not saved: {drafts.saveError}</Text>}
       </Box>
       {drafts?.setAside && (
-        <Text color="yellow">
+        <Text color="yellow" wrap="truncate">
           drafts.json was unreadable: kept beside it as {basename(drafts.setAside)}
         </Text>
       )}
       {drafts && drafts.hidden > 0 && (
-        <Text color="yellow">
+        <Text color="yellow" wrap="truncate">
           {drafts.hidden} {drafts.hidden === 1 ? "draft" : "drafts"} from another lazycc version
           kept, not shown
         </Text>
       )}
       <Box>
-        <Text>
+        <Text wrap="truncate">
           Approvals:{" "}
           {approvedUsers.length > 0
             ? `${approvedUsers.map((a) => shortArn(a.userArn ?? "")).join(", ")} ✓`
@@ -657,7 +680,7 @@ export function PullRequestDetail({
           (approval.evaluation.approvalRulesNotSatisfied?.length ?? 0) >
           0 && (
           <Box marginBottom={1}>
-            <Text>
+            <Text wrap="truncate">
               Rules: {approval.evaluation.approved ? "✓" : "✗"}{" "}
               {approval.evaluation.approved ? "Approved" : "Not approved"} (
               {approval.evaluation.approvalRulesSatisfied?.length ?? 0}/
@@ -670,7 +693,7 @@ export function PullRequestDetail({
       {checks && <ChecksLines checks={checks} />}
       {(commits.length > 0 || commitsAvailable) && (
         <Box flexDirection="column" marginBottom={0}>
-          <Box>
+          <Text wrap="truncate">
             {viewIndex === -1 ? (
               <>
                 <Text bold color="cyan">
@@ -692,11 +715,10 @@ export function PullRequestDetail({
                 <Text color="cyan">Loading commits...</Text>
               </>
             )}
-          </Box>
+          </Text>
           {viewIndex >= 0 && commits[viewIndex] && (
-            <Text dimColor>
-              {commits[viewIndex]!.message} {commits[viewIndex]!.authorName}{" "}
-              {formatRelativeDate(commits[viewIndex]!.authorDate)}
+            <Text dimColor wrap="truncate">
+              {`${commits[viewIndex]!.message} ${commits[viewIndex]!.authorName} ${formatRelativeDate(commits[viewIndex]!.authorDate)}`}
             </Text>
           )}
         </Box>
@@ -949,7 +971,7 @@ export function PullRequestDetail({
         <Box flexDirection="column">
           <Text bold>Files ({fileNames.length}):</Text>
           {fileNames.slice(fileListTop, fileListTop + FILE_LIST_ROWS).map((name, i) => (
-            <Text key={name}>
+            <Text key={name} wrap="truncate">
               {fileListTop + i === fileListCursor ? "> " : "  "}
               {name}
             </Text>
@@ -957,22 +979,18 @@ export function PullRequestDetail({
           <Text dimColor>j/k move Enter select Esc close</Text>
         </Box>
       )}
-      {conflictCheckError && (
-        <Text color="red">Could not check for conflicts: {conflictCheckError}</Text>
-      )}
+      {conflictError && <Text color="red">{conflictError}</Text>}
       <Box marginTop={1}>
-        <Text dimColor>
-          {dialogOpen || showFileList
-            ? ""
-            : pendingBracket
-              ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
-              : viewIndex >= 0
-                ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help${hasTruncation ? " t more" : ""}`
-                : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`}
-        </Text>
+        <Text dimColor>{keyLine}</Text>
       </Box>
     </Box>
   );
+}
+
+/** The rows `text` takes at `width`, wrapped the way Ink wraps a Text. */
+function wrappedRows(text: string, width: number): number {
+  if (!text) return 0;
+  return wrapAnsi(text, width, { trim: false, hard: true }).split("\n").length;
 }
 
 /** The first row of the thread that row `index` belongs to. */

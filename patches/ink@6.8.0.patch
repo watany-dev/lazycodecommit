@@ -19,3 +19,26 @@ index f00a27842045de18edfc7fbd6c65467a1d6f641c..5d2acc0045a47c87bb2fe70824a3a500
                  const maxWidth = getMaxWidth(yogaNode);
                  if (currentWidth > maxWidth) {
                      const textWrap = node.style.textWrap ?? 'wrap';
+diff --git a/build/wrap-text.js b/build/wrap-text.js
+index 7cee4b8a500df85b2df3294904834c0091289e8c..56ee2c01f9b5ac4d1f445743c305c33f810d41bb 100644
+--- a/build/wrap-text.js
++++ b/build/wrap-text.js
+@@ -1,5 +1,6 @@
+ import wrapAnsi from 'wrap-ansi';
+ import cliTruncate from 'cli-truncate';
++import stringWidth from 'string-width';
+ const cache = {};
+ const wrapText = (text, maxWidth, wrapType) => {
+     const cacheKey = text + String(maxWidth) + String(wrapType);
+@@ -23,6 +24,11 @@ const wrapText = (text, maxWidth, wrapType) => {
+             position = 'start';
+         }
+         wrappedText = cliTruncate(text, maxWidth, { position });
++        // slice-ansi keeps a wide character that straddles the cut whole,
++        // one column past maxWidth: the terminal would wrap the row.
++        if (stringWidth(wrappedText) > maxWidth) {
++            wrappedText = cliTruncate(text, maxWidth - 1, { position });
++        }
+     }
+     cache[cacheKey] = wrappedText;
+     return wrappedText;

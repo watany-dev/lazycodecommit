@@ -181,7 +181,7 @@ export function PullRequestList({
 
       {/* PR list header */}
       <Box marginBottom={1}>
-        <Text bold>
+        <Text bold wrap="truncate">
           {label} Pull Requests{searchQuery ? ` matching "${searchQuery}"` : ""} (
           {filteredPullRequests.length}):
         </Text>
@@ -201,7 +201,7 @@ export function PullRequestList({
           const index = top + i;
           return (
             <Box key={pr.pullRequestId}>
-              <Text {...(index === cursor ? { color: "green" as const } : {})}>
+              <Text {...(index === cursor ? { color: "green" as const } : {})} wrap="truncate">
                 {index === cursor ? "> " : "  "}#{pr.pullRequestId} {statusBadge(pr.status)}
                 {pr.title}
                 {"  "}
