@@ -448,9 +448,7 @@ export function draftStorage(store: LocalState["drafts"], region: string): Draft
       const was = base.get(key) ?? [];
       const read = await store.update(`${region}/${key}`, (disk) => {
         if (disk !== undefined && !Array.isArray(disk)) {
-          throw new Error(
-            "drafts.json keeps this pull request's drafts in a form another lazycc version wrote.",
-          );
+          throw new Error("another lazycc version wrote this PR's drafts");
         }
         const merged = new Map(mergeDrafts(was, drafts, parseDrafts(disk)).map((d) => [d.id, d]));
         const next: unknown[] = [];
