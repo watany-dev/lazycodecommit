@@ -144,14 +144,14 @@ describe("two screens submitting the same drafts at once", () => {
           const store: LocalState["drafts"] = {
             get: async (k) => {
               await s.schedule(Promise.resolve(), "read");
-              return structuredClone(files.get(k));
+              return { value: structuredClone(files.get(k)) };
             },
             update: async (k, change) => {
               await s.schedule(Promise.resolve(), "save");
               const next = change(structuredClone(files.get(k)));
               if (next.length === 0) files.delete(k);
               else files.set(k, structuredClone(next));
-              return structuredClone([...next]);
+              return { value: structuredClone([...next]) };
             },
           };
           files.set(
@@ -167,12 +167,15 @@ describe("two screens submitting the same drafts at once", () => {
           // What the review screen does with the drafts it holds.
           const screen = async (tip: Commits) => {
             const storage = draftStorage(store, "r");
-            const held = await storage.load("7");
+            const held = (await storage.load("7")).drafts;
             const anchored = await storage.save(
               "7",
               reanchor(held, tip, () => undefined),
             );
-            await submitDrafts(anchored, { post, save: (list) => storage.save("7", list) });
+            await submitDrafts(anchored.drafts, {
+              post,
+              save: async (list) => (await storage.save("7", list)).drafts,
+            });
           };
           const both = Promise.all([screen(tipOf(0)), screen(tipOf(pushFirst ? 1 : 0))]);
           await s.waitFor(both);
@@ -180,7 +183,12 @@ describe("two screens submitting the same drafts at once", () => {
           cc.faults = [];
           const last = draftStorage(store, "r");
           const left = await s.waitFor(last.load("7"));
-          await s.waitFor(submitDrafts(left, { post, save: (list) => last.save("7", list) }));
+          await s.waitFor(
+            submitDrafts(left.drafts, {
+              post,
+              save: async (list) => (await last.save("7", list)).drafts,
+            }),
+          );
           expect(files.has("r/7")).toBe(false);
           for (const count of cc.created.values()) expect(count).toBe(1);
           expect(cc.created.size).toBe(n);

@@ -1043,7 +1043,7 @@ describe("the review screen on a terminal", () => {
       api: fakeApi([pullRequest({ id: "3" })]),
     });
     await r.reviews[0]?.drafts?.save("3", []);
-    expect(await r.reviews[0]?.drafts?.load("3")).toEqual([]);
+    expect(await r.reviews[0]?.drafts?.load("3")).toEqual({ drafts: [], hidden: 0 });
     const b = await cli(["branch"], { interactive: true, state });
     expect(b.tops[0]?.drafts).toBeDefined();
   });

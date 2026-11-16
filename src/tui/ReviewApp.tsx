@@ -14,6 +14,7 @@ import {
   newDraft,
   postAnyway,
   reanchor,
+  type StoredDrafts,
   submitDrafts,
 } from "../core/commentDrafts.js";
 import {
@@ -151,6 +152,9 @@ export function App({ service, repository, start, onExit }: AppProps) {
   const draftsRef = useRef<readonly CommentDraft[]>([]);
   const draftsForRef = useRef<string | null>(null);
   const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  // Kept for the session: the moved file is the user's to look at.
+  const [draftsSetAside, setDraftsSetAside] = useState<string | null>(null);
+  const [draftsHidden, setDraftsHidden] = useState(0);
   const [isPostingDrafts, setIsPostingDrafts] = useState(false);
   const [draftProgress, setDraftProgress] = useState<{ done: number; total: number } | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -166,17 +170,22 @@ export function App({ service, repository, start, onExit }: AppProps) {
     draftsRef.current = next;
     setDrafts(next);
     try {
-      const saved = (await service.drafts?.save(key, next)) ?? next;
+      const stored = await service.drafts?.save(key, next);
       setDraftSaveError(null);
-      if (draftsForRef.current === key) {
-        draftsRef.current = saved;
-        setDrafts(saved);
-      }
-      return saved;
+      if (!stored) return next;
+      if (draftsForRef.current === key) showStored(stored);
+      return stored.drafts;
     } catch (err) {
       setDraftSaveError(formatErrorMessage(err));
       throw err;
     }
+  }
+
+  function showStored(stored: StoredDrafts) {
+    draftsRef.current = stored.drafts;
+    setDrafts(stored.drafts);
+    setDraftsHidden(stored.hidden);
+    if (stored.setAside) setDraftsSetAside(stored.setAside);
   }
 
   /** Edits from the screen: a failed write shows in the header, the drafts stay in memory. */
@@ -196,13 +205,12 @@ export function App({ service, repository, start, onExit }: AppProps) {
     draftsForRef.current = key;
     draftsRef.current = [];
     setDrafts([]);
+    setDraftsHidden(0);
     setDraftError(null);
     if (!service.drafts) return;
     try {
-      const list = await service.drafts.load(key);
-      if (draftsForRef.current !== key) return;
-      draftsRef.current = list;
-      setDrafts(list);
+      const stored = await service.drafts.load(key);
+      if (draftsForRef.current === key) showStored(stored);
     } catch (err) {
       setDraftSaveError(formatErrorMessage(err));
     }
@@ -859,6 +867,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
           drafts={{
             list: drafts,
             saveError: draftSaveError,
+            setAside: draftsSetAside,
+            hidden: draftsHidden,
             add: addDraft,
             edit: (id, content) =>
               changeDrafts((list) => list.map((d) => (d.id === id ? editDraft(d, content) : d))),

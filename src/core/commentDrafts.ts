@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { explainAwsError, isCredentialError, wasNotSent } from "../aws/errors.js";
-import { accountOf, type LocalState } from "../state/local.js";
+import { accountOf, type DraftsRead, type LocalState } from "../state/local.js";
 
 /** The commits a comment is posted against: the PR's destination and source tips. */
 export interface Commits {
@@ -264,15 +265,28 @@ export function describeFailure(error: unknown): DraftProblem {
 }
 
 /**
- * Drafts as read from drafts.json. The file is ours but could be edited or
- * truncated, so anything that is not a whole draft is dropped, not guessed at.
+ * Drafts as read from drafts.json. Anything that is not exactly a draft of
+ * this version (another lazycc version's shape, extra fields, a hand edit) is
+ * left out, not guessed at: posting it without what this version cannot read
+ * could post something else. draftStorage keeps such entries on disk.
  */
 export function parseDrafts(raw: unknown): CommentDraft[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((item: unknown) => {
-    const d = asDraft(item);
+    const d = exactDraft(item);
     return d ? [d] : [];
   });
+}
+
+function exactDraft(item: unknown): CommentDraft | undefined {
+  const d = asDraft(item);
+  return d && isDeepStrictEqual(d, item) ? d : undefined;
+}
+
+/** How many entries of a PR's value in drafts.json parseDrafts leaves out. */
+function unread(raw: unknown): number {
+  if (raw === undefined) return 0;
+  return Array.isArray(raw) ? raw.filter((item: unknown) => !exactDraft(item)).length : 1;
 }
 
 type Obj = Record<string, unknown>;
@@ -383,11 +397,22 @@ export function mergeDrafts(
   });
 }
 
+/**
+ * A PR's drafts as read or saved. `hidden` counts the entries kept on disk
+ * that this version does not read; `setAside` is where a corrupt drafts.json
+ * was moved (DraftsRead).
+ */
+export interface StoredDrafts {
+  readonly drafts: CommentDraft[];
+  readonly hidden: number;
+  readonly setAside?: string;
+}
+
 /** A PR's drafts on disk, by draftKey, for the review screen. */
 export interface DraftStorage {
-  load(key: string): Promise<CommentDraft[]>;
+  load(key: string): Promise<StoredDrafts>;
   /** Returns the drafts as saved, which may hold another process's changes. */
-  save(key: string, drafts: readonly CommentDraft[]): Promise<CommentDraft[]>;
+  save(key: string, drafts: readonly CommentDraft[]): Promise<StoredDrafts>;
 }
 
 /**
@@ -406,24 +431,40 @@ export function draftKey(pr: {
 /**
  * drafts.json, keyed like seen.json: `${region}/${account}/${id}`. Each save
  * merges with what another lazycc wrote since this one last read the key.
+ * Entries this version does not read stay where they are on disk, as the
+ * lazycc that wrote them (npx may run an older one) still owns them.
  */
 export function draftStorage(store: LocalState["drafts"], region: string): DraftStorage {
   const base = new Map<string, readonly CommentDraft[]>();
+  const stored = (key: string, read: DraftsRead<unknown>): StoredDrafts => {
+    const drafts = parseDrafts(read.value);
+    base.set(key, drafts);
+    const hidden = unread(read.value);
+    return { drafts, hidden, ...(read.setAside ? { setAside: read.setAside } : {}) };
+  };
   return {
-    async load(key) {
-      const list = parseDrafts(await store.get(`${region}/${key}`));
-      base.set(key, list);
-      return list;
-    },
+    load: async (key) => stored(key, await store.get(`${region}/${key}`)),
     async save(key, drafts) {
       const was = base.get(key) ?? [];
-      const saved = parseDrafts(
-        await store.update(`${region}/${key}`, (disk) =>
-          mergeDrafts(was, drafts, parseDrafts(disk)),
-        ),
-      );
-      base.set(key, saved);
-      return saved;
+      const read = await store.update(`${region}/${key}`, (disk) => {
+        if (disk !== undefined && !Array.isArray(disk)) {
+          throw new Error(
+            "drafts.json keeps this pull request's drafts in a form another lazycc version wrote.",
+          );
+        }
+        const merged = new Map(mergeDrafts(was, drafts, parseDrafts(disk)).map((d) => [d.id, d]));
+        const next: unknown[] = [];
+        for (const item of disk ?? []) {
+          const d = exactDraft(item);
+          if (!d) next.push(item);
+          else if (merged.has(d.id)) {
+            next.push(merged.get(d.id));
+            merged.delete(d.id);
+          }
+        }
+        return [...next, ...merged.values()];
+      });
+      return stored(key, read);
     },
   };
 }

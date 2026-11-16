@@ -34,10 +34,10 @@ function setup(stored: CommentDraft[] = [], threads: unknown[] = []) {
   let current = { ...detail(), commentThreads: threads };
   const saved: (readonly CommentDraft[])[] = [];
   const storage: DraftStorage = {
-    load: vi.fn(async () => stored),
+    load: vi.fn(async () => ({ drafts: stored, hidden: 0 })),
     save: vi.fn(async (_id, list) => {
       saved.push(list);
-      return [...list];
+      return { drafts: [...list], hidden: 0 };
     }),
   };
   const service = {
@@ -288,5 +288,21 @@ describe("comment drafts on the review screen", () => {
     await press(t, "c", "one", "\t");
     await see(t, "Drafts not saved:");
     expect(frame(t)).toContain("Drafts: 1");
+  });
+
+  it("says where an unreadable drafts file went, and that another version's drafts are kept", async () => {
+    const t = setup();
+    vi.mocked(t.storage.load).mockResolvedValueOnce({
+      drafts: [],
+      hidden: 2,
+      setAside: "/s/drafts.json.bad-1",
+    });
+    await see(t, "drafts.json was unreadable: kept beside it as drafts.json.bad-1");
+    expect(frame(t)).toContain("2 drafts from another lazycc version kept, not shown");
+    // Saving clears the count once the other version's drafts are gone, not the move.
+    await press(t, "c", "one", "\t");
+    await see(t, "Drafts: 1");
+    expect(frame(t)).not.toContain("another lazycc version");
+    expect(frame(t)).toContain("kept beside it as drafts.json.bad-1");
   });
 });

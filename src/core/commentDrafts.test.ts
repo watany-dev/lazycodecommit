@@ -322,10 +322,56 @@ describe("draftStorage", () => {
     const d = general();
     await storage.save("7", [d]);
     expect([...state.draftLists.keys()]).toEqual(["us-east-1/7"]);
-    expect(await storage.load("7")).toEqual([d]);
+    expect(await storage.load("7")).toEqual({ drafts: [d], hidden: 0 });
     state.draftLists.set("us-east-1/8", [{ broken: true }, d]);
-    expect(await storage.load("8")).toEqual([d]);
-    expect(await storage.load("9")).toEqual([]);
+    expect(await storage.load("8")).toEqual({ drafts: [d], hidden: 1 });
+    expect(await storage.load("9")).toEqual({ drafts: [], hidden: 0 });
+  });
+
+  // npx may run an older lazycc than the one that wrote the file.
+  it("keeps, in place, the entries this version cannot read, and never shows them", async () => {
+    const state = fakeState();
+    const storage = draftStorage(state.drafts, "r");
+    const [a, b] = [general("a"), general("b")];
+    const newer = { ...general("n"), target: { kind: "suggestion", lines: [1, 2] } };
+    const extra = { ...general("x"), attachments: ["a.png"] };
+    state.draftLists.set("r/7", [a, newer, extra, b]);
+    expect(await storage.load("7")).toEqual({ drafts: [a, b], hidden: 2 });
+    const c = general("c");
+    expect(await storage.save("7", [b, c])).toEqual({ drafts: [b, c], hidden: 2 });
+    expect(state.draftLists.get("r/7")).toEqual([newer, extra, b, c]);
+  });
+
+  it("leaves a draft another version rewrote to it, even if changed here", async () => {
+    const state = fakeState();
+    const storage = draftStorage(state.drafts, "r");
+    const a = general("a");
+    await storage.save("7", [a]);
+    await storage.load("7");
+    const rewritten = { ...a, target: { kind: "suggestion" } };
+    state.draftLists.set("r/7", [rewritten]);
+    expect(await storage.save("7", [editDraft(a, "edited")])).toEqual({ drafts: [], hidden: 1 });
+    expect(state.draftLists.get("r/7")).toEqual([rewritten]);
+  });
+
+  it("refuses to save over a PR's drafts kept in a shape it cannot read", async () => {
+    const state = fakeState();
+    const storage = draftStorage(state.drafts, "r");
+    state.draftLists.set("r/7", { v: 2, drafts: [] });
+    expect(await storage.load("7")).toEqual({ drafts: [], hidden: 1 });
+    await expect(storage.save("7", [general()])).rejects.toThrow(/another lazycc version/);
+    expect(state.draftLists.get("r/7")).toEqual({ v: 2, drafts: [] });
+  });
+
+  it("passes on where a corrupt drafts.json was moved", async () => {
+    const state = fakeState();
+    const storage = draftStorage(state.drafts, "r");
+    state.drafts.get = async () => ({ value: undefined, setAside: "/s/drafts.json.bad-1" });
+    expect(await storage.load("7")).toEqual({
+      drafts: [],
+      hidden: 0,
+      setAside: "/s/drafts.json.bad-1",
+    });
   });
 
   it("keeps what another lazycc saved to the same PR since this one read it", async () => {
@@ -334,11 +380,11 @@ describe("draftStorage", () => {
     const there = draftStorage(state.drafts, "r");
     const [a, b] = [general("a"), general("b")];
     await here.save("7", [a, b]);
-    expect(await there.load("7")).toEqual([a, b]);
+    expect((await there.load("7")).drafts).toEqual([a, b]);
     // There posts a; here, still holding it, adds c.
     await there.save("7", [b]);
     const c = general("c");
-    expect(await here.save("7", [a, b, c])).toEqual([b, c]);
+    expect((await here.save("7", [a, b, c])).drafts).toEqual([b, c]);
   });
 });
 

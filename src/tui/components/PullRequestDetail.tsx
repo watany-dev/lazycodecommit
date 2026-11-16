@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
 import { Box, Text, useStdout } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -60,6 +61,10 @@ interface DraftProps {
   list: readonly CommentDraft[];
   /** Why drafts.json could not be written: the drafts then last only while the screen is open. */
   saveError: string | null;
+  /** Where a corrupt drafts.json was moved; what it held is not on the screen. */
+  setAside: string | null;
+  /** Drafts kept for another lazycc version, which this one neither shows nor posts. */
+  hidden: number;
   add: (content: string, target: DraftTarget) => void;
   edit: (id: string, content: string) => void;
   discard: (id: string) => void;
@@ -321,9 +326,11 @@ export function PullRequestDetail({
       (approval.evaluation?.approvalRulesNotSatisfied?.length ?? 0) >
     0;
   // The rows around the diff: padding, the header lines, the key line (two
-  // rows when it wraps), and the optional rules, CI and commit lines.
+  // rows when it wraps), and the optional rules, CI, drafts and commit lines.
   const chromeLines =
     10 +
+    (drafts?.setAside ? 1 : 0) +
+    (drafts && drafts.hidden > 0 ? 1 : 0) +
     (hasRules ? 2 : 0) +
     (checks ? 2 + checks.runs.length : 0) +
     (commits.length > 0 || commitsAvailable ? (viewIndex >= 0 ? 2 : 1) : 0) +
@@ -626,6 +633,17 @@ export function PullRequestDetail({
         )}
         {drafts?.saveError && <Text color="red"> Drafts not saved: {drafts.saveError}</Text>}
       </Box>
+      {drafts?.setAside && (
+        <Text color="yellow">
+          drafts.json was unreadable: kept beside it as {basename(drafts.setAside)}
+        </Text>
+      )}
+      {drafts && drafts.hidden > 0 && (
+        <Text color="yellow">
+          {drafts.hidden} {drafts.hidden === 1 ? "draft" : "drafts"} from another lazycc version
+          kept, not shown
+        </Text>
+      )}
       <Box>
         <Text>
           Approvals:{" "}
