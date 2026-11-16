@@ -97,8 +97,10 @@ describe("formatRelativeDate (property-based)", () => {
       fc.property(reasonableDate, reasonableDate, (date, now) => {
         if (now.getTime() >= date.getTime()) {
           const result = formatRelativeDate(date, now);
-          const validPattern = /^(just now|\d+m ago|\d+h ago|\d+d ago|\d{1,2}\/\d{1,2}\/\d{4})$/;
-          expect(result).toMatch(validPattern);
+          // Past 30 days it is the date in the user's locale (2/13/2026, 2026/2/13, 13.2.2026).
+          if (result !== date.toLocaleDateString()) {
+            expect(result).toMatch(/^(just now|\d+m ago|\d+h ago|\d+d ago)$/);
+          }
         }
       }),
     );
