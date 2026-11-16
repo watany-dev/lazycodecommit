@@ -163,6 +163,7 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
   draft = { title: opts.title ?? draft.title, body: explicitBody ?? draft.body };
   if (useEditor) draft = fromEditorText(await deps.edit(toEditorText(draft)));
   if (draft.title.trim() === "") throw new UserError("Aborted: the title is empty.");
+  checkLengths(draft);
 
   const wouldPush = unpushed === null || unpushed > 0;
   // A dry run with --no-push fails as the real run would, not plan a push.
@@ -192,6 +193,24 @@ export async function createPullRequest(opts: CreateOptions, deps: PrDeps): Prom
     clientRequestToken: randomUUID(),
   });
   return { kind: "created", pr };
+}
+
+// CreatePullRequest's limits. Checked before the push, so a long commit
+// subject under --fill does not leave the branch pushed and the PR missing.
+const MAX_TITLE = 150;
+const MAX_BODY = 10_240;
+
+function checkLengths(draft: Draft): void {
+  if (draft.title.length > MAX_TITLE) {
+    throw new UserError(
+      `The title is ${draft.title.length} characters; CodeCommit takes up to ${MAX_TITLE}. Pass a shorter --title.`,
+    );
+  }
+  if (draft.body.length > MAX_BODY) {
+    throw new UserError(
+      `The body is ${draft.body.length} characters; CodeCommit takes up to ${MAX_BODY}. Pass a shorter --body or --body-file.`,
+    );
+  }
 }
 
 async function readBodyFile(path: string, deps: PrDeps): Promise<string> {

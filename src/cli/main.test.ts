@@ -1363,6 +1363,13 @@ describe("terminal safety", () => {
     expect(r.out).not.toMatch(CONTROL);
     expect(json(r.out).title).toBe(hostile);
   });
+
+  it("escapes DEL in JSON, so the data round-trips instead of becoming ^?", async () => {
+    const api = fakeApi([pullRequest({ id: "3", title: "a\x7fb" })]);
+    const r = await cli(["pr", "view", "3", "--json"], { api });
+    expect(r.out).toContain("a\\u007fb");
+    expect(json(r.out).title).toBe("a\x7fb");
+  });
 });
 
 describe("home", () => {

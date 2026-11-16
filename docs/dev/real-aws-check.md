@@ -8,8 +8,8 @@ AWS でしか確かめられない点を、検証用のリポジトリ 1 つに�
 ## 作るもの・消すもの
 
 - 作る: CodeCommit リポジトリ `lazycc-realcheck-<日時>` を 1 つ。同じ名前が
-  既にあれば何もせずに止まる。中にブランチ `main`・`feature/one`・`feature/two`
-  と PR 2 本を作り、コメント・承認・マージ・クローズをする。
+  既にあれば何もせずに止まる。中にブランチ `main`・`feature/one`・`feature/two`・
+  `feature/rename` と PR 3〜4 本を作り、コメント・承認・マージ・クローズをする。
 - 消す: 最後にそのリポジトリを削除する（`--keep` なら残す）。削除の前に名前が
   `lazycc-realcheck-` で始まり、この実行で作ったものであることを確かめる。
 - 触らない: 既存のリポジトリ、`~/.config/lazycc` と `~/.local/state/lazycc`
@@ -113,6 +113,9 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | CloudShell の Node での npx 起動、起動時間（300 ms） | #2、#3、#7 |
 | 各 TUI（レビュー、PR 一覧、ブランチ、ブラウズ、ホーム）が描画され q で終わるか | #10、#11、#22、#27 |
 | clone URL が `core/remote.ts` の形にあうか、呼び出し元 ARN の形 | `core/remote.ts`、`core/inbox.ts` |
+| push の後に、新しい先端の組で `GetCommentsForPullRequest` を呼んでも push 前のコメントが返るか（返らなければレビュー画面から消える） | `aws/review.ts` getComments |
+| rename したファイルを `GetDifferences` がどう返すか、その変更前側へのコメントを旧パス・新パスのどちらで受けるか、手で: コンソールがどちらをどこに出すか | `tui/components/PullRequestDetail.tsx` getLocationFromLine、`core/commentDrafts.ts` lineReader |
+| 151 文字のタイトルが拒否されるか、3 バイト文字 150 文字が通るか（上限が文字数か） | `core/pr.ts` checkLengths |
 | 手で: トークンを何日覚えているか（自動では確かめない。日をまたいだ再試行で二重投稿しないかは使って確かめる） | ADR 0009 |
 | 手で: コンソール URL（PR、browse、短い ID）、BEFORE 側インラインコメントの行、GovCloud・中国リージョンの URL | #8、#10、#22、#23 |
 

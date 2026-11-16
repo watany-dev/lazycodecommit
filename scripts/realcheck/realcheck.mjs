@@ -259,7 +259,7 @@ async function confirm() {
   const plan = [
     `realcheck will, in ${region}${opt.profile ? ` as profile ${opt.profile}` : ""}:`,
     `  create CodeCommit repository ${repoName} (it must not exist yet),`,
-    "  push branches main, feature/one, feature/two to it, open 2 pull requests,",
+    "  push branches main, feature/one, feature/two, feature/rename to it, open up to 4 pull requests,",
     "  comment (including retried posts with a client request token), approve,",
     "  merge and close them, delete branch feature/two,",
     opt.keep
@@ -675,6 +675,7 @@ async function lastActivity() {
     return r.exit === 0 ? "ok" : r.stderr.trim();
   });
   base = await getPr(id);
+  await commentsAfterPush(id, [comments.inline], base);
   if (!other) {
     record(
       "activity.other",
@@ -788,6 +789,167 @@ async function lastActivity() {
     "Newest comment time (the ADR 0006 fallback)",
     "INFO",
     latest.length ? new Date(Math.max(...latest)).toISOString() : (thread.name ?? "none"),
+  );
+}
+
+/** Every comment id GetCommentsForPullRequest returns for `input`, or the error. */
+async function commentIds(input) {
+  const found = [];
+  let nextToken;
+  do {
+    const r = await api(
+      "GetCommentsForPullRequest (after push)",
+      new cc.GetCommentsForPullRequestCommand({ ...input, nextToken }),
+    );
+    if (!r.ok) return ok(r);
+    for (const d of r.out.commentsForPullRequestData ?? [])
+      for (const c of d.comments ?? []) found.push(c.commentId);
+    nextToken = r.out.nextToken;
+  } while (nextToken);
+  return found;
+}
+
+/**
+ * aws/review.ts getComments passes the current tips as afterCommitId and
+ * beforeCommitId. The API reference defines afterCommitId as the source tip
+ * when the comment was made, so after a push the comments made before it may
+ * drop out of the review screen.
+ */
+async function commentsAfterPush(id, before, pr) {
+  const t = pr?.pullRequestTargets?.[0];
+  const wanted = before.filter(Boolean);
+  if (!t || wanted.length === 0)
+    return record("comments.after-push", "Comments made before a push", "SKIP", "no comment or PR");
+  const pair = await commentIds({
+    pullRequestId: id,
+    repositoryName: repoName,
+    beforeCommitId: t.destinationCommit,
+    afterCommitId: t.sourceCommit,
+  });
+  const all = await commentIds({ pullRequestId: id });
+  const holds = (list) => Array.isArray(list) && wanted.every((c) => list.includes(c));
+  record(
+    "comments.after-push",
+    "GetCommentsForPullRequest with the new tips still returns comments made before the push",
+    typeof pair === "string" ? "FAIL" : holds(pair) ? "PASS" : "DIFF",
+    typeof pair === "string"
+      ? pair
+      : holds(pair)
+        ? ""
+        : "hidden by the commit filter: aws/review.ts getComments and ReviewApp reloadComments need another way",
+  );
+  record(
+    "comments.after-push.unfiltered",
+    "GetCommentsForPullRequest without commit ids, for comparison",
+    "INFO",
+    typeof all === "string"
+      ? all
+      : `${holds(all) ? "returns" : "lacks"} them (${all.length} comments)`,
+  );
+}
+
+/**
+ * Two questions lazycc leaves open: which path a comment on the old side of a
+ * renamed file takes (the review screen sends the new path, commentDrafts.ts
+ * lineReader looks for the old one), and whether the 150-character title limit
+ * counts characters or bytes (core/pr.ts checkLengths counts characters).
+ */
+async function renames() {
+  const dir = state.seed;
+  git(dir, "checkout", "-q", "main");
+  git(dir, "checkout", "-q", "-b", "feature/rename");
+  git(dir, "mv", "docs/b.md", "docs/renamed.md");
+  git(dir, "commit", "-q", "-m", "Rename b.md");
+  const push = git(dir, "push", "-q", "origin", "feature/rename");
+  if (push.exit !== 0) return record("rename", "Rename checks", "SKIP", push.stderr.trim());
+  const create = (title) =>
+    api(
+      "CreatePullRequest (rename)",
+      new cc.CreatePullRequestCommand({
+        title,
+        targets: [
+          {
+            repositoryName: repoName,
+            sourceReference: "feature/rename",
+            destinationReference: "main",
+          },
+        ],
+      }),
+    );
+  const long = await create("x".repeat(151));
+  record(
+    "title.151",
+    "CreatePullRequest with a 151-character title (core/pr.ts refuses it before pushing)",
+    "INFO",
+    long.ok ? "accepted" : `${long.name}: ${long.message}`,
+  );
+  if (long.ok)
+    await api(
+      "UpdatePullRequestStatus (151)",
+      new cc.UpdatePullRequestStatusCommand({
+        pullRequestId: long.out.pullRequest.pullRequestId,
+        pullRequestStatus: "CLOSED",
+      }),
+    );
+  const r = await create("あ".repeat(150));
+  record(
+    "title.150-multibyte",
+    "CreatePullRequest with 150 three-byte characters (450 bytes)",
+    "INFO",
+    r.ok ? "accepted" : `${r.name}: ${r.message}`,
+  );
+  const pr = r.out?.pullRequest;
+  const t = pr?.pullRequestTargets?.[0];
+  if (!t) return record("rename", "Rename checks", "SKIP", "no PR");
+  const diff = await api(
+    "GetDifferences (rename)",
+    new cc.GetDifferencesCommand({
+      repositoryName: repoName,
+      beforeCommitSpecifier: t.mergeBase ?? t.destinationCommit,
+      afterCommitSpecifier: t.sourceCommit,
+    }),
+  );
+  record(
+    "rename.differences",
+    "GetDifferences on a renamed file",
+    "INFO",
+    diff.ok
+      ? (diff.out.differences ?? [])
+          .map((d) => `${d.changeType} ${d.beforeBlob?.path ?? "-"} -> ${d.afterBlob?.path ?? "-"}`)
+          .join("; ")
+      : ok(diff),
+  );
+  for (const [side, filePath] of [
+    ["old", "docs/b.md"],
+    ["new", "docs/renamed.md"],
+  ]) {
+    const posted = await api(
+      `PostCommentForPullRequest (rename, ${side} path)`,
+      new cc.PostCommentForPullRequestCommand({
+        pullRequestId: pr.pullRequestId,
+        repositoryName: repoName,
+        beforeCommitId: t.destinationCommit,
+        afterCommitId: t.sourceCommit,
+        content: `realcheck: BEFORE side, ${side} path`,
+        location: { filePath, filePosition: 1, relativeFileVersion: "BEFORE" },
+      }),
+    );
+    record(
+      `rename.before.${side}-path`,
+      `A BEFORE-side comment on the renamed file with the ${side} path`,
+      "INFO",
+      posted.ok ? `accepted, stored as ${JSON.stringify(posted.out.location)}` : ok(posted),
+    );
+  }
+  manual.push(
+    `Renamed file: open PR ${pr.pullRequestId} in the console during --keep and note which of the two BEFORE-side comments on docs/renamed.md it shows, and where.`,
+  );
+  await api(
+    "UpdatePullRequestStatus (rename)",
+    new cc.UpdatePullRequestStatusCommand({
+      pullRequestId: pr.pullRequestId,
+      pullRequestStatus: "CLOSED",
+    }),
   );
 }
 
@@ -1599,6 +1761,7 @@ try {
   await failures();
   await ciResults();
   await close();
+  await renames();
 } catch (error) {
   failed = true;
   record("abort", "Run stopped early", "FAIL", error.stack ?? error);
