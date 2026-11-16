@@ -329,14 +329,17 @@ function isCheckState(v: unknown): v is CheckState {
   return CHECK_STATES.has(v);
 }
 
+/** A saved date; anything but a string is an invalid date (new Date({toString: null}) throws). */
+const dateOf = (v: unknown) => new Date(typeof v === "string" ? v : Number.NaN);
+
 function parseItem(raw: unknown): InboxItem | undefined {
   if (typeof raw !== "object" || raw === null) return undefined;
   const r = raw as Record<string, unknown>;
   const pr = r["pr"] as Record<string, unknown> | undefined;
   if (r["section"] !== "awaiting" && r["section"] !== "mine") return undefined;
   if (typeof pr !== "object" || pr === null) return undefined;
-  const creationDate = new Date(pr["creationDate"] as string);
-  const lastActivityDate = new Date(pr["lastActivityDate"] as string);
+  const creationDate = dateOf(pr["creationDate"]);
+  const lastActivityDate = dateOf(pr["lastActivityDate"]);
   const strings = [
     "id",
     "title",
@@ -383,7 +386,7 @@ export function fromCache(
   const r = raw as Record<string, unknown>;
   if (r["key"] !== cacheKey(me, region, repositories) || !Array.isArray(r["items"]))
     return undefined;
-  const fetchedAt = new Date(r["fetchedAt"] as string);
+  const fetchedAt = dateOf(r["fetchedAt"]);
   if (Number.isNaN(fetchedAt.getTime())) return undefined;
   const items = r["items"].map(parseItem);
   if (items.some((i) => i === undefined)) return undefined;
