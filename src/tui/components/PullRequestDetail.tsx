@@ -16,6 +16,8 @@ import { head, printable, shortArn } from "../../core/text.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
 import { useAsyncDismiss } from "../hooks/useAsyncDismiss.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
+import { isBottom, isPageDown, isPageUp, isTop } from "../listKeys.js";
 import {
   buildDisplayLines,
   COMMENT_LINE_TYPES,
@@ -149,6 +151,7 @@ export function PullRequestDetail({
   drafts,
   checks = null,
 }: Props) {
+  const quit = useQuit();
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isCommenting, setIsCommenting] = useState(false);
   const [inlineCommentLocation, setInlineCommentLocation] = useState<InlineLocation | null>(null);
@@ -332,7 +335,7 @@ export function PullRequestDetail({
       : pendingBracket
         ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
         : viewIndex >= 0
-          ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q ? help${hasTruncation ? " t more" : ""}`
+          ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q quit ? help${hasTruncation ? " t more" : ""}`
           : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`;
   const conflictError =
     conflictCheckError && `Could not check for conflicts: ${conflictCheckError}`;
@@ -370,7 +373,10 @@ export function PullRequestDetail({
         const targetIndex = headerIndices[fileListCursor];
         if (targetIndex !== undefined) setCursorIndex(targetIndex);
         setShowFileList(false);
-      } else if (key.escape || input === "f" || input === "q") {
+      } else if (isTop(input, key)) setFileListCursor(0);
+      else if (isBottom(input, key)) setFileListCursor(Math.max(fileNames.length - 1, 0));
+      else if (input === "q") quit();
+      else if (key.escape || input === "f" || (key.ctrl && input === "g")) {
         setShowFileList(false);
       }
       return;
@@ -433,7 +439,11 @@ export function PullRequestDetail({
       return;
     }
 
-    if (input === "q" || key.escape) {
+    if (input === "q") {
+      quit();
+      return;
+    }
+    if (key.escape) {
       onBack();
       return;
     }
@@ -470,24 +480,29 @@ export function PullRequestDetail({
       });
       return;
     }
-    // Ctrl+d: half page down
-    if (key.ctrl && input === "d") {
+    // Ctrl+d, J, PgDn: half page down
+    if (isPageDown(input, key)) {
       if (lines.length === 0) return;
       const halfPage = Math.floor(visibleLineCount / 2);
       setCursorIndex((prev) => Math.min(prev + halfPage, lines.length - 1));
       return;
     }
-    // Ctrl+u: half page up
-    if (key.ctrl && input === "u") {
+    // Ctrl+u, K, PgUp: half page up
+    if (isPageUp(input, key)) {
       if (lines.length === 0) return;
       const halfPage = Math.floor(visibleLineCount / 2);
       setCursorIndex((prev) => Math.max(prev - halfPage, 0));
       return;
     }
-    // G: jump to last line
-    if (input === "G") {
+    // G, >, End: jump to last line
+    if (input === "G" || isBottom(input, key)) {
       if (lines.length === 0) return;
       setCursorIndex(lines.length - 1);
+      return;
+    }
+    // <, Home: jump to the top (g is react)
+    if (isTop(input, key)) {
+      setCursorIndex(0);
       return;
     }
     // n: next file header
@@ -502,8 +517,8 @@ export function PullRequestDetail({
       if (idx !== -1) setCursorIndex(idx);
       return;
     }
-    // f: toggle file list
-    if (input === "f") {
+    // f, Ctrl+g (lazygit's jump to file): file list
+    if (input === "f" || (key.ctrl && input === "g")) {
       if (viewIndex >= 0) return;
       setShowFileList(true);
       setFileListCursor(0);
@@ -564,7 +579,7 @@ export function PullRequestDetail({
       setApprovalAction("revoke");
       return;
     }
-    if (input === "m") {
+    if (input === "m" || input === "M") {
       setMergeStep("strategy");
       return;
     }

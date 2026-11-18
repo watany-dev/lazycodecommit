@@ -178,7 +178,7 @@ describe("screens, for any terminal size and titles", () => {
             s.rows,
           );
           try {
-            await vi.waitFor(() => expect(t.frame()).toContain("Tab switch"));
+            await vi.waitFor(() => expect(t.frame()).toContain("[ ] switch"));
             const expectOneLineEach = (frame: string) => {
               expectFits(frame, s.columns, s.rows);
               // Cut at the width, not wrapped (spec: 見出しの行は端末の幅で切り…折り返さない).

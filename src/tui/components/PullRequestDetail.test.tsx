@@ -5,6 +5,7 @@ import type { MergeStrategy } from "../../core/review.js";
 import { printable } from "../../core/text.js";
 import { press, render, settle } from "../../testing/keys.js";
 import type { AsyncActionState } from "../hooks/useAsyncAction.js";
+import { QuitProvider } from "../hooks/useQuit.js";
 import { PullRequestDetail } from "./PullRequestDetail.js";
 
 function asyncAction<T extends unknown[]>(
@@ -456,7 +457,7 @@ describe("PullRequestDetail", () => {
     expect(lastFrame()).toContain("help");
   });
 
-  it("calls onBack on q key", () => {
+  it("calls onBack on Esc", async () => {
     const onBack = vi.fn();
     const { stdin } = render(
       <PullRequestDetail
@@ -478,8 +479,8 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
-    stdin.write("q");
-    expect(onBack).toHaveBeenCalled();
+    stdin.write("\u001B");
+    await vi.waitFor(() => expect(onBack).toHaveBeenCalled());
   });
 
   it("calls onHelp on ? key", () => {
@@ -939,7 +940,7 @@ describe("PullRequestDetail", () => {
     );
     stdin.write("a");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Approve this pull request? (y/n)");
+      expect(lastFrame()).toContain("Approve this pull request? (Enter/y, Esc/n)");
     });
   });
 
@@ -966,7 +967,7 @@ describe("PullRequestDetail", () => {
     );
     stdin.write("r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Revoke your approval? (y/n)");
+      expect(lastFrame()).toContain("Revoke your approval? (Enter/y, Esc/n)");
     });
   });
 
@@ -1789,7 +1790,8 @@ describe("PullRequestDetail", () => {
     );
     await press(screen, "\t", "G", "k");
     expect(screen.lastFrame()).toContain("[t] show next 300 lines");
-    expect(screen.lastFrame()).toContain("t more");
+    // The key line wraps on an 80-column screen.
+    expect(screen.lastFrame()?.replace(/\s+/g, " ")).toContain("t more");
     await press(screen, "t", "G");
     expect(screen.lastFrame()).toContain("... truncated 600/2000 lines");
   });
@@ -3879,7 +3881,7 @@ describe("PullRequestDetail", () => {
     stdin.write("\r"); // select fast-forward
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("fast-forward");
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
   });
 
@@ -3916,7 +3918,7 @@ describe("PullRequestDetail", () => {
     });
     stdin.write("\r"); // select fast-forward
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     expect(onMerge).toHaveBeenCalledWith("fast-forward");
@@ -4072,7 +4074,7 @@ describe("PullRequestDetail", () => {
     // Resolve to complete
     resolveConflictCheck!({ mergeable: true, conflictCount: 0, conflictFiles: [] });
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
   });
 
@@ -4154,7 +4156,7 @@ describe("PullRequestDetail", () => {
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("squash");
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     expect(onMerge).toHaveBeenCalledWith("squash");
@@ -4199,7 +4201,7 @@ describe("PullRequestDetail", () => {
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("three-way merge");
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     expect(onMerge).toHaveBeenCalledWith("three-way");
@@ -4844,11 +4846,11 @@ describe("PullRequestDetail", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("n"); // cancel merge
     await vi.waitFor(() => {
-      expect(lastFrame()).not.toContain("(y/n)");
+      expect(lastFrame()).not.toContain("(Enter/y, Esc/n)");
       expect(lastFrame()).toContain("m merge");
       expect(onClearMergeError).toHaveBeenCalled();
     });
@@ -4893,7 +4895,7 @@ describe("PullRequestDetail", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     rerender(
       <PullRequestDetail
@@ -6621,7 +6623,7 @@ describe("PullRequestDetail", () => {
       expect(onReact).toHaveBeenCalledWith("comment-r1", ":thumbsup:");
     });
 
-    it("closes ReactionPicker when q is pressed", async () => {
+    it("closes ReactionPicker when Esc is pressed", async () => {
       const { lastFrame, stdin } = render(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -6657,7 +6659,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("React to comment:");
       });
-      stdin.write("q");
+      stdin.write("\u001B");
       await vi.waitFor(() => {
         expect(lastFrame()).not.toContain("React to comment:");
       });
@@ -6789,6 +6791,101 @@ describe("PullRequestDetail", () => {
       });
       stdin.write("x"); // any key to clear
       expect(onClearReactionError).toHaveBeenCalled();
+    });
+  });
+
+  describe("lazygit's keys", () => {
+    const manyLines = Array.from({ length: 50 }, (_, i) => `line${i + 1}`).join("\n");
+    const manyLinesDiffTexts = new Map([
+      ["b1:b2", { before: manyLines, after: manyLines.replace("line25", "modified25") }],
+    ]);
+    const show = () =>
+      render(
+        <PullRequestDetail
+          pullRequest={pullRequest as any}
+          differences={differences as any}
+          commentThreads={[]}
+          diffTexts={manyLinesDiffTexts}
+          onBack={vi.fn()}
+          onHelp={vi.fn()}
+          onShowActivity={vi.fn()}
+          comment={defaultCommentProps}
+          reply={defaultReplyProps}
+          approval={defaultApprovalProps}
+          merge={defaultMergeProps}
+          close={defaultCloseProps}
+          commitView={defaultCommitProps}
+          editComment={defaultEditCommentProps}
+          deleteComment={defaultDeleteCommentProps}
+          reaction={defaultReactionProps}
+        />,
+      );
+    const cursorLine = (frame: string | undefined) =>
+      (frame ?? "").split("\n").find((l) => l.includes("> ")) ?? "";
+
+    it("moves half a page with J K and PgDn PgUp, and to the ends with < > Home End", async () => {
+      const screen = show();
+      for (const [down, up] of [
+        ["J", "K"],
+        ["\x1b[6~", "\x1b[5~"],
+      ] as const) {
+        await press(screen, down);
+        expect(cursorLine(screen.lastFrame())).not.toContain("src/auth.ts");
+        await press(screen, up);
+        expect(cursorLine(screen.lastFrame())).toContain("src/auth.ts");
+      }
+      await press(screen, "G");
+      const last = screen.lastFrame();
+      await press(screen, "\u0015", "\u0015", "\u0015", "\u0015");
+      for (const [end, top] of [
+        [">", "<"],
+        ["\x1b[F", "\x1b[H"],
+      ] as const) {
+        await press(screen, end);
+        expect(screen.lastFrame()).toBe(last);
+        await press(screen, top);
+        expect(cursorLine(screen.lastFrame())).toContain("src/auth.ts");
+      }
+    });
+
+    it("opens the file list with Ctrl+g and the merge picker with M", async () => {
+      const screen = show();
+      await press(screen, "\x07");
+      expect(screen.lastFrame()).toContain("Files");
+      await press(screen, "\x07");
+      expect(screen.lastFrame()).not.toContain("Files (");
+      await press(screen, "M");
+      expect(screen.lastFrame()).toContain("Select merge strategy:");
+    });
+
+    it("quits lazycc on q and goes back only on Esc", async () => {
+      const onBack = vi.fn();
+      const onQuit = vi.fn();
+      const r = render(
+        <QuitProvider onQuit={onQuit}>
+          <PullRequestDetail
+            pullRequest={pullRequest as any}
+            differences={differences as any}
+            commentThreads={[]}
+            diffTexts={manyLinesDiffTexts}
+            onBack={onBack}
+            onHelp={vi.fn()}
+            onShowActivity={vi.fn()}
+            comment={defaultCommentProps}
+            reply={defaultReplyProps}
+            approval={defaultApprovalProps}
+            merge={defaultMergeProps}
+            close={defaultCloseProps}
+            commitView={defaultCommitProps}
+            editComment={defaultEditCommentProps}
+            deleteComment={defaultDeleteCommentProps}
+            reaction={defaultReactionProps}
+          />
+        </QuitProvider>,
+      );
+      r.stdin.write("q");
+      expect(onQuit).toHaveBeenCalled();
+      expect(onBack).not.toHaveBeenCalled();
     });
   });
 
@@ -7460,7 +7557,7 @@ describe("PullRequestDetail", () => {
       });
     });
 
-    it("moves file list selection back up with k and closes with q", async () => {
+    it("moves file list selection back up with k and closes with Ctrl+g", async () => {
       const { stdin, lastFrame } = render(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -7497,7 +7594,7 @@ describe("PullRequestDetail", () => {
         expect(lastFrame()).toMatch(/> .*src\/alpha\.ts/);
       });
 
-      stdin.write("q");
+      stdin.write("\x07");
       await vi.waitFor(() => {
         expect(lastFrame()).not.toContain("Files (2)");
       });

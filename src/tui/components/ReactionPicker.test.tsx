@@ -1,6 +1,7 @@
 import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+import { QuitProvider } from "../hooks/useQuit.js";
 import { ReactionPicker } from "./ReactionPicker.js";
 
 const REACTIONS = [
@@ -98,11 +99,17 @@ describe("ReactionPicker", () => {
     expect(onSelect).toHaveBeenCalledWith(":thumbsdown:");
   });
 
-  it("calls onCancel on q key", () => {
+  it("quits lazycc on q instead of cancelling", () => {
     const onCancel = vi.fn();
-    const { stdin } = render(<ReactionPicker {...defaultProps} onCancel={onCancel} />);
+    const onQuit = vi.fn();
+    const { stdin } = render(
+      <QuitProvider onQuit={onQuit}>
+        <ReactionPicker {...defaultProps} onCancel={onCancel} />
+      </QuitProvider>,
+    );
     stdin.write("q");
-    expect(onCancel).toHaveBeenCalled();
+    expect(onQuit).toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   it("shows 'Adding reaction...' when isProcessing is true", () => {

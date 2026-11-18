@@ -1,6 +1,7 @@
 import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+import { QuitProvider } from "../hooks/useQuit.js";
 import { MergeStrategySelector } from "./MergeStrategySelector.js";
 
 describe("MergeStrategySelector", () => {
@@ -134,18 +135,22 @@ describe("MergeStrategySelector", () => {
     await vi.waitFor(() => expect(onCancel).toHaveBeenCalled());
   });
 
-  it("calls onCancel on q key", () => {
+  it("quits lazycc on q instead of cancelling", () => {
     const onCancel = vi.fn();
+    const onQuit = vi.fn();
     const { stdin } = render(
-      <MergeStrategySelector
-        sourceRef="feature"
-        destRef="main"
-        onSelect={vi.fn()}
-        onCancel={onCancel}
-      />,
+      <QuitProvider onQuit={onQuit}>
+        <MergeStrategySelector
+          sourceRef="feature"
+          destRef="main"
+          onSelect={vi.fn()}
+          onCancel={onCancel}
+        />
+      </QuitProvider>,
     );
     stdin.write("q");
-    expect(onCancel).toHaveBeenCalled();
+    expect(onQuit).toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
   });
 
   it("does not call onSelect or onCancel on unrelated key", () => {

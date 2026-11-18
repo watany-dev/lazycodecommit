@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { PullRequestDisplayStatus, PullRequestSummary } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
+import { isBottom, isTop } from "../listKeys.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 import { windowStart } from "./FilterLine.js";
 import { TextField } from "./TextField.js";
@@ -75,6 +77,7 @@ export function PullRequestList({
   onPreviousPage,
 }: Props) {
   const { stdout } = useStdout();
+  const quit = useQuit();
   const [isSearching, setIsSearching] = useState(false);
   const [cursor, setCursor] = useState(0);
 
@@ -101,7 +104,11 @@ export function PullRequestList({
       return;
     }
 
-    if (input === "q" || key.escape) {
+    if (input === "q") {
+      quit();
+      return;
+    }
+    if (key.escape) {
       onBack();
       return;
     }
@@ -117,11 +124,11 @@ export function PullRequestList({
       setIsSearching(true);
       return;
     }
-    if (input === "n" && pagination.hasNextPage) {
+    if ((input === "n" || input === ".") && pagination.hasNextPage) {
       onNextPage();
       return;
     }
-    if (input === "p" && pagination.hasPreviousPage) {
+    if ((input === "p" || input === ",") && pagination.hasPreviousPage) {
       onPreviousPage();
       return;
     }
@@ -131,6 +138,14 @@ export function PullRequestList({
     }
     if (input === "k" || key.upArrow) {
       setCursor((prev) => Math.max(prev - 1, 0));
+      return;
+    }
+    if (isTop(input, key)) {
+      setCursor(0);
+      return;
+    }
+    if (isBottom(input, key)) {
+      setCursor(Math.max(filteredPullRequests.length - 1, 0));
       return;
     }
     if (key.return) {
@@ -218,8 +233,8 @@ export function PullRequestList({
       <Box marginTop={1}>
         <Text dimColor>
           Page {pagination.currentPage}
-          {pagination.hasPreviousPage ? "  p prev" : ""}
-          {pagination.hasNextPage ? "  n next" : ""}
+          {pagination.hasPreviousPage ? "  , prev" : ""}
+          {pagination.hasNextPage ? "  . next" : ""}
         </Text>
       </Box>
 
@@ -228,7 +243,7 @@ export function PullRequestList({
         <Text dimColor>
           {isSearching
             ? "Enter keep search  Esc clear search"
-            : "↑↓ navigate  Enter view  f filter  / search  n next  p prev  q back  ? help"}
+            : "↑↓ navigate  Enter view  f filter  / search  . next  , prev  Esc back  q quit  ? help"}
         </Text>
       </Box>
     </Box>

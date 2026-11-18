@@ -10,8 +10,10 @@ import {
 import type { ReviewService } from "../core/review.js";
 import { printable } from "../core/text.js";
 import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
-import { HelpScreen, type HelpSection } from "./components/Help.js";
+import { HelpMenu, type HelpSection, useHelp } from "./components/Help.js";
 import { useKeys } from "./hooks/useKeys.js";
+import { useQuit } from "./hooks/useQuit.js";
+import { isBottom, isTop } from "./listKeys.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
@@ -39,6 +41,7 @@ const CHROME_LINES = 7;
 
 export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Props) {
   const { exit } = useApp();
+  const quit = useQuit();
   const { stdout } = useStdout();
   const [table, setTable] = useState<BranchTable | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +51,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
   const { filter } = filterBox;
   const [confirmDelete, setConfirmDelete] = useState<BranchRow | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
+  const help = useHelp();
   const [note, setNote] = useState<Note | null>(
     start && "message" in start ? { text: start.message, error: true } : null,
   );
@@ -94,24 +97,21 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
 
   useKeys(
     (input, key) => {
-      if (showHelp) {
-        setShowHelp(false);
-        return;
-      }
       if (confirmDelete) {
         const row = confirmDelete;
         setConfirmDelete(null);
-        if (input === "y") void act(() => actions.deleteBranch(row), `Deleted origin/${row.name}.`);
+        if (input === "y" || key.return)
+          void act(() => actions.deleteBranch(row), `Deleted origin/${row.name}.`);
         return;
       }
       if (filterBox.handleKey(key)) return;
       if (busy) return;
-      if (input === "q" || key.escape) {
-        exit();
+      if (input === "q") {
+        quit();
         return;
       }
       if (input === "?") {
-        setShowHelp(true);
+        help.show();
         return;
       }
       const top = onSwitch && topSwitch(input, key, "branches");
@@ -122,7 +122,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
       }
       // Rows are stale until the reload lands, and a second load could finish first.
       if (loading) return;
-      if (key.ctrl && input === "r") {
+      if (input === "R") {
         setNote(null);
         void load(true);
         return;
@@ -140,12 +140,20 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
         setCursor(Math.max(index - 1, 0));
         return;
       }
+      if (isTop(input, key)) {
+        setCursor(0);
+        return;
+      }
+      if (isBottom(input, key)) {
+        setCursor(Math.max(rows.length - 1, 0));
+        return;
+      }
       if (!selected) return;
       setNote(null);
       if (key.return) {
         if (selected.state === "open" && selected.pr) setReviewing(selected.pr.id);
-        else setNote({ text: `${selected.name} has no open pull request. Press n to create one.` });
-      } else if (input === "n") {
+        else setNote({ text: `${selected.name} has no open pull request. Press o to create one.` });
+      } else if (input === "o" || input === "n") {
         if (selected.state === "open") {
           setNote({ text: `${selected.name} already has #${selected.pr?.id}. Press Enter.` });
         } else if (selected.isDefault) {
@@ -169,7 +177,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
         setNote({ text: actions.consoleUrl(selected.name) });
       }
     },
-    { isActive: reviewing === null },
+    { isActive: reviewing === null && !help.open },
   );
 
   if (reviewing !== null) {
@@ -187,7 +195,15 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
     );
   }
 
-  if (showHelp) return <HelpScreen title="Branches help" sections={[{ keys: BRANCH_HELP }]} />;
+  if (help.open)
+    return (
+      <HelpMenu
+        title="Branches help"
+        sections={[{ keys: BRANCH_HELP }]}
+        onClose={help.close}
+        onRun={help.run}
+      />
+    );
 
   const height = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
   const top = windowStart(index, height, rows.length);
@@ -214,7 +230,7 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
       <Box marginTop={1}>
         {confirmDelete ? (
           <Text color="yellow">
-            Delete origin/{printable(confirmDelete.name)} on CodeCommit? (y/n)
+            Delete origin/{printable(confirmDelete.name)} on CodeCommit? (Enter/y, Esc/n)
           </Text>
         ) : busy || (loading && table) ? (
           <Text color="cyan">Working...</Text>
@@ -222,8 +238,8 @@ export function BranchesApp({ actions, service, start, onCreate, onSwitch }: Pro
           <Text {...(note.error ? { color: "red" } : {})}>{printable(note.text)}</Text>
         ) : (
           <Text dimColor>
-            Enter review n new PR d delete{actions.switchBranch ? " Space switch" : ""} / filter
-            Ctrl+r refresh u URL{onSwitch ? " r repositories 1 home 3 browse" : ""} q quit ? help
+            Enter review o new PR d delete{actions.switchBranch ? " Space switch" : ""} / filter R
+            refresh u URL{onSwitch ? " r repositories 1 home 3 browse" : ""} q quit ? help
           </Text>
         )}
       </Box>
@@ -282,12 +298,16 @@ const STATE_COLOR: Record<BranchRow["state"], string> = {
 
 const BRANCH_HELP: HelpSection["keys"] = [
   ["j / k, ↓ / ↑", "Move"],
-  ["Enter", "Review the branch's open PR"],
-  ["n", "Create a PR from the branch"],
-  ["d", "Delete the branch on CodeCommit (not the local one)"],
-  ["Space", "Switch to the branch (git switch, clone only)"],
-  ["/", "Filter by name"],
-  ["Ctrl+r", "git fetch origin and reload"],
-  ["u", "Show the branch's console URL"],
-  ["q / Esc", "Quit"],
+  ["< / >, Home / End", "First / last branch"],
+  ["Enter", "Review the branch's open PR", "\r"],
+  ["o / n", "Create a PR from the branch", "o"],
+  ["d", "Delete the branch on CodeCommit (not the local one)", "d"],
+  ["Space", "Switch to the branch (git switch, clone only)", " "],
+  ["/", "Filter by name", "/"],
+  ["R", "git fetch origin and reload", "R"],
+  ["u", "Show the branch's console URL", "u"],
+  ["r / Ctrl+r", "Pick the repository", "r"],
+  ["1", "Home", "1"],
+  ["3", "Browse", "3"],
+  ["q / Ctrl+c", "Quit"],
 ];

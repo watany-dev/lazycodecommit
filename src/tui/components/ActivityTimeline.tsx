@@ -3,6 +3,7 @@ import React, { memo, useEffect, useMemo, useState } from "react";
 import type { PrActivityEvent } from "../../core/review.js";
 import { shortArn } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
 import { formatRelativeDate } from "../utils/formatDate.js";
 
 /** The title and key lines, each with a blank row above the list or below it. */
@@ -36,8 +37,13 @@ export function ActivityTimeline({
     setCursorIndex((prev) => Math.min(prev, Math.max(events.length - 1, 0)));
   }, [events.length]);
 
+  const quit = useQuit();
   useKeys((input, key) => {
-    if (key.escape || input === "q") {
+    if (input === "q") {
+      quit();
+      return;
+    }
+    if (key.escape) {
       onBack();
       return;
     }
@@ -86,7 +92,7 @@ export function ActivityTimeline({
         </Text>
         <Text color="red">Failed to load activity:</Text>
         <Text color="red">{error}</Text>
-        <Text dimColor>Press q to go back</Text>
+        <Text dimColor>Press Esc to go back</Text>
       </Box>
     );
   }
@@ -98,7 +104,7 @@ export function ActivityTimeline({
           Activity: {pullRequestTitle}
         </Text>
         <Text dimColor>No activity events found.</Text>
-        <Text dimColor>q back</Text>
+        <Text dimColor>Esc back</Text>
       </Box>
     );
   }
@@ -125,8 +131,8 @@ export function ActivityTimeline({
           {isLoading
             ? "Loading more events..."
             : hasNextPage
-              ? "↑↓ scroll  n next page  q back"
-              : "↑↓ scroll  q back"}
+              ? "↑↓ scroll  n next page  Esc back"
+              : "↑↓ scroll  Esc back"}
         </Text>
       </Box>
     </Box>

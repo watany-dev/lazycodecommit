@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { type CommentDraft, canEdit } from "../../core/commentDrafts.js";
 import { head, printable } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
 import { CommentInput } from "./CommentInput.js";
 import { ConfirmPrompt } from "./ConfirmPrompt.js";
 
@@ -50,6 +51,7 @@ export function DraftList({
     setCursor((c) => Math.max(0, Math.min(c, drafts.length - 1)));
   }, [drafts.length]);
 
+  const quit = useQuit();
   useKeys(
     (input, key) => {
       if (submit.error) {
@@ -57,7 +59,8 @@ export function DraftList({
         return;
       }
       setNotice(null);
-      if (input === "q" || input === "D" || key.escape) {
+      if (input === "q") quit();
+      else if (input === "D" || key.escape) {
         onClose();
       } else if (input === "j" || key.downArrow) {
         setCursor((c) => Math.min(c + 1, drafts.length - 1));
@@ -154,7 +157,7 @@ export function DraftList({
       {mode === "list" && !submit.error && (
         <Text dimColor>
           j/k move Enter go to line e edit d discard{postable > 0 ? " S post all" : ""}
-          {selected?.problem?.kind === "moved" ? " p post anyway" : ""} q close
+          {selected?.problem?.kind === "moved" ? " p post anyway" : ""} Esc close
         </Text>
       )}
     </Box>

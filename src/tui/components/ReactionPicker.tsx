@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React, { useState } from "react";
 import type { ReactionSummary } from "../../core/review.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
 
 const REACTIONS = [
   { emoji: "👍", shortCode: ":thumbsup:" },
@@ -40,6 +41,7 @@ export function ReactionPicker({
     }
   }
 
+  const quit = useQuit();
   useKeys((input, key) => {
     if (error) {
       onClearError();
@@ -48,7 +50,11 @@ export function ReactionPicker({
 
     if (isProcessing) return;
 
-    if (key.escape || input === "q") {
+    if (input === "q") {
+      quit();
+      return;
+    }
+    if (key.escape) {
       onCancel();
       return;
     }

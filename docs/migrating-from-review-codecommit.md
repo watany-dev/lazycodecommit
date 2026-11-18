@@ -23,6 +23,9 @@ close, `A` activity, `Tab` commits, `]c` / `[c` changes, plus `f` for the
 file list and `t` to show more of a large diff. See
 [keybindings.md](keybindings.md).
 
+Two keys behave differently, to match lazygit: `q` quits from any screen
+(`Esc` goes back), and confirmations also take `Enter`.
+
 Inside a clone the diff now comes from local git (fetching the PR's branches
 if needed) instead of the API.
 

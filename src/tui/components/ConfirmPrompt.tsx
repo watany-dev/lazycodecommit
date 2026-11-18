@@ -28,7 +28,8 @@ export function ConfirmPrompt({
     }
     if (isProcessing) return;
 
-    if (input === "y" || input === "Y") {
+    // Enter confirms, as in lazygit's confirmation panel; y still does.
+    if (input === "y" || input === "Y" || key.return) {
       onConfirm();
       return;
     }
@@ -57,7 +58,7 @@ export function ConfirmPrompt({
 
   return (
     <Box flexDirection="column">
-      <Text>{message} (y/n)</Text>
+      <Text>{message} (Enter/y, Esc/n)</Text>
     </Box>
   );
 }

@@ -40,11 +40,12 @@ const reply = newDraft(
 );
 
 describe("DraftList", () => {
-  it("says how to make a draft when there is none, and closes with q", async () => {
+  it("says how to make a draft when there is none, and closes with Esc", async () => {
     const t = show([]);
     expect(t.lastFrame()).toContain("No drafts. Press Tab in a comment box");
     expect(t.lastFrame()).not.toContain("S post all");
-    await press(t, "S", "q");
+    await press(t, "S", "\u001B");
+    await vi.waitFor(() => expect(t.onClose).toHaveBeenCalled());
     expect(t.onSubmit).not.toHaveBeenCalled();
     expect(t.onClose).toHaveBeenCalledOnce();
   });
