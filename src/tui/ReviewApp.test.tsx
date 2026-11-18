@@ -279,7 +279,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
-    stdin.write("q");
+    stdin.write("\u001B");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Open Pull Requests");
     });
@@ -298,6 +298,16 @@ describe("App", () => {
     expect(exit).toHaveBeenCalled();
   });
 
+  it("stays on the PR list on Esc when it is the top screen", async () => {
+    vi.mocked(listPullRequests).mockResolvedValue({ pullRequests: [] });
+    const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
+    await vi.waitFor(() => expect(lastFrame()).toContain("No open pull requests"));
+    stdin.write("\u001B");
+    await settle();
+    expect(lastFrame()).toContain("No open pull requests");
+    expect(exit).not.toHaveBeenCalled();
+  });
+
   it("shows help screen and returns", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({ pullRequests: [] });
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
@@ -307,7 +317,7 @@ describe("App", () => {
 
     stdin.write("?");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Navigation");
+      expect(lastFrame()).toContain("Pull requests help");
     });
 
     // Close help by pressing ? again
@@ -585,7 +595,7 @@ describe("App", () => {
 
     stdin.write("?");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Navigation");
+      expect(lastFrame()).toContain("Pull requests help");
     });
   });
 
@@ -623,10 +633,14 @@ describe("App", () => {
 
     stdin.write("?");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("Navigation");
+      expect(lastFrame()).toContain("Moving around");
     });
 
     expect(getBlobContent).not.toHaveBeenCalled();
+
+    // Enter presses the selected key on the review screen: here "A", the activity timeline.
+    await press(stdin, "/", "a", "c", "t", "i", "v", "\r", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Activity: fix: login"));
   });
 
   it("posts comment successfully and reloads comments", async () => {
@@ -1191,12 +1205,14 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
-    stdin.write("q");
+    stdin.write("\u001B");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("first pr");
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The list is drawn, but its key handler may still be a render behind (Esc
+    // lands a tick later than q did): give useInput time to take it.
+    await settle();
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -2620,7 +2636,7 @@ describe("App", () => {
 
     stdin.write("\r"); // select fast-forward
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
 
     stdin.write("y");
@@ -2686,7 +2702,7 @@ describe("App", () => {
 
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
 
     stdin.write("y");
@@ -2741,7 +2757,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -2795,7 +2811,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -2950,7 +2966,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -3004,7 +3020,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -3058,7 +3074,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -3112,7 +3128,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -3166,7 +3182,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     stdin.write("y");
     await vi.waitFor(() => {
@@ -3313,7 +3329,7 @@ describe("App", () => {
     });
     stdin.write("\r"); // select fast-forward
     await vi.waitFor(() => {
-      expect(lastFrame()).toContain("(y/n)");
+      expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
     // getMergeConflicts should NOT have been called since commits are missing
     expect(getMergeConflicts).not.toHaveBeenCalled();
@@ -4700,7 +4716,7 @@ describe("App", () => {
     const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("fix: login");
-      expect(lastFrame()).toContain("n next");
+      expect(lastFrame()).toContain(". next");
     });
 
     vi.mocked(listPullRequests).mockResolvedValueOnce({
@@ -5373,7 +5389,7 @@ describe("App", () => {
         expect(lastFrame()).toContain("Activity:");
       });
 
-      stdin.write("q");
+      stdin.write("\u001B");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("PR #42");
       });
@@ -5594,7 +5610,7 @@ describe("App", () => {
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR title 43"));
       await press(screen, "\r");
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR #42"));
-      await press(screen, "A", "q", "q", "j", "\r");
+      await press(screen, "A", "\u001B", "\u001B", "j", "\r");
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR #43"));
       await press(screen, "A");
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("event of 43"));
@@ -5633,7 +5649,7 @@ describe("App", () => {
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("PR #42"));
       await press(screen, "A");
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("first page 1"));
-      await press(screen, "n", "q", "A");
+      await press(screen, "n", "\u001B", "A");
       await vi.waitFor(() => expect(screen.lastFrame()).toContain("first page 2"));
 
       settleSlow(slow);
@@ -5701,7 +5717,7 @@ describe("App", () => {
       });
       stdin.write("x");
       await vi.waitFor(() => {
-        expect(lastFrame()).toContain("(y/n)");
+        expect(lastFrame()).toContain("(Enter/y, Esc/n)");
       });
       stdin.write("y");
       await vi.waitFor(() => {
@@ -5715,7 +5731,7 @@ describe("App", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("PR #42");
       });
-      stdin.write("q");
+      stdin.write("\u001B");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("other work");
       });
@@ -5723,14 +5739,14 @@ describe("App", () => {
     });
   });
 
-  it("goes back to the parent screen from an error with q", async () => {
+  it("goes back to the parent screen from an error with Esc", async () => {
     vi.mocked(getPullRequestDetail).mockRejectedValue(new Error("boom"));
     const onExit = vi.fn();
     const { lastFrame, stdin } = render(
       <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} onExit={onExit} />,
     );
-    await vi.waitFor(() => expect(lastFrame()).toContain("Press q to go back."));
-    stdin.write("q");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Esc back, q quit"));
+    stdin.write("\u001B");
     await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
     expect(exit).not.toHaveBeenCalled();
   });
@@ -5748,7 +5764,7 @@ describe("App", () => {
     );
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
     stdin.write("x");
-    await vi.waitFor(() => expect(lastFrame()).toContain("(y/n)"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("(Enter/y, Esc/n)"));
     stdin.write("y");
     await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
     expect(listPullRequests).not.toHaveBeenCalled();
@@ -5782,7 +5798,7 @@ describe("App", () => {
       id: "42",
       authorArn: "arn:aws:iam::111122223333:user/a",
     });
-    stdin.write("q");
+    stdin.write("\u001B");
     await vi.waitFor(() => expect(onExit).toHaveBeenCalled());
     unmount();
     expect(markSeen).toHaveBeenCalledTimes(2);
@@ -5822,8 +5838,9 @@ describe("App", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("second"));
     stdin.write("\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #1"));
-    stdin.write("q");
+    stdin.write("\u001B");
     await vi.waitFor(() => expect(lastFrame()).toContain("second"));
+    await settle();
     await press(stdin, "j", "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #2"));
     expect(markSeen.mock.calls.map(([pr]) => pr.id)).toEqual(["1", "1", "2"]);

@@ -1,5 +1,5 @@
 import type { Approval, Difference, Evaluation, PullRequest } from "@aws-sdk/client-codecommit";
-import { Box, Text, useApp } from "ink";
+import { Box, Text } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 import { type BlobTexts, blobKey, fetchBlobTexts, streamBlobTexts } from "../core/blobTexts.js";
 import type { Checks } from "../core/checks.js";
@@ -29,11 +29,12 @@ import {
   type ReviewService,
 } from "../core/review.js";
 import { ActivityTimeline } from "./components/ActivityTimeline.js";
-import { Help } from "./components/Help.js";
+import { HelpMenu, PR_DETAIL_HELP, PR_LIST_HELP, useHelp } from "./components/Help.js";
 import { PullRequestDetail } from "./components/PullRequestDetail.js";
 import { PullRequestList } from "./components/PullRequestList.js";
 import { useAsyncAction } from "./hooks/useAsyncAction.js";
 import { useKeys } from "./hooks/useKeys.js";
+import { useQuit } from "./hooks/useQuit.js";
 import { createBatcher } from "./utils/batchUpdates.js";
 import { formatErrorMessage } from "./utils/formatError.js";
 import { reactedCommentIds } from "./utils/reactions.js";
@@ -94,12 +95,11 @@ interface AppProps {
 }
 
 export function App({ service, repository, start, onExit }: AppProps) {
-  const { exit } = useApp();
-  const leave = onExit ?? exit;
+  const quit = useQuit();
   const [screen, setScreen] = useState<Screen>(start ? "detail" : "prs");
-  // Started on one PR: q leaves the app until the list has been shown.
+  // Started on one PR: Esc stays put until the list has been shown.
   const [hasList, setHasList] = useState(!start);
-  const [showHelp, setShowHelp] = useState(false);
+  const help = useHelp();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -777,9 +777,10 @@ export function App({ service, repository, start, onExit }: AppProps) {
     activityAction.execute(prDetail.pullRequestId, activityNextToken);
   }
 
+  /** Esc. At the top (lazycc pr view or pr list on its own) it stays, as in lazygit: q quits. */
   function handleBack() {
     if (screen === "detail" && hasList) setScreen("prs");
-    else leave();
+    else onExit?.();
   }
 
   /**
@@ -800,11 +801,18 @@ export function App({ service, repository, start, onExit }: AppProps) {
     }
   }
 
-  if (showHelp) {
-    return <Help onClose={() => setShowHelp(false)} />;
+  if (help.open && (screen === "prs" || screen === "detail")) {
+    return (
+      <HelpMenu
+        title={screen === "prs" ? "Pull requests help" : "Review help"}
+        sections={screen === "prs" ? PR_LIST_HELP : PR_DETAIL_HELP}
+        onClose={help.close}
+        onRun={help.run}
+      />
+    );
   }
 
-  if (error) return <ErrorScreen error={error} onBack={onExit} />;
+  if (error) return <ErrorScreen error={error} onBack={onExit} onQuit={quit} />;
 
   if (loading) {
     return (
@@ -822,7 +830,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
           pullRequests={pullRequests}
           onSelect={handleSelectPR}
           onBack={handleBack}
-          onHelp={() => setShowHelp(true)}
+          onHelp={help.show}
           statusFilter={statusFilter}
           onChangeStatusFilter={handleChangeStatusFilter}
           searchQuery={searchQuery}
@@ -846,7 +854,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
           diffTexts={diffTexts}
           diffTextStatus={diffTextStatus}
           onBack={handleBack}
-          onHelp={() => setShowHelp(true)}
+          onHelp={help.show}
           onShowActivity={handleShowActivity}
           comment={postCommentAction}
           reply={postReplyAction}
@@ -911,19 +919,25 @@ export function App({ service, repository, start, onExit }: AppProps) {
   }
 }
 
-function ErrorScreen({ error, onBack }: { error: string; onBack: (() => void) | undefined }) {
-  useKeys(
-    (input, key) => {
-      if (input === "q" || key.escape) onBack?.();
-    },
-    { isActive: onBack !== undefined },
-  );
+function ErrorScreen({
+  error,
+  onBack,
+  onQuit,
+}: {
+  error: string;
+  onBack: (() => void) | undefined;
+  onQuit: () => void;
+}) {
+  useKeys((input, key) => {
+    if (input === "q") onQuit();
+    else if (key.escape) onBack?.();
+  });
   return (
     <Box flexDirection="column" padding={1}>
       <Text color="red" bold>
         Error: {error}
       </Text>
-      <Text dimColor>{onBack ? "Press q to go back." : "Press Ctrl+C to exit."}</Text>
+      <Text dimColor>{onBack ? "Esc back, q quit" : "q quit"}</Text>
     </Box>
   );
 }

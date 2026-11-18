@@ -4,6 +4,7 @@ import stringWidth from "string-width";
 import { describe, expect, it, vi } from "vitest";
 import type { PrActivityEvent } from "../../core/review.js";
 import { settle } from "../../testing/keys.js";
+import { QuitProvider } from "../hooks/useQuit.js";
 import { ActivityTimeline } from "./ActivityTimeline.js";
 
 vi.mock("../utils/formatDate.js", () => ({
@@ -68,7 +69,7 @@ describe("ActivityTimeline", () => {
     );
     expect(lastFrame()).toContain("Failed to load activity:");
     expect(lastFrame()).toContain("Access denied. Check your IAM policy.");
-    expect(lastFrame()).toContain("Press q to go back");
+    expect(lastFrame()).toContain("Press Esc to go back");
   });
 
   it("shows 'n next page' hint when hasNextPage is true", () => {
@@ -205,13 +206,17 @@ describe("ActivityTimeline", () => {
     });
   });
 
-  it("calls onBack when q is pressed", () => {
+  it("quits lazycc on q instead of going back", () => {
     const onBack = vi.fn();
+    const onQuit = vi.fn();
     const { stdin } = render(
-      <ActivityTimeline {...defaultProps} events={[makeEvent()]} onBack={onBack} />,
+      <QuitProvider onQuit={onQuit}>
+        <ActivityTimeline {...defaultProps} events={[makeEvent()]} onBack={onBack} />
+      </QuitProvider>,
     );
     stdin.write("q");
-    expect(onBack).toHaveBeenCalled();
+    expect(onQuit).toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
   });
 
   it("calls onBack when Escape is pressed", async () => {

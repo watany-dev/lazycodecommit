@@ -1,14 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 import { fakeGit } from "../testing/fakes.js";
 
+type Wrapper = { type: unknown; props: { children: unknown; onQuit?: () => void } };
 const render = vi.fn((_node: unknown) => ({ waitUntilExit: async () => {}, clear: () => {} }));
 const wrapped = vi.fn((_type: unknown) => {});
+/** The q handler of the screen being rendered, from openTop's QuitProvider. */
+let quit: (() => void) | undefined;
 vi.mock("ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("ink")>()),
-  // Every screen is rendered inside KeysProvider; the tests look at the screen.
-  render: (node: { type: unknown; props: { children: unknown } }) => {
-    wrapped(node.type);
-    return render(node.props.children);
+  // Every screen is rendered inside KeysProvider (and openTop's inside QuitProvider);
+  // the tests look at the screen.
+  render: (node: Wrapper) => {
+    let inner = node;
+    quit = undefined;
+    while ((inner.type as { name?: string }).name?.endsWith("Provider")) {
+      wrapped(inner.type);
+      quit = inner.props.onQuit ?? quit;
+      inner = inner.props.children as Wrapper;
+    }
+    return render(inner);
   },
 }));
 
@@ -105,10 +115,10 @@ describe("openTop", () => {
     expect(render.mock.calls[2]![0]).toMatchObject({ props: { path: "src/" } });
   });
 
-  it("opens the picker for a view with no repository, and goes back on q", async () => {
+  it("opens the picker for a view with no repository, and goes back on Esc", async () => {
     const rendered = script(
       (n) => n.props.onSwitch({ view: "branches" }),
-      (n) => n.props.onDone(), // q in the picker
+      (n) => n.props.onDone(), // Esc in the picker
       (n) => n.props.onSwitch({ view: "browse" }),
       (n) => n.props.onDone("picked"),
     );
@@ -116,6 +126,35 @@ describe("openTop", () => {
     await openTop({ start: "home", views: v });
     expect(rendered()).toEqual([HomeApp, PickScreen, HomeApp, PickScreen, BrowseApp]);
     expect(v.browse).toHaveBeenCalledWith("picked");
+  });
+
+  it("quits on q from a picker instead of going back", async () => {
+    const rendered = script(
+      (n) => n.props.onSwitch({ view: "branches" }),
+      () => quit?.(),
+    );
+    await openTop({ start: "home", views: views() });
+    expect(rendered()).toEqual([HomeApp, PickScreen]);
+  });
+
+  it("quits on q from a view, whatever else it asked for", async () => {
+    const rendered = script((n) => {
+      n.props.onSwitch({ view: "branches" });
+      quit?.();
+    });
+    await openTop({ start: "home", repository: "demo", views: views() });
+    expect(rendered()).toEqual([HomeApp]);
+  });
+
+  it("quits on q from the branch table without creating a PR", async () => {
+    const v = views();
+    script((n) => {
+      n.props.onCreate("wip");
+      quit?.();
+    });
+    await openTop({ start: "branches", repository: "demo", views: v });
+    const created = v.branches.mock.results[0]!.value.createPullRequest;
+    expect(created).not.toHaveBeenCalled();
   });
 
   it("quits from a starting picker nothing was picked in", async () => {

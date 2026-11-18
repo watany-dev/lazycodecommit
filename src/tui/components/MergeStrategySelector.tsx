@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React, { useState } from "react";
 import type { MergeStrategy } from "../../core/review.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
 
 interface Props {
   sourceRef: string;
@@ -26,6 +27,7 @@ export function MergeStrategySelector({ sourceRef, destRef, initial, onSelect, o
     ),
   );
 
+  const quit = useQuit();
   useKeys((input, key) => {
     if (input === "j" || key.downArrow) {
       setSelectedIndex((prev) => Math.min(prev + 1, STRATEGIES.length - 1));
@@ -39,7 +41,11 @@ export function MergeStrategySelector({ sourceRef, destRef, initial, onSelect, o
       onSelect(STRATEGIES[selectedIndex]!.key);
       return;
     }
-    if (input === "q" || key.escape) {
+    if (input === "q") {
+      quit();
+      return;
+    }
+    if (key.escape) {
       onCancel();
       return;
     }

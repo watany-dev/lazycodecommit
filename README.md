@@ -216,34 +216,38 @@ clone: it will not push to `origin` or draft from local commits.
 
 ## The TUI
 
-Each screen lists its keys with `?`. Everywhere, `j`/`k` or the arrow keys
-move, `q`/`Esc` goes back (and quits at the top), and `Ctrl+c` quits at once.
-The full list is in [docs/keybindings.md](docs/keybindings.md).
+The keys follow lazygit's defaults where lazycc does the same thing. Every
+screen opens its keys as a menu with `?` (`/` filters, `Enter` presses the
+key). Everywhere, `j`/`k` or the arrow keys move, `<`/`>` jump to the first
+or last row, `Esc` goes back, and `q` or `Ctrl+c` quits from any screen.
+Confirmations take `Enter` (or `y`). The full list is in
+[docs/keybindings.md](docs/keybindings.md).
 
 Home, the branch screen and the browse screen are one TUI: `1`, `2` and `3`
-switch between them, and `r` on the branch and browse screens picks the
-repository they show. Outside a clone, `lazycc browse` without a repository
+switch between them, `r` or `Ctrl+r` on the branch and browse screens picks the
+repository they show, and `R` refreshes. Outside a clone, `lazycc browse` without a repository
 opens on that picker.
 
-- **Home** (`lazycc`): `Tab` switches between "awaiting your approval" and
-  "your PRs", `Enter` opens the review screen (and marks the PR read), `r`
-  opens the repository picker, `/` filters, `Ctrl+r` refreshes, `u` shows the
-  PR's console URL. It shows the last result at once while it refreshes.
+- **Home** (`lazycc`): `]`/`[` (or `Tab`) switch between "awaiting your
+  approval" and "your PRs", `Enter` opens the review screen (and marks the PR
+  read), `r` opens the repository picker, `/` filters, `u` shows the PR's
+  console URL. It shows the last result at once while it refreshes.
 - **Repository picker**: `Enter` shows only that repository on the home
   screen, `w` adds it to or removes it from the watch list (saved in the
   config's `repos`), `p` opens its PR list.
-- **Branch screen** (`lazycc branch`): `Enter` opens the branch's PR, `n`
+- **Branch screen** (`lazycc branch`): `Enter` opens the branch's PR, `o`
   creates one (through `pr create`'s editor and push prompt), `d` deletes the
   branch on CodeCommit, Space switches to it inside a clone, `/` filters,
-  `Ctrl+r` runs `git fetch --prune` and reloads, `u` shows the console URL.
+  `R` runs `git fetch --prune` and reloads, `u` shows the console URL.
   The default branch and branches with an open PR cannot be deleted.
 - **Browse screen** (`lazycc browse`): `Enter`/`l` opens, `h`/Backspace goes
   up, `b` switches the ref, `g`/`G` jumps to the top or end.
 - **PR list** (`lazycc pr list`, `p` in the picker): `Enter` opens the review
-  screen, `f` cycles the status filter, `/` searches, `n`/`p` pages.
+  screen, `f` cycles the status filter, `/` searches, `.`/`,` page.
 - **Review screen** (`pr view`, or `Enter` elsewhere): the keys of
-  review-codecommit. `n`/`N` move between files, `c` comments on the PR, `C`
-  on the cursor line, `R` replies, `a` approves, `m` merges (opening on the
+  review-codecommit. `n`/`N` move between files, `f` or `Ctrl+g` lists them,
+  `c` comments on the PR, `C` on the cursor line, `R` replies, `a` approves,
+  `m` or `M` merges (opening on the
   config's `pr.mergeOption`), `x` closes, `A` shows the activity. In a comment
   box `Enter` posts and `Tab` keeps a draft; `D` lists the drafts and `S`
   there posts them all. With the config's `ci`, the CodeBuild and CodePipeline

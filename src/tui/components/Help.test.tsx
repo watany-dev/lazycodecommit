@@ -1,200 +1,162 @@
-import { render } from "ink-testing-library";
-import React from "react";
+import { Text } from "ink";
+import React, { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { Help, HelpScreen } from "./Help.js";
+import { press, render } from "../../testing/keys.js";
+import { useKeys } from "../hooks/useKeys.js";
+import { QuitProvider } from "../hooks/useQuit.js";
+import { HelpMenu, type HelpSection, PR_DETAIL_HELP, PR_LIST_HELP, useHelp } from "./Help.js";
 
-describe("Help", () => {
-  it("renders key bindings grouped by category", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    const output = lastFrame();
+const SECTIONS: HelpSection[] = [
+  {
+    title: "Moving",
+    keys: [
+      ["j / k", "Move"],
+      ["Ctrl+d / Ctrl+u", "Half a page", "\x04"],
+    ],
+  },
+  {
+    title: "Acting",
+    keys: [
+      ["c", "Comment", "c"],
+      ["a", "Approve", "a"],
+    ],
+  },
+];
 
-    // Category headers
-    expect(output).toContain("Navigation");
-    expect(output).toContain("Comments (PR Detail)");
-    expect(output).toContain("PR Actions (PR Detail)");
-    expect(output).toContain("PR List");
+function menu(over: Partial<React.ComponentProps<typeof HelpMenu>> = {}) {
+  const onClose = vi.fn();
+  const onRun = vi.fn();
+  const screen = render(
+    <HelpMenu
+      title="Test help"
+      note="A note."
+      sections={SECTIONS}
+      onClose={onClose}
+      onRun={onRun}
+      {...over}
+    />,
+  );
+  return { ...screen, onClose, onRun };
+}
 
-    // Navigation
-    expect(output).toContain("j / ↓");
-    expect(output).toContain("Show more of a large diff");
-    expect(output).toContain("k / ↑");
-    expect(output).toContain("Enter");
-    expect(output).toContain("Ctrl+C");
-
-    // Comments
-    expect(output).toContain("Post comment");
-    expect(output).toContain("Post inline comment");
-    expect(output).toContain("Reply to comment");
-    expect(output).toContain("Toggle thread fold");
-
-    // PR Actions
-    expect(output).toContain("Approve PR");
-    expect(output).toContain("Revoke approval");
-    expect(output).toContain("Merge PR");
-    expect(output).toContain("Close PR without merge");
-    expect(output).toContain("Shift+Tab");
-    expect(output).toContain("Previous commit");
+describe("HelpMenu", () => {
+  it("lists the keys under their section titles, the cursor on the first", () => {
+    const { lastFrame } = menu();
+    const frame = lastFrame()!;
+    expect(frame).toContain("lazycc — Test help");
+    expect(frame).toContain("A note.");
+    expect(frame.indexOf("Moving")).toBeLessThan(frame.indexOf("Acting"));
+    expect(frame).toMatch(/> j \/ k/);
+    expect(frame).toContain("Enter run / filter Esc close q quit");
+    // descriptions line up in one column past the longest key
+    const lines = frame.split("\n");
+    const col = (text: string) => lines.find((l) => l.includes(text))!.indexOf(text);
+    expect(col("Move")).toBe(col("Half a page"));
   });
 
-  it("renders category headers in correct order", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    const output = lastFrame()!;
-    const navPos = output.indexOf("Navigation");
-    const commentsPos = output.indexOf("Comments (PR Detail)");
-    const actionsPos = output.indexOf("PR Actions (PR Detail)");
-    const listPos = output.indexOf("PR List");
-    expect(navPos).toBeLessThan(commentsPos);
-    expect(commentsPos).toBeLessThan(actionsPos);
-    expect(actionsPos).toBeLessThan(listPos);
+  it("presses the selected key with Enter", async () => {
+    const screen = menu();
+    await press(screen, "j", "j", "\r");
+    expect(screen.onRun).toHaveBeenCalledWith("c");
+    expect(screen.onClose).not.toHaveBeenCalled();
   });
 
-  it("renders help title", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("lazycc");
-    expect(lastFrame()).toContain("Help");
+  it("only closes on Enter when the row has no key to press", async () => {
+    const screen = menu();
+    await press(screen, "\r");
+    expect(screen.onClose).toHaveBeenCalled();
+    expect(screen.onRun).not.toHaveBeenCalled();
   });
 
-  it("calls onClose on ? key", () => {
-    const onClose = vi.fn();
-    const { stdin } = render(<Help onClose={onClose} />);
-    stdin.write("?");
-    expect(onClose).toHaveBeenCalled();
+  it("goes to the first and last row with < > and Home End", async () => {
+    const screen = menu();
+    await press(screen, ">");
+    expect(screen.lastFrame()).toMatch(/> a +Approve/);
+    await press(screen, "<");
+    expect(screen.lastFrame()).toMatch(/> j \/ k/);
+    await press(screen, "\x1b[F");
+    expect(screen.lastFrame()).toMatch(/> a +Approve/);
+    await press(screen, "\x1b[H", "k");
+    expect(screen.lastFrame()).toMatch(/> j \/ k/);
   });
 
-  it("calls onClose on q key", () => {
-    const onClose = vi.fn();
-    const { stdin } = render(<Help onClose={onClose} />);
-    stdin.write("q");
-    expect(onClose).toHaveBeenCalled();
+  it("filters with /, by key or description, dropping empty sections", async () => {
+    const screen = menu();
+    await press(screen, "/", "a", "p", "p");
+    expect(screen.lastFrame()).toContain("Approve");
+    expect(screen.lastFrame()).not.toContain("Comment");
+    expect(screen.lastFrame()).not.toContain("Moving");
+    await press(screen, "\r", "\r");
+    expect(screen.onRun).toHaveBeenCalledWith("a");
   });
 
-  it("calls onClose on enter key", () => {
-    const onClose = vi.fn();
-    const { stdin } = render(<Help onClose={onClose} />);
-    stdin.write("\r");
-    expect(onClose).toHaveBeenCalled();
+  it("says when no key matches, and Esc clears the filter before closing", async () => {
+    const screen = menu();
+    await press(screen, "/", "z", "z");
+    expect(screen.lastFrame()).toContain("No key matches.");
+    await press(screen, "\u001B");
+    await vi.waitFor(() => expect(screen.lastFrame()).toContain("Comment"));
+    expect(screen.onClose).not.toHaveBeenCalled();
   });
 
-  it("calls onClose on escape key", async () => {
-    const onClose = vi.fn();
-    const { stdin } = render(<Help onClose={onClose} />);
-    stdin.write("\u001B");
-    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
+  it("closes on Esc and ?", async () => {
+    const a = menu();
+    await press(a, "\u001B");
+    await vi.waitFor(() => expect(a.onClose).toHaveBeenCalled());
+    const b = menu();
+    await press(b, "?");
+    expect(b.onClose).toHaveBeenCalled();
   });
 
-  it("does not call onClose on unrelated key", () => {
-    const onClose = vi.fn();
-    const { stdin } = render(<Help onClose={onClose} />);
-    stdin.write("x");
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("names the keys that close it, since other keys do not", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).not.toContain("Press any key to close");
-    expect(lastFrame()).toContain("? / q / Esc / Enter to close");
-  });
-
-  // v0.7: Comment edit/delete keybindings
-  it("shows e Edit comment keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Edit comment");
-  });
-
-  it("shows d Delete comment keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Delete comment");
-  });
-
-  // v0.8: Filter, search, pagination keybindings
-  it("shows f Filter by status keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Filter by status");
-  });
-
-  it("shows / Search pull requests keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Search pull requests");
-  });
-
-  it("shows n Next page keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Next page");
-  });
-
-  it("shows p Previous page keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Previous page");
-  });
-
-  // v0.2.0: Reaction keybinding
-  it("shows g React to comment keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("React to comment");
-  });
-
-  it("shows A Activity timeline keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Activity timeline");
-  });
-
-  it("shows h/l reaction navigation keybindings", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Previous reaction");
-    expect(lastFrame()).toContain("Next reaction");
-  });
-
-  it("displays page scroll keybindings", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    const output = lastFrame();
-    expect(output).toContain("Ctrl+d");
-    expect(output).toContain("Half page down");
-    expect(output).toContain("Ctrl+u");
-    expect(output).toContain("Half page up");
-    expect(output).toContain("G");
-    expect(output).toContain("Jump to end");
-  });
-
-  it("shows n Next file keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Next file");
-  });
-
-  it("shows N Previous file keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("Previous file");
-  });
-
-  it("shows f File list keybinding", () => {
-    const { lastFrame } = render(<Help onClose={vi.fn()} />);
-    expect(lastFrame()).toContain("File list");
+  it("quits lazycc on q", async () => {
+    const onQuit = vi.fn();
+    const screen = render(
+      <QuitProvider onQuit={onQuit}>
+        <HelpMenu title="t" sections={SECTIONS} onClose={vi.fn()} onRun={vi.fn()} />
+      </QuitProvider>,
+    );
+    await press(screen, "q");
+    expect(onQuit).toHaveBeenCalled();
   });
 });
 
-describe("HelpScreen", () => {
-  it("renders the title, note, untitled section rows and the close hint", () => {
-    const { lastFrame } = render(
-      <HelpScreen
-        title="Branches help"
-        note="A note."
-        sections={[
-          {
-            keys: [
-              ["Enter", "Open"],
-              ["Ctrl+d / Ctrl+u", "Half a page"],
-            ],
-          },
-        ]}
-      />,
+/** A screen with one key of its own and a help menu that can press it. */
+function Harness() {
+  const help = useHelp();
+  const [pressed, setPressed] = useState<string[]>([]);
+  useKeys(
+    (input, key) => {
+      if (input === "?") help.show();
+      else setPressed((p) => [...p, key.ctrl ? `C-${input}` : input]);
+    },
+    { isActive: !help.open },
+  );
+  if (help.open)
+    return <HelpMenu title="t" sections={SECTIONS} onClose={help.close} onRun={help.run} />;
+  return <Text>pressed: {pressed.join(",")}</Text>;
+}
+
+describe("useHelp", () => {
+  it("closes the menu and hands the key to the screen", async () => {
+    const screen = render(<Harness />);
+    await press(screen, "?", "j", "\r");
+    await vi.waitFor(() => expect(screen.lastFrame()).toBe("pressed: C-d"));
+    await press(screen, "?", ">", "\r");
+    await vi.waitFor(() => expect(screen.lastFrame()).toBe("pressed: C-d,a"));
+  });
+
+  it("presses nothing when the menu is closed with Esc", async () => {
+    const screen = render(<Harness />);
+    await press(screen, "?", "\u001B");
+    await vi.waitFor(() => expect(screen.lastFrame()).toBe("pressed:"));
+  });
+});
+
+describe("review help", () => {
+  it("names lazygit's keys beside lazycc's own", () => {
+    const keys = [...PR_LIST_HELP, ...PR_DETAIL_HELP].flatMap((s) => s.keys.map(([k]) => k));
+    expect(keys).toEqual(
+      expect.arrayContaining([". / n", ", / p", "f / Ctrl+g", "m / M", "q / Ctrl+c", "Esc"]),
     );
-    const lines = lastFrame()!.split("\n");
-    expect(lines.join("\n")).toContain("lazycc — Branches help");
-    expect(lines.join("\n")).toContain("A note.");
-    expect(lines.join("\n")).not.toContain("===");
-    expect(lines.join("\n")).toContain("Press any key to close");
-    // descriptions line up in one column past the longest key
-    const col = (text: string) => lines.find((l) => l.includes(text))!.indexOf(text);
-    expect(col("Open")).toBe(col("Half a page"));
-    expect(col("Open")).toBeGreaterThan(" Ctrl+d / Ctrl+u".length);
   });
 });

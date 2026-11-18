@@ -4,9 +4,11 @@ import type { FolderEntry } from "../aws/codecommit.js";
 import { type BrowseActions, type BrowseNode, ENTRY_MARK, NotFoundError } from "../core/browse.js";
 import { printable } from "../core/text.js";
 import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
-import { HelpScreen, type HelpSection } from "./components/Help.js";
+import { HelpMenu, type HelpSection, useHelp } from "./components/Help.js";
 import { TextField } from "./components/TextField.js";
 import { useKeys } from "./hooks/useKeys.js";
+import { useQuit } from "./hooks/useQuit.js";
+import { isBottom, isPageDown, isPageUp, isTop } from "./listKeys.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { screenErrorText } from "./utils/formatError.js";
 
@@ -38,6 +40,7 @@ function parentOf(path: string): string {
 
 export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
   const { exit } = useApp();
+  const quit = useQuit();
   const { stdout } = useStdout();
   const [ref, setRef] = useState(actions.startRef);
   const [folder, setFolder] = useState<Folder | null>(null);
@@ -52,7 +55,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
   const [picker, setPicker] = useState<RefPicker | null>(null);
   const [pickerCursor, setPickerCursor] = useState(0);
   const [note, setNote] = useState<Note | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
+  const help = useHelp();
 
   const height = Math.max((stdout.rows || 24) - CHROME_LINES, 3);
 
@@ -150,10 +153,6 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
 
   useKeys(
     (input, key) => {
-      if (showHelp) {
-        setShowHelp(false);
-        return;
-      }
       if (picker) {
         if (key.escape) setPicker(null);
         else if (key.return) void switchRef(pickerBranches[pickerCursor] ?? picker.input.trim());
@@ -163,8 +162,12 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         return;
       }
       if (filterBox.handleKey(key)) return;
+      if (input === "q") {
+        quit();
+        return;
+      }
       if (input === "?") {
-        setShowHelp(true);
+        help.show();
         return;
       }
       const top = onSwitch && topSwitch(input, key, "browse");
@@ -173,11 +176,7 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         exit();
         return;
       }
-      if (loading) {
-        // Nothing on screen yet, so there is nothing to go back to.
-        if (!folder && !file && (input === "q" || key.escape)) exit();
-        return;
-      }
+      if (loading) return;
       setNote(null);
       if (input === "u" && !key.ctrl) {
         setNote({ text: actions.consoleUrl(ref, file ? file.path : folderKey) });
@@ -187,26 +186,23 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         void openPicker();
         return;
       }
-      if (key.ctrl && input === "r") {
+      if (input === "R") {
         void open(ref, file ? file.path : `${folderKey}/`, { keepFolder: true });
         return;
       }
       if (file) {
-        if (input === "q" || key.escape || input === "h" || key.backspace || key.delete) {
+        if (key.escape || input === "h" || key.backspace || key.delete) {
           setFile(null);
         } else if (input === "j" || key.downArrow) scrollTo(scroll + 1);
         else if (input === "k" || key.upArrow) scrollTo(scroll - 1);
-        else if (key.ctrl && input === "d") scrollTo(scroll + Math.floor(height / 2));
-        else if (key.ctrl && input === "u") scrollTo(scroll - Math.floor(height / 2));
-        else if (input === "G") scrollTo(maxScroll);
-        else if (input === "g") scrollTo(0);
+        else if (isPageDown(input, key)) scrollTo(scroll + Math.floor(height / 2));
+        else if (isPageUp(input, key)) scrollTo(scroll - Math.floor(height / 2));
+        else if (input === "G" || isBottom(input, key)) scrollTo(maxScroll);
+        else if (input === "g" || isTop(input, key)) scrollTo(0);
         return;
       }
-      if (input === "q" || key.escape) {
-        exit();
-        return;
-      }
-      if (input === "h" || key.backspace || key.delete) {
+      // Esc goes back up too; at the root it stays, as lazygit's Esc does at the top.
+      if (input === "h" || key.escape || key.backspace || key.delete) {
         goUp();
         return;
       }
@@ -223,11 +219,11 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         setCursor(Math.max(index - 1, 0));
         return;
       }
-      if (input === "G") {
+      if (input === "G" || isBottom(input, key)) {
         setCursor(Math.max(entries.length - 1, 0));
         return;
       }
-      if (input === "g") {
+      if (input === "g" || isTop(input, key)) {
         setCursor(0);
         return;
       }
@@ -239,10 +235,18 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         else void open(ref, selected.path, { keepFolder: true });
       }
     },
-    { isActive: true },
+    { isActive: !help.open },
   );
 
-  if (showHelp) return <HelpScreen title="Browse help" sections={[{ keys: BROWSE_HELP }]} />;
+  if (help.open)
+    return (
+      <HelpMenu
+        title="Browse help"
+        sections={[{ keys: file ? BROWSE_FILE_HELP : BROWSE_HELP }]}
+        onClose={help.close}
+        onRun={help.run}
+      />
+    );
 
   const where = file ? file.path : folderKey ? `${folderKey}/` : "/";
   return (
@@ -285,10 +289,12 @@ export function BrowseApp({ actions, path: startPath, onSwitch }: Props) {
         ) : picker ? (
           <Text dimColor>Type to filter, or a commit ID · ↑/↓ pick · Enter open · Esc cancel</Text>
         ) : file ? (
-          <Text dimColor>j/k scroll Ctrl+d/u half page g/G top/end h back b ref u URL ? help</Text>
+          <Text dimColor>
+            j/k scroll Ctrl+d/u half page g/G top/end h back b ref u URL q quit ? help
+          </Text>
         ) : (
           <Text dimColor>
-            Enter open h up / filter b ref u URL Ctrl+r refresh
+            Enter open h up / filter b ref u URL R refresh
             {onSwitch ? " r repositories 1 home 2 branches" : ""} q quit ? help
           </Text>
         )}
@@ -392,14 +398,29 @@ function RefPickerView(props: {
 }
 
 const BROWSE_HELP: HelpSection["keys"] = [
-  ["j / k, ↓ / ↑", "Move, or scroll a file"],
-  ["Enter / l", "Open the folder or file"],
-  ["h / Backspace", "Up to the parent folder; back from a file"],
-  ["Ctrl+d / Ctrl+u", "Half a page down or up in a file"],
-  ["g / G", "Top or end"],
-  ["/", "Filter this folder by name"],
-  ["b", "Switch to another branch, or type a commit ID"],
-  ["u", "Show the console URL of this place"],
-  ["Ctrl+r", "Reload"],
-  ["q / Esc", "Back from a file; quit from a folder"],
+  ["j / k, ↓ / ↑", "Move"],
+  ["g / G, < / >, Home / End", "First / last entry"],
+  ["Enter / l", "Open the folder or file", "\r"],
+  ["h / Esc / Backspace", "Up to the parent folder", "h"],
+  ["/", "Filter this folder by name", "/"],
+  ["b", "Switch to another branch, or type a commit ID", "b"],
+  ["u", "Show the console URL of this place", "u"],
+  ["R", "Reload", "R"],
+  ["r / Ctrl+r", "Pick the repository", "r"],
+  ["1", "Home", "1"],
+  ["2", "Branch table", "2"],
+  ["q / Ctrl+c", "Quit"],
+];
+
+const BROWSE_FILE_HELP: HelpSection["keys"] = [
+  ["j / k, ↓ / ↑", "Scroll"],
+  ["Ctrl+d / J / PgDn", "Half a page down", "\x04"],
+  ["Ctrl+u / K / PgUp", "Half a page up", "\x15"],
+  ["g / G, < / >, Home / End", "Top / end"],
+  ["h / Esc / Backspace", "Back to the folder", "h"],
+  ["b", "Switch to another branch, or type a commit ID", "b"],
+  ["u", "Show the console URL of this file", "u"],
+  ["R", "Reload", "R"],
+  ["r / Ctrl+r", "Pick the repository", "r"],
+  ["q / Ctrl+c", "Quit"],
 ];

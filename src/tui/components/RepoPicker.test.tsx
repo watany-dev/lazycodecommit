@@ -55,8 +55,19 @@ describe("RepoPicker", () => {
     expect(onSelect).toHaveBeenCalledWith("infra");
     await press(stdin, "p");
     expect(onOpenList).toHaveBeenCalledWith("infra");
-    await press(stdin, "q");
-    expect(onBack).toHaveBeenCalled();
+    await press(stdin, "\u001B");
+    await vi.waitFor(() => expect(onBack).toHaveBeenCalled());
+  });
+
+  it("goes to the first and last repository with < > and Home End", async () => {
+    const { lastFrame, stdin } = setup();
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+    await press(stdin, ">");
+    expect(lastFrame()).toMatch(/> +sandbox/);
+    await press(stdin, "<", "\x1b[F");
+    expect(lastFrame()).toMatch(/> +sandbox/);
+    await press(stdin, "\x1b[H");
+    expect(lastFrame()).toMatch(/> +demo/);
   });
 
   it("filters by name", async () => {

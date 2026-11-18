@@ -26,7 +26,7 @@ permission.
 | `pr approve` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestApprovalState` |
 | `pr merge` | `GetPullRequest` (`ListPullRequests` without an id), one of `MergePullRequestByFastForward`, `MergePullRequestBySquash`, `MergePullRequestByThreeWay` |
 | `pr close` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestStatus` |
-| `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `Ctrl+r` runs `git fetch`, which needs `GitPull` |
+| `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `R` runs `git fetch`, which needs `GitPull` |
 | `browse` | `GetFolder`, `GetFile`, `ListBranches` (the `b` ref picker), `GetRepository` (without `--ref`) |
 | `clone` | `GetRepository`, `GitPull` |
 | CI results in `pr view`, `pr status`, the review screen and the home screen, only for repositories listed under `ci` in the config | `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codepipeline:ListPipelineExecutions`. The result is informational; see [CI results](configuration.md#ci-results) for who can influence it |

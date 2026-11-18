@@ -13,9 +13,11 @@ import {
 import type { ReviewService } from "../core/review.js";
 import { printable, shortArn } from "../core/text.js";
 import { FilterLine, useFilter, windowStart } from "./components/FilterLine.js";
-import { HelpScreen, type HelpSection } from "./components/Help.js";
+import { HelpMenu, type HelpSection, useHelp } from "./components/Help.js";
 import { RepoPicker } from "./components/RepoPicker.js";
 import { useKeys } from "./hooks/useKeys.js";
+import { useQuit } from "./hooks/useQuit.js";
+import { isBottom, isTop } from "./listKeys.js";
 import { App as ReviewApp } from "./ReviewApp.js";
 import { type TopSwitch, topSwitch } from "./top.js";
 import { formatRelativeDate } from "./utils/formatDate.js";
@@ -61,6 +63,7 @@ export function HomeApp({
   onRepository,
 }: Props) {
   const { exit } = useApp();
+  const quit = useQuit();
   const { stdout } = useStdout();
   const [repos, setRepos] = useState(actions.initial);
   // Repositories from the config follow it when w changes the watch list.
@@ -74,7 +77,7 @@ export function HomeApp({
   const filterBox = useFilter();
   const { filter } = filterBox;
   const [note, setNote] = useState<string | null>(startNote ?? null);
-  const [showHelp, setShowHelp] = useState(false);
+  const help = useHelp();
   // A refresh for repositories the user has since left must not land.
   const generation = useRef(0);
 
@@ -135,28 +138,24 @@ export function HomeApp({
 
   useKeys(
     (input, key) => {
-      if (showHelp) {
-        setShowHelp(false);
-        return;
-      }
       if (filterBox.handleKey(key)) return;
-      if (input === "q" || key.escape) {
-        exit();
+      if (input === "q") {
+        quit();
         return;
       }
       setNote(null);
       const top = onSwitch && topSwitch(input, key, "home");
-      // r stays the home's own picker, which also chooses what it lists.
+      // r and Ctrl+r stay the home's own picker, which also chooses what it lists.
       if (top && "view" in top) {
         onSwitch?.(top);
         exit();
-      } else if (input === "?") setShowHelp(true);
-      else if (key.tab) {
+      } else if (input === "?") help.show();
+      else if (key.tab || input === "]" || input === "[") {
         setSection(section === "awaiting" ? "mine" : "awaiting");
         setCursor(0);
-      } else if (key.ctrl && input === "r") {
+      } else if (input === "R") {
         if (repos && !refreshing) void refresh(repos);
-      } else if (input === "r") setView({ kind: "picker" });
+      } else if (input === "r" || (key.ctrl && input === "r")) setView({ kind: "picker" });
       else if (input === "/") {
         filterBox.start();
         setCursor(0);
@@ -164,6 +163,10 @@ export function HomeApp({
         setCursor(Math.min(index + 1, Math.max(rows.length - 1, 0)));
       } else if (input === "k" || key.upArrow) {
         setCursor(Math.max(index - 1, 0));
+      } else if (isTop(input, key)) {
+        setCursor(0);
+      } else if (isBottom(input, key)) {
+        setCursor(Math.max(rows.length - 1, 0));
       } else if (selected && key.return) {
         setView({
           kind: "review",
@@ -175,7 +178,7 @@ export function HomeApp({
         setNote(actions.consoleUrl(selected.pr));
       }
     },
-    { isActive: view.kind === "home" },
+    { isActive: view.kind === "home" && !help.open },
   );
 
   if (view.kind === "review") {
@@ -232,12 +235,14 @@ export function HomeApp({
     );
   }
 
-  if (showHelp)
+  if (help.open)
     return (
-      <HelpScreen
+      <HelpMenu
         title="Home help"
         note="● marks activity since you last opened the PR."
         sections={[{ keys: HOME_HELP }]}
+        onClose={help.close}
+        onRun={help.run}
       />
     );
 
@@ -298,8 +303,8 @@ export function HomeApp({
           <Text>{printable(note)}</Text>
         ) : (
           <Text dimColor>
-            Tab switch Enter review r repositories{onSwitch ? " 2 branches 3 browse" : ""} / filter
-            Ctrl+r refresh u URL q quit ? help
+            [ ] switch Enter review r repositories{onSwitch ? " 2 branches 3 browse" : ""} / filter
+            R refresh u URL q quit ? help
           </Text>
         )}
       </Box>
@@ -399,12 +404,14 @@ function Detail({ item }: { item: InboxItem }) {
 
 const HOME_HELP: HelpSection["keys"] = [
   ["j / k, ↓ / ↑", "Move"],
-  ["Tab", "Switch between awaiting your approval and your PRs"],
-  ["Enter", "Review the PR (marks it read)"],
-  ["r", "Pick repositories (w watches, p lists PRs)"],
-  ["2 / 3", "Branch table / browse, for the clone or the repository picked"],
-  ["/", "Filter by title or repository"],
-  ["Ctrl+r", "Refresh"],
-  ["u", "Show the PR's console URL"],
-  ["q / Esc", "Quit"],
+  ["< / >, Home / End", "First / last PR"],
+  ["] / [, Tab", "Switch between awaiting your approval and your PRs", "]"],
+  ["Enter", "Review the PR (marks it read)", "\r"],
+  ["r / Ctrl+r", "Pick repositories (w watches, p lists PRs)", "r"],
+  ["2", "Branch table, for the clone or the repository picked", "2"],
+  ["3", "Browse, for the clone or the repository picked", "3"],
+  ["/", "Filter by title or repository", "/"],
+  ["R", "Refresh", "R"],
+  ["u", "Show the PR's console URL", "u"],
+  ["q / Ctrl+c", "Quit"],
 ];

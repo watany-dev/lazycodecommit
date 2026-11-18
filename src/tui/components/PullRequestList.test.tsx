@@ -2,6 +2,7 @@ import React from "react";
 import stringWidth from "string-width";
 import { describe, expect, it, vi } from "vitest";
 import { press, render, settle } from "../../testing/keys.js";
+import { QuitProvider } from "../hooks/useQuit.js";
 import { PullRequestList } from "./PullRequestList.js";
 
 describe("PullRequestList", () => {
@@ -92,11 +93,44 @@ describe("PullRequestList", () => {
     expect(onSelect).toHaveBeenCalledWith("42");
   });
 
-  it("calls onBack on q key", () => {
+  it("goes back on Esc and quits lazycc on q", async () => {
     const onBack = vi.fn();
-    const { stdin } = render(<PullRequestList {...defaultProps} onBack={onBack} />);
+    const onQuit = vi.fn();
+    const { stdin } = render(
+      <QuitProvider onQuit={onQuit}>
+        <PullRequestList {...defaultProps} onBack={onBack} />
+      </QuitProvider>,
+    );
     stdin.write("q");
-    expect(onBack).toHaveBeenCalled();
+    expect(onQuit).toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
+    const other = render(<PullRequestList {...defaultProps} onBack={onBack} />);
+    other.stdin.write("\u001B");
+    await vi.waitFor(() => expect(onBack).toHaveBeenCalled());
+  });
+
+  it("pages with . and , and goes to the first and last PR with < > and Home End", async () => {
+    const onNextPage = vi.fn();
+    const onPreviousPage = vi.fn();
+    const screen = render(
+      <PullRequestList
+        {...defaultProps}
+        pagination={{ currentPage: 2, hasNextPage: true, hasPreviousPage: true }}
+        onNextPage={onNextPage}
+        onPreviousPage={onPreviousPage}
+      />,
+    );
+    await press(screen, ".", ",");
+    expect(onNextPage).toHaveBeenCalledOnce();
+    expect(onPreviousPage).toHaveBeenCalledOnce();
+    await press(screen, ">");
+    const last = screen.lastFrame();
+    await press(screen, "<");
+    expect(screen.lastFrame()).not.toBe(last);
+    await press(screen, "\x1b[F");
+    expect(screen.lastFrame()).toBe(last);
+    await press(screen, "\x1b[H");
+    expect(screen.lastFrame()).not.toBe(last);
   });
 
   it("calls onHelp on ? key", () => {
@@ -403,7 +437,7 @@ describe("PullRequestList", () => {
           pagination={{ currentPage: 1, hasNextPage: true, hasPreviousPage: false }}
         />,
       );
-      expect(lastFrame()).toContain("n next");
+      expect(lastFrame()).toContain(". next");
     });
 
     it("shows p prev when hasPreviousPage", () => {
@@ -413,7 +447,7 @@ describe("PullRequestList", () => {
           pagination={{ currentPage: 2, hasNextPage: false, hasPreviousPage: true }}
         />,
       );
-      expect(lastFrame()).toContain("p prev");
+      expect(lastFrame()).toContain(", prev");
     });
 
     it("shows both n next and p prev on middle page", () => {
@@ -423,8 +457,8 @@ describe("PullRequestList", () => {
           pagination={{ currentPage: 2, hasNextPage: true, hasPreviousPage: true }}
         />,
       );
-      expect(lastFrame()).toContain("p prev");
-      expect(lastFrame()).toContain("n next");
+      expect(lastFrame()).toContain(", prev");
+      expect(lastFrame()).toContain(". next");
       expect(lastFrame()).toContain("Page 2");
     });
   });

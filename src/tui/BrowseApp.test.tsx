@@ -118,6 +118,8 @@ describe("BrowseApp folders", () => {
     expect(lastFrame()).toMatch(/> src\//);
     await press(stdin, "l", "\x7f");
     expect(lastFrame()).toMatch(/> src\//);
+    await press(stdin, "l", "\u001B");
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/> src\//));
     await press(stdin, "h");
     expect(exit).not.toHaveBeenCalled();
   });
@@ -153,11 +155,11 @@ describe("BrowseApp folders", () => {
     expect(lastFrame()).toMatch(/> docs\//);
   });
 
-  it("shows the console URL and reloads", async () => {
+  it("shows the console URL and reloads on R", async () => {
     const { stdin, lastFrame, a } = await setup();
     await press(stdin, "u");
     expect(lastFrame()).toContain("https://console/main/");
-    await press(stdin, "\u0012");
+    await press(stdin, "R");
     expect(a.open).toHaveBeenLastCalledWith("main", "/");
   });
 
@@ -167,12 +169,27 @@ describe("BrowseApp folders", () => {
     expect(exit).toHaveBeenCalled();
   });
 
-  it("shows help and closes it on any key", async () => {
+  it("shows help, closes it on Esc, and stays on Esc at the top", async () => {
     const { stdin, lastFrame } = await setup();
     await press(stdin, "?");
     expect(lastFrame()).toContain("Browse help");
-    await press(stdin, "x");
+    await press(stdin, "\u001B");
+    await vi.waitFor(() => expect(lastFrame()).toContain("README.md"));
+    await press(stdin, "\u001B");
     expect(lastFrame()).toContain("README.md");
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it("goes to the first and last entry with < > and Home End", async () => {
+    const { stdin, lastFrame } = await setup();
+    await press(stdin, ">");
+    expect(lastFrame()).not.toMatch(/> docs\//);
+    await press(stdin, "<");
+    expect(lastFrame()).toMatch(/> docs\//);
+    await press(stdin, "\x1b[F");
+    expect(lastFrame()).not.toMatch(/> docs\//);
+    await press(stdin, "\x1b[H");
+    expect(lastFrame()).toMatch(/> docs\//);
   });
 
   it("shows a failed first load as an error", async () => {
@@ -190,7 +207,8 @@ describe("BrowseApp files", () => {
     expect(frame).toContain("@ main : README.md");
     expect(frame).toContain("1 │ # demo");
     expect(frame).toContain("2 │     indented?[2J");
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/> README.md/));
     expect(lastFrame()).toMatch(/> README.md/);
     expect(exit).not.toHaveBeenCalled();
   });
@@ -213,6 +231,26 @@ describe("BrowseApp files", () => {
     expect(lastFrame()).toContain("@ main : src/");
   });
 
+  it("scrolls a file with lazygit's J K PgDn PgUp < > Home End", async () => {
+    const { stdin, lastFrame } = await setup(actions(), "src/long.ts", "line 1");
+    await press(stdin, "J");
+    expect(lastFrame()).toContain("· 10-27");
+    await press(stdin, "K");
+    expect(lastFrame()).toMatch(/ 1 │ line 1/);
+    await press(stdin, "\x1b[6~");
+    expect(lastFrame()).toContain("· 10-27");
+    await press(stdin, "\x1b[5~");
+    expect(lastFrame()).toMatch(/ 1 │ line 1/);
+    await press(stdin, ">");
+    expect(lastFrame()).toContain("100 │ line 100");
+    await press(stdin, "<");
+    expect(lastFrame()).toMatch(/ 1 │ line 1/);
+    await press(stdin, "\x1b[F");
+    expect(lastFrame()).toContain("100 │ line 100");
+    await press(stdin, "\x1b[H");
+    expect(lastFrame()).toMatch(/ 1 │ line 1/);
+  });
+
   it("opened straight on a file, goes back to its folder", async () => {
     const { stdin, lastFrame } = await setup(actions(), "README.md", "# demo");
     await press(stdin, "\u001B");
@@ -224,7 +262,7 @@ describe("BrowseApp files", () => {
     const { stdin, lastFrame } = await setup();
     await press(stdin, "j", "j", "j", "\r");
     expect(lastFrame()).toContain("Binary file (4 bytes), not shown.");
-    await press(stdin, "q", "j", "\r");
+    await press(stdin, "h", "j", "\r");
     expect(lastFrame()).toContain("Use lazycc clone");
   });
 
@@ -329,14 +367,14 @@ describe("BrowseApp review fixes", () => {
     expect(lastFrame()).toContain("@ main : src/");
   });
 
-  it("does not quit on q while a file reloads", async () => {
+  it("does not leave the file on Esc while it reloads", async () => {
     let release = () => {};
     const a = actions();
     const { stdin, lastFrame } = await setup(a, "README.md", "# demo");
     vi.mocked(a.open).mockImplementationOnce(
       (ref, path) => new Promise((r) => (release = () => r(node(ref, path)))),
     );
-    await press(stdin, "\u0012", "q");
+    await press(stdin, "R", "\u001B");
     expect(exit).not.toHaveBeenCalled();
     release();
     await settle();

@@ -14,15 +14,22 @@ describe("ConfirmPrompt", () => {
     onClearError: vi.fn(),
   };
 
-  it("renders confirmation message with (y/n)", () => {
+  it("renders confirmation message with (Enter/y, Esc/n)", () => {
     const { lastFrame } = render(<ConfirmPrompt {...defaultProps} />);
-    expect(lastFrame()).toContain("Approve this pull request? (y/n)");
+    expect(lastFrame()).toContain("Approve this pull request? (Enter/y, Esc/n)");
   });
 
   it("calls onConfirm on y key", () => {
     const onConfirm = vi.fn();
     const { stdin } = render(<ConfirmPrompt {...defaultProps} onConfirm={onConfirm} />);
     stdin.write("y");
+    expect(onConfirm).toHaveBeenCalled();
+  });
+
+  it("calls onConfirm on Enter, as lazygit's confirmation does", () => {
+    const onConfirm = vi.fn();
+    const { stdin } = render(<ConfirmPrompt {...defaultProps} onConfirm={onConfirm} />);
+    stdin.write("\r");
     expect(onConfirm).toHaveBeenCalled();
   });
 
@@ -45,7 +52,7 @@ describe("ConfirmPrompt", () => {
       <ConfirmPrompt {...defaultProps} isProcessing={true} processingMessage="Approving..." />,
     );
     expect(lastFrame()).toContain("Approving...");
-    expect(lastFrame()).not.toContain("(y/n)");
+    expect(lastFrame()).not.toContain("(Enter/y, Esc/n)");
   });
 
   it("shows error message and return hint when error is set", () => {

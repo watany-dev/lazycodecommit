@@ -57,10 +57,18 @@ describe("PickScreen", () => {
     expect(exit).toHaveBeenCalledTimes(1);
   });
 
-  it("hands back nothing on q and closes, also when no repository is current", async () => {
-    const { stdin, lastFrame, onDone } = setup(undefined);
+  it("quits on q without handing anything back", async () => {
+    const { stdin, lastFrame, onDone } = setup("demo");
     await vi.waitFor(() => expect(lastFrame()).toContain("infra"));
     stdin.write("q");
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledTimes(1));
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("hands back nothing on Esc and closes, also when no repository is current", async () => {
+    const { stdin, lastFrame, onDone } = setup(undefined);
+    await vi.waitFor(() => expect(lastFrame()).toContain("infra"));
+    stdin.write("\u001B");
     await vi.waitFor(() => expect(onDone).toHaveBeenCalledWith());
     expect(exit).toHaveBeenCalledTimes(1);
   });

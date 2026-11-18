@@ -15,6 +15,7 @@ import { BranchesApp, type BranchesStart } from "./BranchesApp.js";
 import { BrowseApp } from "./BrowseApp.js";
 import { HomeApp } from "./HomeApp.js";
 import { KeysProvider } from "./hooks/useKeys.js";
+import { QuitProvider } from "./hooks/useQuit.js";
 import { keyStream } from "./keyStream.js";
 import { PickScreen } from "./PickScreen.js";
 import { App, type ReviewStart } from "./ReviewApp.js";
@@ -127,8 +128,18 @@ export async function openTop(request: TopRequest): Promise<void> {
   /** Where q from the picker returns to; none means the picker was the start. */
   let previous: TopView | null = null;
   let screen: Instance | undefined;
+  /** q, from any screen: no view comes next. */
+  let quitting = false;
+  const onQuit = () => {
+    quitting = true;
+  };
   const run = async (node: ReactNode) => {
-    screen = render(<KeysProvider>{node}</KeysProvider>, { stdin: keyStream(process.stdin) });
+    screen = render(
+      <QuitProvider onQuit={onQuit}>
+        <KeysProvider>{node}</KeysProvider>
+      </QuitProvider>,
+      { stdin: keyStream(process.stdin) },
+    );
     await screen.waitUntilExit();
   };
   // Ink leaves a view's last frame on exit; the next view replaces it instead.
@@ -169,6 +180,7 @@ export async function openTop(request: TopRequest): Promise<void> {
         />,
       );
       branchesStart = null;
+      if (quitting) return;
       if (head !== undefined) {
         const outcome = await branches.createPullRequest(head);
         branchesStart =
@@ -193,7 +205,7 @@ export async function openTop(request: TopRequest): Promise<void> {
     }
     note = null;
     const asked = next as TopSwitch | undefined;
-    if (!asked) return;
+    if (!asked || quitting) return;
     if ("view" in asked) {
       previous = view;
       view = asked.view;
@@ -211,6 +223,7 @@ export async function openTop(request: TopRequest): Promise<void> {
         }}
       />,
     );
+    if (quitting) return;
     if (picked) repository = picked;
     else if (repository === undefined) {
       // q from a picker nothing was picked in: back where we came from, or out.

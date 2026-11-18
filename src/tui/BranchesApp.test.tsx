@@ -61,11 +61,12 @@ beforeEach(() => {
 });
 
 describe("BranchesApp", () => {
-  it("leaves for another view or the picker on 1, 3 and r", async () => {
+  it("leaves for another view or the picker on 1, 3, r and Ctrl+r", async () => {
     for (const [k, want] of [
       ["1", { view: "home" }],
       ["3", { view: "browse" }],
       ["r", { pick: true }],
+      ["\u0012", { pick: true }],
     ] as const) {
       exit.mockReset();
       const onSwitch = vi.fn();
@@ -97,11 +98,11 @@ describe("BranchesApp", () => {
     expect(frame).toContain("merged");
   });
 
-  it("opens the review for a branch with an open PR, and comes back on q", async () => {
+  it("opens the review for a branch with an open PR, and comes back on Esc", async () => {
     const { lastFrame, stdin, a } = await setup();
     await press(stdin, "j", "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     await vi.waitFor(() => expect(lastFrame()).toContain("branches of demo"));
     expect(a.load).toHaveBeenCalledTimes(2);
     expect(exit).not.toHaveBeenCalled();
@@ -124,22 +125,26 @@ describe("BranchesApp", () => {
     expect(lastFrame()).toContain("Aborted: the title is empty.");
   });
 
-  it("explains Enter and n on rows where they do not apply", async () => {
+  it("explains Enter and o on rows where they do not apply", async () => {
     const { lastFrame, stdin, onCreate } = await setup();
     await press(stdin, "\r");
-    expect(lastFrame()).toContain("main has no open pull request. Press n to create one.");
-    await press(stdin, "n");
+    expect(lastFrame()).toContain("main has no open pull request. Press o to create one.");
+    await press(stdin, "o");
     expect(lastFrame()).toContain("main is the default branch.");
     await press(stdin, "j", "n");
     expect(lastFrame()).toContain("feature/login already has #42. Press Enter.");
     expect(onCreate).not.toHaveBeenCalled();
   });
 
-  it("leaves the TUI to create a PR with n", async () => {
-    const { stdin, onCreate } = await setup();
-    await press(stdin, "j", "j", "j", "n");
-    expect(onCreate).toHaveBeenCalledWith("wip");
-    expect(exit).toHaveBeenCalled();
+  it("leaves the TUI to create a PR with o, lazygit's key, or n", async () => {
+    for (const k of ["o", "n"]) {
+      exit.mockReset();
+      const { stdin, onCreate, unmount } = await setup();
+      await press(stdin, "j", "j", "j", k);
+      expect(onCreate).toHaveBeenCalledWith("wip");
+      expect(exit).toHaveBeenCalled();
+      unmount();
+    }
   });
 
   it("deletes after confirming, and refuses protected branches", async () => {
@@ -149,10 +154,17 @@ describe("BranchesApp", () => {
     await press(stdin, "j", "d");
     expect(lastFrame()).toContain("feature/login has an open pull request.");
     await press(stdin, "j", "d");
-    expect(lastFrame()).toContain("Delete origin/done on CodeCommit? (y/n)");
+    expect(lastFrame()).toContain("Delete origin/done on CodeCommit? (Enter/y, Esc/n)");
     await press(stdin, "n");
     expect(a.deleteBranch).not.toHaveBeenCalled();
-    await press(stdin, "d", "y");
+    await press(stdin, "d", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Deleted origin/done."));
+    expect(a.deleteBranch).toHaveBeenCalledWith(ROWS[2]);
+  });
+
+  it("deletes on y too", async () => {
+    const { lastFrame, stdin, a } = await setup();
+    await press(stdin, "j", "j", "d", "y");
     await vi.waitFor(() => expect(lastFrame()).toContain("Deleted origin/done."));
     expect(a.deleteBranch).toHaveBeenCalledWith(ROWS[2]);
   });
@@ -202,11 +214,11 @@ describe("BranchesApp", () => {
     expect(lastFrame()).not.toContain("No branch matches.");
   });
 
-  it("refreshes with a fetch on Ctrl+r, shows the URL on u, and moves with k", async () => {
+  it("refreshes with a fetch on R, shows the URL on u, and moves with k", async () => {
     const { lastFrame, stdin, a } = await setup();
     await press(stdin, "j", "k", "u");
     expect(lastFrame()).toContain("https://console/main");
-    await press(stdin, "\u0012");
+    await press(stdin, "R");
     await vi.waitFor(() => expect(a.load).toHaveBeenLastCalledWith({ fetch: true }));
   });
 
@@ -217,22 +229,37 @@ describe("BranchesApp", () => {
       load: vi.fn(async () => (calls++ === 0 ? table : new Promise<BranchTable>(() => {}))),
     });
     const { lastFrame, stdin } = await setup(a);
-    await press(stdin, "\u0012", "j", "j", "d");
+    await press(stdin, "R", "j", "j", "d");
     expect(lastFrame()).not.toContain("Delete origin/done");
-    await press(stdin, "\u0012");
+    await press(stdin, "R");
     expect(a.load).toHaveBeenCalledTimes(2);
     await press(stdin, "q");
     expect(exit).toHaveBeenCalled();
   });
 
-  it("shows help, and quits on q", async () => {
+  it("shows help, runs a key from it, and quits on q", async () => {
     const { lastFrame, stdin } = await setup();
     await press(stdin, "?");
     expect(lastFrame()).toContain("Branches help");
-    await press(stdin, "x");
-    expect(lastFrame()).toContain("branches of demo");
+    await press(stdin, "\u001B");
+    await vi.waitFor(() => expect(lastFrame()).toContain("branches of demo"));
+    await press(stdin, "j", "?", "/", "U", "R", "L", "\r", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("https://console/feature/login"));
     await press(stdin, "q");
     expect(exit).toHaveBeenCalled();
+  });
+
+  it("goes to the first and last branch with < > and Home End, and stays on Esc", async () => {
+    const { lastFrame, stdin } = await setup();
+    await press(stdin, ">");
+    expect(lastFrame()).toMatch(/> {3}wip/);
+    await press(stdin, "<");
+    expect(lastFrame()).toMatch(/> \* main/);
+    await press(stdin, "\x1b[F");
+    expect(lastFrame()).toMatch(/> {3}wip/);
+    await press(stdin, "\x1b[H", "\u001B");
+    expect(lastFrame()).toMatch(/> \* main/);
+    expect(exit).not.toHaveBeenCalled();
   });
 
   it("shows load errors and an empty repository", async () => {

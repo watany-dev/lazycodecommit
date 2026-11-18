@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import type { HomeActions } from "../../core/home.js";
 import { printable } from "../../core/text.js";
 import { useKeys } from "../hooks/useKeys.js";
+import { useQuit } from "../hooks/useQuit.js";
+import { isBottom, isTop } from "../listKeys.js";
 import { formatErrorMessage } from "../utils/formatError.js";
 import { FilterLine, useFilter, windowStart } from "./FilterLine.js";
 
@@ -50,9 +52,14 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
     }
   }
 
+  const quit = useQuit();
   useKeys((input, key) => {
     if (filterBox.handleKey(key)) return;
-    if (input === "q" || key.escape) {
+    if (input === "q") {
+      quit();
+      return;
+    }
+    if (key.escape) {
       onBack();
       return;
     }
@@ -64,7 +71,9 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
       setCursor(Math.min(index + 1, Math.max(rows.length - 1, 0)));
     } else if (input === "k" || key.upArrow) {
       setCursor(Math.max(index - 1, 0));
-    } else if (selected && key.return) onSelect(selected);
+    } else if (isTop(input, key)) setCursor(0);
+    else if (isBottom(input, key)) setCursor(Math.max(rows.length - 1, 0));
+    else if (selected && key.return) onSelect(selected);
     // One config write at a time; a second w waits for the first to land.
     else if (selected && input === "w" && !saving) void toggle(selected);
     else if (selected && input === "p") onOpenList(selected);
@@ -105,7 +114,7 @@ export function RepoPicker({ actions, current, onSelect, onOpenList, onBack }: P
         ) : note ? (
           <Text {...(note.error ? { color: "red" } : {})}>{printable(note.text)}</Text>
         ) : (
-          <Text dimColor>Enter show w watch/unwatch p PR list / filter q back</Text>
+          <Text dimColor>Enter show w watch/unwatch p PR list / filter Esc back q quit</Text>
         )}
       </Box>
     </Box>

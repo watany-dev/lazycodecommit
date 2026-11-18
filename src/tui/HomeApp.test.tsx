@@ -176,7 +176,7 @@ describe("HomeApp", () => {
     await press(stdin, "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #11"));
     expect(reviewService).toHaveBeenCalledWith("demo");
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     await vi.waitFor(() => expect(lastFrame()).toContain("Awaiting your approval"));
     expect(a.unreadMarker).toHaveBeenCalled();
     expect(a.fetch).toHaveBeenCalledTimes(2);
@@ -203,16 +203,41 @@ describe("HomeApp", () => {
     await step("\u001b", "Add retry");
     await press(stdin, "j", "k");
     await step("?", "Home help");
-    await step("x", "Awaiting your approval");
+    await step("\u001b", "Awaiting your approval");
     await press(stdin, "q");
     await vi.waitFor(() => expect(exit).toHaveBeenCalled());
   });
 
-  it("refreshes on Ctrl+r", async () => {
-    const { stdin, a } = await setup();
+  it("refreshes on R, and opens the picker on Ctrl+r", async () => {
+    const { stdin, a, lastFrame } = await setup();
     await vi.waitFor(() => expect(a.save).toHaveBeenCalled());
-    await press(stdin, "\u0012");
+    await press(stdin, "R");
     await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledTimes(2));
+    await press(stdin, "\u0012");
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+  });
+
+  it("switches sections with ] and [, and goes to the first and last PR with < and >", async () => {
+    const three = inbox([awaiting("11", "Add retry"), awaiting("13", "Third"), mine("21", "Mine")]);
+    const { stdin, lastFrame, a } = await setup(actions({ fetch: vi.fn(async () => three) }));
+    await vi.waitFor(() => expect(lastFrame()).toContain("Third"));
+    await vi.waitFor(() => expect(a.save).toHaveBeenCalled());
+    await press(stdin, ">");
+    expect(lastFrame()).toMatch(/> .*#13/);
+    await press(stdin, "<");
+    expect(lastFrame()).toMatch(/> .*#11/);
+    await press(stdin, "]");
+    expect(lastFrame()).toMatch(/Your PRs \(1\)/);
+    await press(stdin, "[");
+    await press(stdin, "\u001B");
+    expect(exit).not.toHaveBeenCalled();
+  });
+
+  it("runs a key picked in the help menu", async () => {
+    const { stdin, lastFrame, a } = await setup();
+    await vi.waitFor(() => expect(a.save).toHaveBeenCalled());
+    await press(stdin, "?", "/", "U", "R", "L", "\r", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("https://console/demo/11"));
   });
 
   it("says when a section is empty", async () => {
@@ -298,7 +323,7 @@ describe("HomeApp", () => {
     await press(stdin, "r");
     await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
     watched = ["demo", "infra", "sandbox"];
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(watched));
     expect(lastFrame()).toContain("3 repositories");
   });
@@ -309,7 +334,7 @@ describe("HomeApp", () => {
     const r = render(<HomeApp actions={a} reviewService={() => service} />);
     await vi.waitFor(() => expect(r.lastFrame()).toContain("sandbox"));
     watched = ["demo"];
-    await press(r.stdin, "q");
+    await press(r.stdin, "\u001B");
     await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledWith(["demo"]));
   });
 
@@ -323,7 +348,7 @@ describe("HomeApp", () => {
     expect(lastFrame()).toContain("sandbox");
     await press(stdin, "r");
     await vi.waitFor(() => expect(lastFrame()).toContain("repositories"));
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     expect(a.fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -334,7 +359,7 @@ describe("HomeApp", () => {
     await press(stdin, "p");
     await vi.waitFor(() => expect(reviewService).toHaveBeenCalledWith("demo"));
     await vi.waitFor(() => expect(lastFrame()).toContain("lazycc — demo"));
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
   });
 
@@ -366,10 +391,10 @@ describe("HomeApp", () => {
     await press(stdin, "r");
     await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
     watched = [];
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     expect(lastFrame()).toContain("repositories");
     expect(exit).not.toHaveBeenCalled();
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     expect(exit).toHaveBeenCalled();
   });
 
@@ -388,7 +413,7 @@ describe("HomeApp", () => {
     const { lastFrame, stdin, a } = await setup();
     await press(stdin, "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #11"));
-    await press(stdin, "q");
+    await press(stdin, "\u001B");
     await vi.waitFor(() => expect(a.markSeen).toHaveBeenCalledWith({ id: "11", authorArn: BOB }));
   });
 });
