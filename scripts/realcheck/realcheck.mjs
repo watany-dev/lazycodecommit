@@ -780,7 +780,7 @@ async function lastActivity() {
   );
   const thread = await api(
     "GetCommentsForPullRequest",
-    new cc.GetCommentsForPullRequestCommand({ pullRequestId: id, repositoryName: repoName }),
+    new cc.GetCommentsForPullRequestCommand({ pullRequestId: id }),
   );
   const latest = (thread.out?.commentsForPullRequestData ?? [])
     .flatMap((d) => d.comments ?? [])
@@ -800,7 +800,7 @@ async function lastActivity() {
 async function reactionCounts(id, commentId) {
   const r = await api(
     "GetCommentsForPullRequest (after reaction)",
-    new cc.GetCommentsForPullRequestCommand({ pullRequestId: id, repositoryName: repoName }),
+    new cc.GetCommentsForPullRequestCommand({ pullRequestId: id }),
   );
   const title = "A reacted comment's reactionCounts in GetCommentsForPullRequest";
   if (!r.ok) return record("comments.reactionCounts", title, "FAIL", ok(r));
