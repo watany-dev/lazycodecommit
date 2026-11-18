@@ -130,3 +130,12 @@ AWS アカウントなしで通しで動かすなら [emulator.md](emulator.md)�
 `bun run build` のあと `bun run realcheck:mock`。`mock-server.mjs` は lazycc が
 前提にしているとおりに答えるので、すべて PASS になる。実機のレポートとの違いが
 そのままモック（と前提）との差になる。スクリプトを変えたらこれで確かめる。
+
+## 性能を測る
+
+`bun run build` のあと、realcheck と同じ場所で
+`bun run perf:real -- --region <region> [--repo <name>] [--pr <id>] [--profile <name>]`。
+読むだけで、何も作らず変えない。1 回の呼び出しの遅延、同時に何本でスロットリングが
+始まるか、コメントの `reactionCounts`（#101）、lazycc の主なコマンドの所要時間を、
+端末 1 画面ほどの Markdown で出す。`--repo` を省くとリージョンの最初のリポジトリを
+読む。リポジトリ名はレポートに出さない。

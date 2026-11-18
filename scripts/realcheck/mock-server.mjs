@@ -388,7 +388,13 @@ export function startMockServer(gitRoot) {
         })),
       };
     },
-    GetCommentsForPullRequest({ pullRequestId }) {
+    GetCommentsForPullRequest({ pullRequestId, repositoryName, afterCommitId }) {
+      // As on AWS (realcheck 2026-11-18): a repository name needs the commits with it.
+      if (repositoryName && !afterCommitId)
+        throw new ApiError(
+          "CommitIdRequiredException",
+          "A commit ID is required, but no commit ID was specified.",
+        );
       const groups = new Map();
       for (const x of comments.filter((y) => y.pullRequestId === String(pullRequestId))) {
         const key = JSON.stringify([x.beforeCommitId, x.afterCommitId, x.location ?? null]);
