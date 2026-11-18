@@ -56,6 +56,14 @@ async function singleBranchClone(): Promise<string> {
   return clone;
 }
 
+describe("GitError", () => {
+  it("carries git's message trimmed, or names the command when git said nothing", () => {
+    expect(new GitError(["a"], "  fatal: no\n", 128).message).toBe("fatal: no");
+    expect(new GitError(["log", "-1"], "", 1).message).toBe("git log -1 failed");
+    expect(new GitError([], "", 1).name).toBe("GitError");
+  });
+});
+
 describe("createGit", () => {
   it("finds the top level, branch and remote", async () => {
     const git = createGit(work);
@@ -276,6 +284,28 @@ describe("createGit", () => {
     await expect(createGit(work).diffTree("nope", head)).rejects.toBeInstanceOf(GitError);
   });
 
+  it("keeps blob ids that start or end with zeros", async () => {
+    // These contents hash to 02a819f2… and …5e979040.
+    await writeFile(join(work, "lead.txt"), "v7\n");
+    await writeFile(join(work, "trail.txt"), "v8\n");
+    sh(work, "add", ".");
+    sh(work, "commit", "-q", "-m", "zeros");
+    const head = sh(work, "rev-parse", "HEAD");
+    expect(await createGit(work).diffTree(`${head}~1`, head)).toEqual([
+      { status: "A", path: "lead.txt", after: "02a819f21d4c6b8b8b26c4a840bfd54a99872bc1" },
+      { status: "A", path: "trail.txt", after: "a00f43e3090a7d141b8d181468197f2f5e979040" },
+    ]);
+  });
+
+  it("reads a large blob whole", async () => {
+    const big = Buffer.alloc(200_000, 7);
+    await writeFile(join(work, "big"), big);
+    sh(work, "add", ".");
+    sh(work, "commit", "-q", "-m", "big");
+    const git = createGit(work);
+    expect((await git.blob(sh(work, "rev-parse", "HEAD:big"))).equals(big)).toBe(true);
+  });
+
   it("reads a blob as bytes", async () => {
     await writeFile(join(work, "bin"), Buffer.from([0, 1, 2, 255]));
     sh(work, "add", ".");
@@ -333,6 +363,20 @@ describe("createGit", () => {
     const odd = (await createGit(work).remoteBranches()).find((b) => b.name === "odd");
     expect(odd).toMatchObject({ author: "a\x1fb", tip: sh(work, "rev-parse", "origin/odd") });
     expect(odd?.date.getTime()).not.toBeNaN();
+  });
+
+  it("switches to a local branch without giving it an upstream", async () => {
+    sh(work, "branch", "other");
+    const git = createGit(work);
+    await git.switchBranch("other", { quiet: true });
+    expect(await git.currentBranch()).toBe("other");
+    expect(() => sh(work, "config", "branch.other.remote")).toThrow();
+  });
+
+  it("says which git command failed when git's own message went to the terminal", async () => {
+    await expect(createGit(work).switchBranch("nope")).rejects.toThrow(
+      "git switch --end-of-options nope failed",
+    );
   });
 
   it("switches quietly when asked", async () => {

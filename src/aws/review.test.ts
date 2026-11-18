@@ -282,6 +282,9 @@ describe("listPullRequests edge cases", () => {
     expect(result.pullRequests).toHaveLength(1);
     expect(result.pullRequests[0]!.title).toBe("(no title)");
     expect(result.pullRequests[0]!.status).toBe("OPEN");
+    expect(result.pullRequests[0]!.pullRequestId).toBe("99");
+    expect(result.pullRequests[0]!.authorArn).toBe("unknown");
+    expect(result.pullRequests[0]!.creationDate).toBeInstanceOf(Date);
     expect(result.nextToken).toBe("token123");
   });
 
@@ -346,6 +349,16 @@ describe("getPullRequestDetail edge cases", () => {
 
     const detail = await getPullRequestDetail("42", "my-service");
     expect(detail.differences).toHaveLength(0);
+  });
+
+  it("reads no differences for a target missing one of its commits", async () => {
+    mockSend.mockResolvedValueOnce({
+      pullRequest: { pullRequestId: "42", pullRequestTargets: [{ sourceCommit: "s" }] },
+    });
+    mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
+    const detail = await getPullRequestDetail("42", "my-service");
+    expect(detail.differences).toEqual([]);
+    expect(mockSend).toHaveBeenCalledTimes(2);
   });
 
   it("handles empty comments data", async () => {
@@ -828,6 +841,7 @@ describe("getComments", () => {
     ]);
     // Without the current tip nothing can be called outdated.
     expect((await getComments("42")).some((t) => t.outdated)).toBe(false);
+    expect(threads[0]).not.toHaveProperty("outdated");
   });
 
   it("sorts comments so root comment comes before replies", async () => {
@@ -1314,6 +1328,7 @@ describe("getMergeConflicts", () => {
       conflictCount: 0,
       conflictFiles: [],
     });
+    expect(mockSend.mock.calls[0]![0].input).not.toHaveProperty("nextToken");
   });
 
   it("returns conflict details when conflicts exist", async () => {
@@ -1563,6 +1578,28 @@ describe("getCommitsForPR reading one commit", () => {
     expect(result.authorName).toBe("unknown");
   });
 
+  it("reads epoch seconds without an offset", async () => {
+    mockSend.mockResolvedValueOnce({
+      commit: { commitId: "abc1234", parents: [], message: "t", author: { date: "1707868800" } },
+    });
+    expect((await getCommit("my-service", "abc1234")).authorDate.toISOString()).toBe(
+      "2024-02-14T00:00:00.000Z",
+    );
+  });
+
+  it.each(["x1707868800", "1707868800 +09", "1707868800 +0900 x"])(
+    "takes a date it cannot read (%s) as now",
+    async (date) => {
+      const before = Date.now();
+      mockSend.mockResolvedValueOnce({
+        commit: { commitId: "abc1234", parents: [], message: "t", author: { date } },
+      });
+      expect(
+        (await getCommit("my-service", "abc1234")).authorDate.getTime(),
+      ).toBeGreaterThanOrEqual(before);
+    },
+  );
+
   it("defaults authorDate to now when not set", async () => {
     const before = Date.now();
     mockSend.mockResolvedValueOnce({
@@ -1621,6 +1658,16 @@ describe("getCommitsForPR reading one commit", () => {
     expect(result.shortId).toBe("fallbac");
   });
 });
+
+const answerGraph = (graph: Record<string, string[]>) =>
+  mockSend.mockImplementation(async (cmd: { input: { commitId: string } }) => ({
+    commit: {
+      commitId: cmd.input.commitId,
+      parents: graph[cmd.input.commitId] ?? [],
+      message: cmd.input.commitId,
+      author: { name: "a", date: "1707868800" },
+    },
+  }));
 
 describe("getCommitsForPR", () => {
   it("returns commits in chronological order (oldest first)", async () => {
@@ -1692,6 +1739,25 @@ describe("getCommitsForPR", () => {
     const result = await getCommitsForPR("my-service", "orphan", "base");
     expect(result).toHaveLength(1);
     expect(result[0]!.commitId).toBe("orphan");
+  });
+
+  describe("past a merge", () => {
+    it("stops where the first-parent chain enters the merge base's history", async () => {
+      // m merged f1 into an older commit of the destination: a is behind the merge base b0.
+      answerGraph({ m: ["a", "f1"], b0: ["a"], f1: ["b0"] });
+      const result = await getCommitsForPR("my-service", "m", "b0");
+      expect(result.map((c) => c.commitId)).toEqual(["m"]);
+    });
+
+    it("reads at most MAX_COMMITS of the merge base's ancestors", async () => {
+      const graph: Record<string, string[]> = { m: ["f1", "d"], f1: ["b0"] };
+      for (let i = 0; i < 200; i++) graph[`b${i}`] = [`b${i + 1}`];
+      answerGraph(graph);
+      const result = await getCommitsForPR("my-service", "m", "b0");
+      expect(result.map((c) => c.commitId)).toEqual(["f1", "m"]);
+      // m and f1, then b0 to b99 while looking for f1 in the merge base's history.
+      expect(mockSend).toHaveBeenCalledTimes(102);
+    });
   });
 
   it("limits to MAX_COMMITS (100)", async () => {

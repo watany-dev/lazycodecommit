@@ -22,7 +22,7 @@ import {
 } from "@aws-sdk/client-codecommit";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mockClient } from "aws-sdk-client-mock";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clientConfig,
   createCodeCommitApi,
@@ -122,6 +122,11 @@ describe("toPullRequest", () => {
     expect(sparse).toMatchObject({
       title: "",
       description: "",
+      authorArn: "",
+      repository: "",
+      sourceCommit: "",
+      destinationCommit: "",
+      revisionId: "",
       status: "CLOSED",
       sourceBranch: "topic",
       destinationBranch: "",
@@ -180,12 +185,33 @@ describe("createCodeCommitApi", () => {
     await expect(api.callerArn()).rejects.toThrow("no ARN");
   });
 
+  it("asks STS in the client's region", async () => {
+    let region: string | undefined;
+    sts.on(GetCallerIdentityCommand).callsFake(async (_input, getClient) => {
+      region = await getClient().config.region();
+      return { Arn: "arn:aws:iam::1:user/me" };
+    });
+    await createCodeCommitApi({ region: "eu-west-3", concurrency: 1 }).callerArn();
+    expect(region).toBe("eu-west-3");
+  });
+
+  it("names the access key it signs with", async () => {
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE");
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", "secret");
+    try {
+      const keyed = createCodeCommitApi({ region: "eu-west-3", concurrency: 1 });
+      expect(await keyed.credentialId()).toBe("AKIDEXAMPLE");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("lists every repository across pages", async () => {
     cc.on(ListRepositoriesCommand)
       .resolvesOnce({ repositories: [{ repositoryName: "a" }, {}], nextToken: "t" })
       .resolves({ repositories: [{ repositoryName: "b" }] });
     expect(await api.listRepositories()).toEqual(["a", "b"]);
-    expect(cc.commandCalls(ListRepositoriesCommand).map((c) => c.args[0].input)).toEqual([
+    expect(cc.commandCalls(ListRepositoriesCommand).map((c) => c.args[0].input)).toStrictEqual([
       { sortBy: "repositoryName", order: "ascending" },
       { sortBy: "repositoryName", order: "ascending", nextToken: "t" },
     ]);
@@ -205,6 +231,10 @@ describe("createCodeCommitApi", () => {
     });
     cc.on(ListBranchesCommand, { nextToken: "t" }).resolves({ branches: ["b"] });
     expect(await api.listBranches("demo")).toEqual(["a", "b"]);
+    expect(cc.commandCalls(ListBranchesCommand).map((c) => c.args[0].input)).toStrictEqual([
+      { repositoryName: "demo" },
+      { repositoryName: "demo", nextToken: "t" },
+    ]);
     cc.on(ListBranchesCommand).resolves({});
     expect(await api.listBranches("demo")).toEqual([]);
   });
@@ -253,7 +283,7 @@ describe("createCodeCommitApi", () => {
       .resolves({ pullRequestIds: ["5"] });
     expect(await api.listPullRequestIds("demo", "OPEN", 3)).toEqual(["1", "2", "3"]);
     const calls = cc.commandCalls(ListPullRequestsCommand).map((c) => c.args[0].input);
-    expect(calls).toEqual([
+    expect(calls).toStrictEqual([
       { repositoryName: "demo", pullRequestStatus: "OPEN", maxResults: 3 },
       { repositoryName: "demo", pullRequestStatus: "OPEN", maxResults: 1, nextToken: "t" },
     ]);

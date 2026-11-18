@@ -67,6 +67,23 @@ describe("withLock", () => {
     2_000,
   );
 
+  it("takes over a stale lock that another process removed first", async () => {
+    const path = join(dir, "x.json");
+    await fs.writeFile(`${path}.lock`, "");
+    vi.mocked(fs.stat).mockImplementationOnce(async () => {
+      await fs.rm(`${path}.lock`);
+      return { mtimeMs: 0 } as Awaited<ReturnType<typeof fs.stat>>;
+    });
+    const work = vi.fn(async () => {});
+    await withLock(path, work);
+    expect(work).toHaveBeenCalledOnce();
+  });
+
+  it("finishes when the lock is already gone after the work", async () => {
+    const path = join(dir, "x.json");
+    await expect(withLock(path, () => fs.rm(`${path}.lock`))).resolves.toBeUndefined();
+  });
+
   it("passes on an error other than a held lock", async () => {
     await expect(withLock(join(dir, "x".repeat(300)), async () => {})).rejects.toThrow(
       /ENAMETOOLONG/,

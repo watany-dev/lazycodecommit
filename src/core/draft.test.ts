@@ -11,6 +11,7 @@ describe("draft", () => {
   it("humanizes branch names", () => {
     expect(humanizeBranch("feature/add-login_page")).toBe("Feature/add login page");
     expect(humanizeBranch("fix")).toBe("Fix");
+    expect(humanizeBranch("-fix--it_")).toBe("Fix it");
   });
 
   it("uses a single commit's subject and body", () => {

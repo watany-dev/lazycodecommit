@@ -1,0 +1,214 @@
+{
+  "114fwp0ehmz": {
+    "reason": "terminal I/O only: git's progress goes to the user's screen, which tests do not read",
+    "where": "src/git/git.ts:132:54 [\"ignore\", 2, 2] -> []"
+  },
+  "12zpkj7585h": {
+    "reason": "equivalent: mergeable is always assigned from the API answer before it is read",
+    "where": "src/aws/review.ts:491:21 false -> true"
+  },
+  "14la6eda0om": {
+    "reason": "equivalent: 0x20 is not in the control character class, so it never reaches this test",
+    "where": "src/core/text.ts:15:12 code < 0x20 -> code <= 0x20"
+  },
+  "15qn4ja3dwb": {
+    "reason": "budget only: pushing a known ancestor again is skipped by the visited set",
+    "where": "src/aws/review.ts:559:15 !inBase.has(p) -> true"
+  },
+  "17dyp8qvl5x": {
+    "reason": "equivalent for JSON input: the cache is parsed JSON, where the only non-object values (strings, numbers, booleans) also fail the section check",
+    "where": "src/core/inbox.ts:336:7 typeof raw !== \"object\" -> false"
+  },
+  "19xn2iyb8c0": {
+    "reason": "equivalent: the first five ARN fields hold no '/', so slice(1) after the split drops the same prefix",
+    "where": "src/core/inbox.ts:117:11 parts.slice(5) -> parts"
+  },
+  "1aq01qvclcf": {
+    "reason": "equivalent: past the end pattern[p] is undefined, which equals neither '?', '*' nor a character of the text",
+    "where": "src/core/inbox.ts:88:9 p < pattern.length -> p <= pattern.length"
+  },
+  "1c1w59uc9tj": {
+    "reason": "equivalent: names in one folder are unique, so the tie cases never happen",
+    "where": "src/core/browse.ts:75:76 a.name > b.name -> true"
+  },
+  "1ctl90eu1rw": {
+    "reason": "equivalent: pr is openPr ?? merged, so merged is never used while there is an open PR",
+    "where": "src/core/branch.ts:76:20 openPr -> false"
+  },
+  "1fjiqo4e7h6": {
+    "reason": "equivalent: IAM user and role session names cannot contain ':', so the sixth field is the rest of the ARN",
+    "where": "src/core/inbox.ts:117:31 \":\" -> \"\""
+  },
+  "1gfue1jvut0": {
+    "reason": "equivalent: canonical is only compared for equality, and for undefined both versions differ from any draft's JSON and equal each other",
+    "where": "src/core/commentDrafts.ts:371:86 \"\" -> \"Stryker was here!\""
+  },
+  "1hymlz9a4ta": {
+    "reason": "terminal I/O only: git's progress goes to the user's screen, which tests do not read",
+    "where": "src/git/git.ts:190:11 opts?.quiet -> true"
+  },
+  "1k12llffqq9": {
+    "reason": "timing only: the stale-lock boundary and the retry jitter change when a wait ends, not what happens",
+    "where": "src/state/lock.ts:27:11 Math.abs(age) > STALE_LOCK_MS -> Math.abs(age) >= STALE_LOCK_MS"
+  },
+  "1kcflghzf46": {
+    "reason": "equivalent: canonical is only compared for equality, and for undefined both versions differ from any draft's JSON and equal each other",
+    "where": "src/core/commentDrafts.ts:371:53 d -> true"
+  },
+  "1lo953nb673": {
+    "reason": "terminal I/O only: git's progress goes to the user's screen, which tests do not read",
+    "where": "src/git/git.ts:201:11 opts?.quiet -> false"
+  },
+  "1mcnipjjeq6": {
+    "reason": "equivalent: git log output ends with a NUL, so the last record is complete either way",
+    "where": "src/git/git.ts:289:23 i + 4 < fields.length -> i + 4 <= fields.length"
+  },
+  "1npsyxhxorl": {
+    "reason": "equivalent: middleware names and steps only matter for removing them, which lazycc never does",
+    "where": "src/aws/codecommit.ts:209:11 \"lazyccConcurrency\" -> \"\""
+  },
+  "1p7cn982pn5": {
+    "reason": "equivalent: symbolic-ref HEAD only ever names a ref under refs/heads/",
+    "where": "src/git/git.ts:146:30 \"refs/heads/\" -> \"\""
+  },
+  "1qpe5x98yey": {
+    "reason": "equivalent: runs never list an empty commit (ci.ts drops them), so searching for \"\" finds nothing",
+    "where": "src/core/checks.ts:118:17 commit -> true"
+  },
+  "1u9eqkwet7w": {
+    "reason": "equivalent: isMerged is only true for a closed pull request",
+    "where": "src/aws/review.ts:283:11 apiStatus === \"CLOSED\" -> true"
+  },
+  "1wobkibnm9e": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:327:7 v[\"kind\"] === \"reply\" -> true"
+  },
+  "1ze662omb6i": {
+    "reason": "equivalent: Number() and the split that follows ignore surrounding whitespace git prints",
+    "where": "src/git/git.ts:270:39 out.trim() -> out"
+  },
+  "20l2um8e6v6": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:358:7 problem === undefined && v[\"problem\"] !== undefined -> false"
+  },
+  "21d26b9bkox": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:357:7 sent === undefined && v[\"sent\"] !== undefined -> false"
+  },
+  "279k5brnf9y": {
+    "reason": "timing only: the stale-lock boundary and the retry jitter change when a wait ends, not what happens",
+    "where": "src/state/lock.ts:28:24 5 + Math.random() * 10 -> 5 - Math.random() * 10"
+  },
+  "27qncqgd9tz": {
+    "reason": "equivalent: names in one folder are unique, so the tie cases never happen",
+    "where": "src/core/browse.ts:75:76 a.name > b.name -> a.name >= b.name"
+  },
+  "27qtzessadn": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:356:19 v[\"problem\"] === undefined -> false"
+  },
+  "2b7x1517y77": {
+    "reason": "equivalent: a build without an ARN has no account field either way, so the URL is the same",
+    "where": "src/aws/ci.ts:93:44 \"\" -> \"Stryker was here!\""
+  },
+  "2bwcgpzfohz": {
+    "reason": "equivalent: names in one folder are unique, so the tie cases never happen",
+    "where": "src/core/browse.ts:75:53 a.name < b.name -> a.name <= b.name"
+  },
+  "2ebhmwlngks": {
+    "reason": "equivalent: the branch below also needs clone; outside a clone only an extra git lookup happens",
+    "where": "src/core/pr.ts:142:17 clone !== undefined -> true"
+  },
+  "2fk6fppzm6r": {
+    "reason": "equivalent: git prints these refs with refs/ at the start, so the anchor never decides",
+    "where": "src/core/review.ts:89:51 /^refs\\/heads\\// -> /refs\\/heads\\//"
+  },
+  "2g47bieu89f": {
+    "reason": "equivalent: with slash at -1, slice(slash + 1) is the whole string",
+    "where": "src/core/text.ts:31:10 slash === -1 -> false"
+  },
+  "2g4pnf90zcq": {
+    "reason": "equivalent: remote is only read when root is set, so remote !== null already implies it",
+    "where": "src/core/context.ts:82:9 root !== null -> true"
+  },
+  "2wo42r3j2y": {
+    "reason": "equivalent: a missing value fails the regex or matches no case either way",
+    "where": "src/aws/review.ts:155:57 \"\" -> \"Stryker was here!\""
+  },
+  "35j4bs1lvw": {
+    "reason": "equivalent under V8: its TimSort only asks whether the comparator is below 0, so 0 for a greater name sorts the same",
+    "where": "src/core/browse.ts:75:76 a.name > b.name -> false"
+  },
+  "3p3mmck1cp": {
+    "reason": "equivalent: past the end pattern[p] is undefined, which equals neither '?', '*' nor a character of the text",
+    "where": "src/core/inbox.ts:88:9 p < pattern.length -> true"
+  },
+  "3u2vqg20af": {
+    "reason": "equivalent: asObj(null) then returns null, which every caller treats like undefined",
+    "where": "src/state/local.ts:19:30 raw !== null -> true"
+  },
+  "41ubz0cz3l": {
+    "reason": "equivalent: middleware names and steps only matter for removing them, which lazycc never does",
+    "where": "src/aws/review.ts:107:9 \"lazyccReachedHandler\" -> \"\""
+  },
+  "49fsnc9umc": {
+    "reason": "equivalent: past the end pattern[p] is undefined, which equals neither '?', '*' nor a character of the text",
+    "where": "src/core/inbox.ts:91:16 p < pattern.length -> p <= pattern.length"
+  },
+  "4jyxdo5g64": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:357:31 \"sent\" -> \"\""
+  },
+  "4l9k2arb9y": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:358:34 \"problem\" -> \"\""
+  },
+  "4q2ufxh6u6": {
+    "reason": "equivalent: past the end pattern[p] is undefined, which equals neither '?', '*' nor a character of the text",
+    "where": "src/core/inbox.ts:91:16 p < pattern.length -> true"
+  },
+  "7bh8ih63cr": {
+    "reason": "equivalent: Number() and the split that follows ignore surrounding whitespace git prints",
+    "where": "src/git/git.ts:155:21 out.trim() -> out"
+  },
+  "8k281chqym": {
+    "reason": "equivalent: Number() and the split that follows ignore surrounding whitespace git prints",
+    "where": "src/git/git.ts:270:56 /\\s+/ -> /\\s/"
+  },
+  "c1y4220iuz": {
+    "reason": "timing only: the stale-lock boundary and the retry jitter change when a wait ends, not what happens",
+    "where": "src/state/lock.ts:28:28 Math.random() * 10 -> Math.random() / 10"
+  },
+  "gszfnoej1g": {
+    "reason": "equivalent: statements stays undefined when JSON.parse throws, and the next line keeps the PR",
+    "where": "src/core/inbox.ts:131:13 { return true; } -> {}"
+  },
+  "jai5bzca03": {
+    "reason": "equivalent: git prints these refs with refs/ at the start, so the anchor never decides",
+    "where": "src/core/pr.ts:234:22 /^refs\\/(remotes|heads)\\// -> /refs\\/(remotes|heads)\\//"
+  },
+  "m235dg3ssz": {
+    "reason": "equivalent: the initial value is replaced under the lock before it is read",
+    "where": "src/state/config.ts:136:34 [] -> [\"Stryker was here!\"]"
+  },
+  "mqjg9zeija": {
+    "reason": "equivalent: middleware names and steps only matter for removing them, which lazycc never does",
+    "where": "src/aws/codecommit.ts:207:73 { step: \"initialize\", name: \"lazyccConcurrency\", } -> {}"
+  },
+  "pfyrkswzhe": {
+    "reason": "equivalent: names in one folder are unique, so the tie cases never happen",
+    "where": "src/core/browse.ts:75:76 a.name > b.name -> a.name <= b.name"
+  },
+  "szqbpw0hey": {
+    "reason": "equivalent: a missing value fails the regex or matches no case either way",
+    "where": "src/aws/review.ts:197:47 \"\" -> \"Stryker was here!\""
+  },
+  "uaoaju78ze": {
+    "reason": "terminal I/O only: git's progress goes to the user's screen, which tests do not read",
+    "where": "src/git/git.ts:190:11 opts?.quiet -> false"
+  },
+  "vsuyetf4om": {
+    "reason": "equivalent: parseDrafts keeps an entry only when asDraft's result deep-equals it (exactDraft), so a mis-read field or target drops the entry either way",
+    "where": "src/core/commentDrafts.ts:355:16 v[\"sent\"] === undefined -> false"
+  }
+}

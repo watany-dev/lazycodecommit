@@ -127,7 +127,7 @@ describe("loadBranchTable outside a clone", () => {
       branchCommit: async (_r, b) => (b === "gone" ? undefined : `${b}-tip`),
     });
     const table = await loadBranchTable(deps({ api, ctx: OUTSIDE }));
-    expect(table.rows).toEqual([
+    expect(table.rows).toStrictEqual([
       { name: "main", isDefault: true, tip: "main-tip", state: "none" },
       expect.objectContaining({ name: "topic", tip: "topic-tip", state: "open" }),
     ]);
@@ -173,6 +173,20 @@ describe("deleteRemoteBranch", () => {
       "old has moved since it was listed (now newer). Refresh and try again.",
     );
     expect(deleteBranch).not.toHaveBeenCalled();
+  });
+
+  it("names the new tip by its short id", async () => {
+    const api = fakeApi([], {
+      branchCommit: async () => "0123456789abcdef0123456789abcdef01234567",
+    });
+    await expect(deleteRemoteBranch(row, deps({ api }))).rejects.toThrow("(now 0123456).");
+  });
+
+  it("deletes a branch while other branches have open pull requests", async () => {
+    const deleteBranch = vi.fn(async () => {});
+    const api = fakeApi([pullRequest({ id: "9", sourceBranch: "other" })], { deleteBranch });
+    await deleteRemoteBranch(row, deps({ api }));
+    expect(deleteBranch).toHaveBeenCalledWith("demo", "old");
   });
 
   it("refuses when a pull request was opened from it since the row was read", async () => {
@@ -233,17 +247,24 @@ describe("branchActions", () => {
   it("fetches before loading in a clone, and switches quietly", async () => {
     const calls: string[] = [];
     const git = {
-      fetch: async (r: readonly string[]) => void calls.push(`fetch ${r.join(" ")}`),
-      switchBranch: async (b: string, o?: { quiet?: boolean }) =>
-        void calls.push(`switch ${b} ${o?.quiet}`),
+      fetch: async (r: readonly string[], o?: { quiet?: boolean }) =>
+        void calls.push(`fetch ${r.join(" ")} ${o?.quiet}`),
+      switchBranch: async (b: string, o?: { quiet?: boolean; track?: string }) =>
+        void calls.push(`switch ${b} ${o?.quiet} ${o?.track}`),
+      resolveCommit: async (ref: string) => (ref === "refs/heads/x" ? "t" : null),
     };
     const actions = branchActions(deps({ git }), "us-west-2");
     expect(actions.repository).toBe("demo");
     await actions.load({ fetch: false });
     await actions.load({ fetch: true });
     await actions.switchBranch?.({ name: "x", isDefault: false, tip: "t", state: "none" });
+    await actions.switchBranch?.({ name: "y", isDefault: false, tip: "t", state: "none" });
     await actions.deleteBranch({ name: "x", isDefault: false, tip: "r0ffee", state: "none" });
-    expect(calls).toEqual(["fetch --prune", "switch x true"]);
+    expect(calls).toEqual([
+      "fetch --prune true",
+      "switch x true undefined",
+      "switch y true refs/remotes/origin/y",
+    ]);
   });
 
   it("switches to origin's branch even when another remote has one of the same name", async () => {

@@ -2,11 +2,14 @@ import * as fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import type { CiApi, CiRun } from "../aws/ci.js";
 import {
+  CHECK_COLOR,
+  CHECK_MARK,
   type CheckState,
   checksFor,
   ciTargets,
   lazyCiClient,
   loadTargetRuns,
+  noRun,
   overallState,
   pullRequestChecks,
   RECENT_RUNS,
@@ -210,6 +213,32 @@ describe("checksFor, for any runs", () => {
         },
       ),
     );
+  });
+});
+
+describe("noRun", () => {
+  it("shortens the commit, and names a missing one", () => {
+    expect(noRun("0123456789")).toBe(`no run on 0123456 among the newest ${RECENT_RUNS}`);
+    expect(noRun("")).toBe(`no run on (no commit) among the newest ${RECENT_RUNS}`);
+  });
+});
+
+describe("CHECK_MARK and CHECK_COLOR", () => {
+  const states: CheckState[] = ["pass", "fail", "pending", "cancel", "none", "error"];
+
+  it("gives each state its own mark", () => {
+    const marks = states.map((s) => CHECK_MARK[s]);
+    expect(marks.every((m) => m.length > 0)).toBe(true);
+    expect(new Set(marks).size).toBe(states.length);
+  });
+
+  it("colors a pass, a failure, a run in progress and the rest apart", () => {
+    expect(states.every((s) => CHECK_COLOR[s].length > 0)).toBe(true);
+    expect(
+      new Set(["pass", "fail", "pending", "cancel"].map((s) => CHECK_COLOR[s as CheckState])).size,
+    ).toBe(4);
+    expect(CHECK_COLOR.none).toBe(CHECK_COLOR.cancel);
+    expect(CHECK_COLOR.error).toBe(CHECK_COLOR.fail);
   });
 });
 

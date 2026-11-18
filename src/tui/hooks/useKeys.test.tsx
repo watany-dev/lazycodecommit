@@ -83,3 +83,30 @@ describe("useKeys alone", () => {
     await vi.waitFor(() => expect(r.lastFrame()).toContain("moves=1"));
   });
 });
+
+describe("useKeys leaving the screen", () => {
+  function Listener({ onKey }: { onKey: (input: string) => void }) {
+    useKeys((input) => onKey(input));
+    return <Text>listening</Text>;
+  }
+
+  it("gives no key to a component that is gone", async () => {
+    const onKey = vi.fn();
+    const r = render(
+      <KeysProvider>
+        <Listener onKey={onKey} />
+      </KeysProvider>,
+    );
+    await turn();
+    r.rerender(
+      <KeysProvider>
+        <Text>gone</Text>
+      </KeysProvider>,
+    );
+    await turn();
+    r.stdin.write("x");
+    await turn();
+    await turn();
+    expect(onKey).not.toHaveBeenCalled();
+  });
+});

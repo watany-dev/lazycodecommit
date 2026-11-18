@@ -42,5 +42,8 @@ describe("cloneRepository", () => {
     await expect(
       cloneRepository({ repository: "demo", protocol: "ftp", args: [] }, deps),
     ).rejects.toBeInstanceOf(UsageError);
+    await expect(
+      cloneRepository({ repository: "demo", protocol: "ftp", args: [] }, deps),
+    ).rejects.toThrow("--protocol must be https, ssh or grc: ftp");
   });
 });

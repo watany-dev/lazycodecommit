@@ -1,23 +1,29 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // null is Ctrl-D: readline closes and the question never settles, as in Node.
 const answers: (string | null)[] = [];
+const asked: string[] = [];
+const closes = { count: 0 };
 vi.mock("node:readline/promises", async () => {
   const { EventEmitter: Emitter } = await import("node:events");
   return {
     createInterface: () => {
       const rl = Object.assign(new Emitter(), {
-        question: (): Promise<string> => {
+        question: (q: string): Promise<string> => {
+          asked.push(q);
           const answer = answers.shift();
           if (answer !== null) return Promise.resolve(answer ?? "");
           setImmediate(() => rl.emit("close"));
           return new Promise(() => {});
         },
-        close: () => {},
+        close: () => {
+          closes.count++;
+        },
       });
       return rl;
     },
@@ -35,6 +41,12 @@ afterEach(async () => {
   process.env = { ...saved };
   await rm(dir, { recursive: true, force: true });
 });
+
+function interactiveWith(stdin: boolean | undefined, stdout: boolean | undefined) {
+  Object.defineProperty(process.stdin, "isTTY", { value: stdin, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: stdout, configurable: true });
+  return processIo().interactive;
+}
 
 describe("processIo", () => {
   it("reads files and returns null for missing ones", async () => {
@@ -82,6 +94,35 @@ describe("processIo", () => {
   ])("confirm reads %j as %s", async (answer, want) => {
     answers.push(answer);
     expect(await processIo().confirm("Push?")).toBe(want);
+  });
+
+  it("asks with the default shown, ignores spaces around the answer, and closes the prompt", async () => {
+    asked.length = 0;
+    closes.count = 0;
+    answers.push(" y ");
+    expect(await processIo().confirm("Push?")).toBe(true);
+    expect(asked).toEqual(["Push? [Y/n] "]);
+    expect(closes.count).toBe(1);
+  });
+
+  it("is interactive only when both stdin and stdout are terminals", () => {
+    const was = [process.stdin.isTTY, process.stdout.isTTY];
+    try {
+      expect(interactiveWith(true, true)).toBe(true);
+      expect(interactiveWith(true, false)).toBe(false);
+      expect(interactiveWith(false, true)).toBe(false);
+    } finally {
+      interactiveWith(was[0], was[1]);
+    }
+  });
+
+  it("edits a file named like git's in its own temporary folder, removed afterwards", async () => {
+    process.env["VISUAL"] = "";
+    process.env["EDITOR"] = `f() { printf %s "$1" > "$1"; }; f`;
+    const path = await processIo().edit("x");
+    expect(basename(path)).toBe("PULL_REQUEST_EDITMSG.md");
+    expect(basename(dirname(path))).toMatch(/^lazycc-/);
+    expect(existsSync(dirname(path))).toBe(false);
   });
 
   it("takes Ctrl-D at the prompt as no, instead of waiting forever", async () => {

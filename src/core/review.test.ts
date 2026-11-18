@@ -105,6 +105,18 @@ describe("createReviewService in a clone", () => {
     expect(diffTree).toHaveBeenCalledWith("dst", "src");
   });
 
+  it("fetches when only one of the two commits is missing", async () => {
+    const fetch = vi.fn(async () => {});
+    const git = fakeGit({
+      resolveCommit: async (c) => (c === "src" ? "src" : null),
+      fetch,
+      mergeBase: async () => "computed",
+      diffTree: async () => [],
+    });
+    await (await loader(git))(target);
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   it("falls back to the API when the commits cannot be fetched", async () => {
     const git = fakeGit({
       resolveCommit: async () => null,
@@ -201,6 +213,14 @@ describe("text written by other people", () => {
     expect((await service.listPullRequests("demo")).pullRequests[0]?.title).toBe(SHOWN);
     const detail = await service.getPullRequestDetail("1", "demo");
     expect(detail.pullRequest).toMatchObject({ title: SHOWN, description: SHOWN });
+    vi.mocked(api.getPullRequestDetail).mockResolvedValueOnce({
+      pullRequest: { pullRequestId: "1", title: "t", description: "a\nb\tc" },
+      differences: [],
+      commentThreads: [],
+    });
+    expect((await service.getPullRequestDetail("1", "demo")).pullRequest.description).toBe(
+      "a\nb\tc",
+    );
     expect(detail.commentThreads[0]?.comments[0]?.content).toBe(`${SHOWN}\nline 2\ttab`);
     expect(detail.differences).toEqual([{ afterBlob: { blobId: "b", path: "p" } }]);
     expect((await service.getComments("1"))[0]?.comments).toEqual([
@@ -257,6 +277,14 @@ describe("blob contents", () => {
     expect(await read("a\r\nb\n")).toEqual({ text: "a\nb\n", lineEndings: "mixed" });
     // A lone CR is not a line break: it shows as ^M and leaves the line count alone.
     expect(await read("a\rb")).toEqual({ text: "a^Mb" });
+  });
+
+  it("shows a text blob of exactly the size limit", async () => {
+    api = fakeApi();
+    vi.mocked(api.getBlobContent).mockResolvedValueOnce(Buffer.alloc(1024 * 1024, 0x41));
+    expect(await createReviewService(api).getBlobContent("demo", "b")).toMatchObject({
+      text: "A".repeat(1024 * 1024),
+    });
   });
 
   it("says a large text blob is too large, but still knows a large binary one", async () => {
