@@ -25,6 +25,12 @@ the test timeouts scaled to match; use it to look for cases CI's runs miss.
 | `Workflow lint (actionlint)`, `Zizmor`   | Workflow correctness and security; zizmor findings fail the job in its log                                                                 |
 | `Semgrep`                                | `p/default`, fails on findings; SARIF to code scanning except from fork PRs, whose token cannot upload                                     |
 
+`bun run audit` ignores one advisory for now: GHSA-fc5q-39xc-vjpf
+(picomatch ≤ 4.0.7, ReDoS). picomatch reaches only dev tools (knip, vitest), no
+release fixes it yet, and it is not bundled. Drop the `--ignore` from the
+`audit` script once a fixed picomatch is installable (bunfig's 7-day
+`minimumReleaseAge` applies).
+
 The Node jobs are why the package can promise "runs on CloudShell's Node.js
 through npx, no Bun": Bun builds and tests, but nothing in the tarball needs it.
 `scripts/smoke-dist.mjs` (called by `pack-smoke.sh`) is the part that runs the
