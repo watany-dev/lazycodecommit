@@ -426,6 +426,11 @@ describe("createCodeCommitApi", () => {
       Object.assign(new Error("no"), { name: "FolderDoesNotExistException" }),
     );
     expect(await api.getFolder("demo", "main", "x")).toBeUndefined();
+    // What CodeCommit answers for a file's path (realcheck, 2026-11-18).
+    cc.on(GetFolderCommand).rejects(
+      Object.assign(new Error("not a folder"), { name: "InvalidPathException" }),
+    );
+    expect(await api.getFolder("demo", "main", "a.txt")).toBeUndefined();
     cc.on(GetFolderCommand).rejects(new Error("boom"));
     await expect(api.getFolder("demo", "main", "x")).rejects.toThrow("boom");
   });

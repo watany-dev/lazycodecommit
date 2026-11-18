@@ -2133,6 +2133,10 @@ describe("App", () => {
         }),
       );
     });
+    // The current source tip, so threads from before a push can be told apart.
+    await vi.waitFor(() => {
+      expect(getComments).toHaveBeenCalledWith("42", "abc123");
+    });
   });
 
   // v0.5: Reply integration tests
@@ -3954,10 +3958,7 @@ describe("App", () => {
     });
     stdin.write("\r");
     await vi.waitFor(() => {
-      expect(getComments).toHaveBeenCalledWith(
-        "42",
-        expect.objectContaining({ repositoryName: "my-service" }),
-      );
+      expect(getComments).toHaveBeenCalledWith("42", undefined);
     });
   });
 

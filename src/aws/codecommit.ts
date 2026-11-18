@@ -123,11 +123,14 @@ function entries(type: EntryType, list: SdkEntry[] | undefined): FolderEntry[] {
   }));
 }
 
-async function unlessMissing<T>(name: string, call: Promise<T>): Promise<T | undefined> {
+async function unlessMissing<T>(
+  names: string | readonly string[],
+  call: Promise<T>,
+): Promise<T | undefined> {
   try {
     return await call;
   } catch (error) {
-    if ((error as Error).name === name) return undefined;
+    if ([names].flat().includes((error as Error).name)) return undefined;
     throw error;
   }
 }
@@ -413,7 +416,8 @@ export function createCodeCommitApi(options: {
 
     async getFolder(repository, ref, path) {
       const out = await unlessMissing(
-        "FolderDoesNotExistException",
+        // CodeCommit answers InvalidPathException for a file's path (realcheck).
+        ["FolderDoesNotExistException", "InvalidPathException"],
         client.send(
           new GetFolderCommand({
             repositoryName: repository,

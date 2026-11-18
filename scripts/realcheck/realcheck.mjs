@@ -610,8 +610,14 @@ async function lastActivity() {
     record(
       `activity.${actor}.${action}`,
       `lastActivityDate moves on ${action} by ${actor}`,
-      outcome !== "ok" ? "FAIL" : moved ? "PASS" : "DIFF",
-      outcome !== "ok" ? outcome : moved ? "" : "not updated (ADR 0006: needs a fallback)",
+      outcome !== "ok" ? "FAIL" : moved ? "PASS" : action === "reaction" ? "INFO" : "DIFF",
+      outcome !== "ok"
+        ? outcome
+        : moved
+          ? ""
+          : action === "reaction"
+            ? "not updated (ADR 0006: a reaction does not make a PR unread)"
+            : "not updated (ADR 0006: needs a fallback)",
     );
   };
   const target = () => ({
@@ -841,41 +847,36 @@ async function commentIds(input) {
 }
 
 /**
- * aws/review.ts getComments passes the current tips as afterCommitId and
- * beforeCommitId. The API reference defines afterCommitId as the source tip
- * when the comment was made, so after a push the comments made before it may
- * drop out of the review screen.
+ * aws/review.ts getComments asks with the pull request id alone: filtered by
+ * the current tips, CodeCommit leaves out the comments made before a push
+ * (seen on 2026-11-18), and repositoryName without commit ids is refused.
  */
 async function commentsAfterPush(id, before, pr) {
   const t = pr?.pullRequestTargets?.[0];
   const wanted = before.filter(Boolean);
   if (!t || wanted.length === 0)
     return record("comments.after-push", "Comments made before a push", "SKIP", "no comment or PR");
+  const all = await commentIds({ pullRequestId: id });
   const pair = await commentIds({
     pullRequestId: id,
     repositoryName: repoName,
     beforeCommitId: t.destinationCommit,
     afterCommitId: t.sourceCommit,
   });
-  const all = await commentIds({ pullRequestId: id });
   const holds = (list) => Array.isArray(list) && wanted.every((c) => list.includes(c));
   record(
     "comments.after-push",
-    "GetCommentsForPullRequest with the new tips still returns comments made before the push",
-    typeof pair === "string" ? "FAIL" : holds(pair) ? "PASS" : "DIFF",
-    typeof pair === "string"
-      ? pair
-      : holds(pair)
-        ? ""
-        : "hidden by the commit filter: aws/review.ts getComments and ReviewApp reloadComments need another way",
+    "GetCommentsForPullRequest by pull request id alone returns comments made before a push (aws/review.ts getComments)",
+    typeof all === "string" ? "FAIL" : holds(all) ? "PASS" : "DIFF",
+    typeof all === "string" ? all : holds(all) ? "" : `lacks them (${all.length} comments)`,
   );
   record(
-    "comments.after-push.unfiltered",
-    "GetCommentsForPullRequest without commit ids, for comparison",
+    "comments.after-push.filtered",
+    "The same, filtered by the new tips, for comparison",
     "INFO",
-    typeof all === "string"
-      ? all
-      : `${holds(all) ? "returns" : "lacks"} them (${all.length} comments)`,
+    typeof pair === "string"
+      ? pair
+      : `${holds(pair) ? "returns" : "lacks"} them (${pair.length} comments)`,
   );
 }
 
@@ -1240,7 +1241,7 @@ async function browse() {
     "browse.folderOnFile",
     "GetFolder on a file path",
     await get("GetFolder (file path)", "src/a.txt"),
-    "FolderDoesNotExistException",
+    ["InvalidPathException", "FolderDoesNotExistException"],
     "aws/codecommit.ts getFolder",
   );
   expectError(
@@ -1265,11 +1266,12 @@ async function browse() {
     "core/browse.ts BAD_REF",
   );
   const s = await get("GetFolder (short commit id)", "/", short);
-  record(
+  expectError(
     "browse.shortRef",
-    "GetFolder accepts a 7-character commit id (browse treats 7–40 hex as a commit)",
-    s.ok ? "PASS" : "DIFF",
-    s.ok ? short : `${s.name}: ${s.message}`,
+    "GetFolder refuses a 7-character commit id",
+    s,
+    "CommitDoesNotExistException",
+    "core/browse.ts openPath",
   );
   const c = await api(
     "GetCommit (short id)",
@@ -1306,7 +1308,10 @@ async function browse() {
     "src",
     "--json",
   ]);
-  expectRun("browse.short", "lazycc browse --ref <short id>", atShort);
+  expectRun("browse.short", "lazycc browse --ref <short id> asks for the full id", atShort, {
+    exit: 1,
+    needle: "full 40-character",
+  });
   expectRun(
     "browse.bad",
     "lazycc browse --ref <missing> explains it",

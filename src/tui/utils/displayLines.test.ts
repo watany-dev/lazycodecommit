@@ -55,6 +55,50 @@ describe("buildDisplayLines inline threads", () => {
   });
 });
 
+describe("buildDisplayLines earlier revisions", () => {
+  it("lists inline threads from before a push apart, with where they were written", () => {
+    const { differences, diffTexts, diffTextStatus } = makeDiff();
+    const commentThreads: CommentThread[] = [
+      {
+        location: { filePath: "src/a.ts", filePosition: 1, relativeFileVersion: "AFTER" },
+        comments: [{ commentId: "c1", content: "now", authorArn: "arn:aws:iam::1:user/alice" }],
+      },
+      {
+        location: { filePath: "src/a.ts", filePosition: 1, relativeFileVersion: "AFTER" },
+        outdated: true,
+        comments: [{ commentId: "c2", content: "then", authorArn: "arn:aws:iam::1:user/bob" }],
+      },
+      {
+        location: { filePath: "src/a.ts", filePosition: 2, relativeFileVersion: "BEFORE" },
+        outdated: true,
+        comments: [{ commentId: "c3", content: "old", authorArn: "arn:aws:iam::1:user/bob" }],
+      },
+    ];
+
+    const lines = buildDisplayLines(
+      differences,
+      diffTexts,
+      diffTextStatus,
+      new Map(),
+      commentThreads,
+      new Map(),
+      NO_REACTIONS,
+    );
+
+    expect(lines.filter((l) => l.type === "inline-comment").map((l) => l.text)).toEqual([
+      "💬 alice: now",
+    ]);
+    const at = lines.findIndex((l) => l.text === "Earlier revisions (2):");
+    expect(at).toBeGreaterThan(0);
+    expect(lines.slice(at + 1).map((l) => [l.type, l.text, l.threadIndex])).toEqual([
+      ["comment-header", "src/a.ts:1", undefined],
+      ["comment", "bob: then", 1],
+      ["comment-header", "src/a.ts:2 (old)", undefined],
+      ["comment", "bob: old", 2],
+    ]);
+  });
+});
+
 describe("buildDisplayLines diff cache", () => {
   it("keeps each file's own filePath when two files share identical blob ids", () => {
     // Two files added in one PR with the same content have the same afterBlob id

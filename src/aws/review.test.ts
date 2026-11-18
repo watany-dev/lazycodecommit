@@ -227,34 +227,31 @@ describe("getPullRequestDetail", () => {
     expect(detail.commentThreads[0]!.comments[0]!.content).toBe("LGTM");
   });
 
-  it("passes commit IDs and repositoryName to GetCommentsForPullRequest", async () => {
+  it("reads every revision's comments and marks inline ones from an older source tip", async () => {
     mockSend.mockResolvedValueOnce({
       pullRequest: {
         pullRequestId: "42",
         title: "fix: login timeout",
-        pullRequestTargets: [
-          {
-            sourceCommit: "abc123",
-            destinationCommit: "def456",
-          },
-        ],
+        pullRequestTargets: [{ sourceCommit: "abc123", destinationCommit: "def456" }],
       },
     });
     mockSend.mockResolvedValueOnce({ differences: [] });
-    mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
+    mockSend.mockResolvedValueOnce({
+      commentsForPullRequestData: [
+        {
+          afterCommitId: "older",
+          beforeCommitId: "def456",
+          location: { filePath: "a.ts", filePosition: 1, relativeFileVersion: "AFTER" },
+          comments: [{ commentId: "c1" }],
+        },
+      ],
+    });
 
-    await getPullRequestDetail("42", "my-service");
+    const detail = await getPullRequestDetail("42", "my-service");
 
     // Third call is GetCommentsForPullRequestCommand
-    const commentsCall = mockSend.mock.calls[2]![0];
-    expect(commentsCall.input).toEqual(
-      expect.objectContaining({
-        pullRequestId: "42",
-        repositoryName: "my-service",
-        afterCommitId: "abc123",
-        beforeCommitId: "def456",
-      }),
-    );
+    expect(mockSend.mock.calls[2]![0].input).toEqual({ pullRequestId: "42" });
+    expect(detail.commentThreads[0]!.outdated).toBe(true);
   });
 });
 
@@ -662,6 +659,16 @@ describe("posting: what was never sent", () => {
 /** An hour of 2026-02-14, for comment dates. */
 const at = (h: number) => new Date(`2026-02-14T${String(h).padStart(2, "0")}:00:00Z`);
 
+/** One CommentsForPullRequest group, written with `afterCommitId` as the source tip. */
+function writtenOn(afterCommitId: string, filePath?: string) {
+  return {
+    afterCommitId,
+    beforeCommitId: "base",
+    ...(filePath ? { location: { filePath, filePosition: 1, relativeFileVersion: "AFTER" } } : {}),
+    comments: [{ commentId: `${afterCommitId}-${filePath ?? "general"}` }],
+  };
+}
+
 describe("getComments", () => {
   it("returns comment threads from API response", async () => {
     mockSend.mockResolvedValueOnce({
@@ -795,40 +802,32 @@ describe("getComments", () => {
     expect(threads[0]!.location).toBeNull();
   });
 
-  it("passes commit IDs and repositoryName when provided", async () => {
+  it("asks for every revision's comments: the commit filter hides those from before a push", async () => {
     mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
 
-    await getComments("42", {
-      repositoryName: "my-service",
-      afterCommitId: "abc123",
-      beforeCommitId: "def456",
-    });
+    await getComments("42", "tip");
 
-    expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          pullRequestId: "42",
-          repositoryName: "my-service",
-          afterCommitId: "abc123",
-          beforeCommitId: "def456",
-        }),
-      }),
-    );
+    // repositoryName without commit ids is refused (CommitIdRequiredException).
+    expect(mockSend.mock.calls[0]![0]!.input).toEqual({ pullRequestId: "42" });
   });
 
-  it("omits commit IDs when only one is provided", async () => {
-    mockSend.mockResolvedValueOnce({ commentsForPullRequestData: [] });
-
-    await getComments("42", {
-      repositoryName: "my-service",
-      afterCommitId: "abc123",
+  it("marks inline threads written on another source tip as outdated", async () => {
+    mockSend.mockResolvedValue({
+      commentsForPullRequestData: [
+        writtenOn("tip", "a.ts"),
+        writtenOn("old", "a.ts"),
+        writtenOn("old"),
+      ],
     });
 
-    const callInput = mockSend.mock.calls[0]![0]!.input;
-    expect(callInput.pullRequestId).toBe("42");
-    expect(callInput.repositoryName).toBe("my-service");
-    expect(callInput.afterCommitId).toBeUndefined();
-    expect(callInput.beforeCommitId).toBeUndefined();
+    const threads = await getComments("42", "tip");
+    expect(threads.map((t) => [t.comments[0]!.commentId, t.outdated ?? false])).toEqual([
+      ["tip-a.ts", false],
+      ["old-a.ts", true],
+      ["old-general", false],
+    ]);
+    // Without the current tip nothing can be called outdated.
+    expect((await getComments("42")).some((t) => t.outdated)).toBe(false);
   });
 
   it("sorts comments so root comment comes before replies", async () => {

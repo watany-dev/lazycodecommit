@@ -104,7 +104,7 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | `GetPullRequest` の応答に lazycc が読むフィールドがすべてあるか | `aws/codecommit.ts` toPullRequest |
 | 自分の PR の承認、fast-forward できないとき、ソースが動いたときのエラー名と案内 | #12、`aws/errors.ts` |
 | ファイルのパスへの `GetFolder`、存在しないファイル・ref・ブランチのエラー名 | #22、`core/browse.ts` |
-| 7 文字のコミット ID を `GetFolder` / `GetCommit` が受けるか | #22、#23 |
+| 7 文字のコミット ID を `GetFolder` / `GetCommit` が受けないこと（2026-11-18 に実機で確認）と、`browse --ref <短い ID>` が 40 桁を求める案内で終わるか | #22、#23、`core/browse.ts` |
 | HTTPS・grc・SSH の clone と、その clone 内での `pr list` と `pr checkout` | #9、#10、#11 |
 | 期限切れの SSO、権限不足での案内 | #7、`aws/errors.ts` |
 | 同じ `clientRequestToken` での再投稿が最初のコメントを返すか（先端が進んだ後も）、内容を変えると拒否されるか、古い先端に投稿できるか | ADR 0009、`core/commentDrafts.ts` |
@@ -113,7 +113,7 @@ CloudShell なら「アクション → ファイルのダウンロード」で�
 | CloudShell の Node での npx 起動、起動時間（300 ms） | #2、#3、#7 |
 | 各 TUI（レビュー、PR 一覧、ブランチ、ブラウズ、ホーム）が描画され q で終わるか | #10、#11、#22、#27 |
 | clone URL が `core/remote.ts` の形にあうか、呼び出し元 ARN の形 | `core/remote.ts`、`core/inbox.ts` |
-| push の後に、新しい先端の組で `GetCommentsForPullRequest` を呼んでも push 前のコメントが返るか（返らなければレビュー画面から消える） | `aws/review.ts` getComments |
+| push の後に、PR ID だけで `GetCommentsForPullRequest` を呼んで push 前のコメントが返るか（新しい先端の組で絞ると返らないことは 2026-11-18 に実機で確認済み） | `aws/review.ts` getComments |
 | rename したファイルを `GetDifferences` がどう返すか、その変更前側へのコメントを旧パス・新パスのどちらで受けるか、手で: コンソールがどちらをどこに出すか | `tui/components/PullRequestDetail.tsx` getLocationFromLine、`core/commentDrafts.ts` lineReader |
 | 10,240 文字の ASCII・日本語、5,120 個の絵文字（UTF-16 で 10,240）のコメントが通り、10,241 文字が拒否されるか（上限が何で数えるか） | `tui/components/CommentInput.tsx` COMMENT_MAX_LENGTH、#99 |
 | 151 文字のタイトルが拒否されるか、3 バイト文字 150 文字が通るか（上限が文字数か） | `core/pr.ts` checkLengths |

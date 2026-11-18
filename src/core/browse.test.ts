@@ -147,6 +147,20 @@ describe("openPath", () => {
     },
   );
 
+  it("asks for the full id when CodeCommit refuses an abbreviated one", async () => {
+    const d = deps({
+      getFolder: async () => {
+        throw Object.assign(new Error("x"), { name: "CommitDoesNotExistException" });
+      },
+    });
+    await expect(openPath("fc9417b", "", d)).rejects.toThrow(
+      "demo has no commit fc9417b. CodeCommit takes only full 40-character commit IDs.",
+    );
+    await expect(openPath("f".repeat(40), "", d)).rejects.toThrow(
+      `demo has no branch or commit named ${"f".repeat(40)}.`,
+    );
+  });
+
   it("passes other errors through", async () => {
     const d = deps({
       getFolder: async () => {
