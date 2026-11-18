@@ -31,6 +31,7 @@
     "startup": "node scripts/startup.mjs",
     "realcheck": "node scripts/realcheck/realcheck.mjs",
     "realcheck:mock": "node scripts/realcheck/mock-run.mjs",
+    "perf:real": "node scripts/perf/real.mjs",
     "ci": "bun run lint && bun run format:check && bun run typecheck && bun run dead-code && bun run audit && bun run test:coverage && bun run build && bun run smoke && bun run startup && bun run lint:workflows && bun run lint:semgrep"
   },
   "repository": {
