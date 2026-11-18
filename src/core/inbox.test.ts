@@ -154,6 +154,10 @@ describe("inApprovalPool", () => {
     ["a short session name", ["CodeCommitApprovers:123456789012:me"], ROLE_ME, true],
     ["a short name in another account", ["CodeCommitApprovers:999999999999:me"], ME, false],
     ["a short name for someone else", ["CodeCommitApprovers:123456789012:alice"], ME, false],
+    ["a short name equal to the ARN's type", ["CodeCommitApprovers:123456789012:user"], ME, false],
+    ["an ARN pattern that matches only a tail of the ARN", [ME], `a${ME}`, false],
+    ["a short form after other text", ["xCodeCommitApprovers:123456789012:alice"], ME, true],
+    ["a short form with a line break", ["CodeCommitApprovers:123456789012:alice\nx"], ME, true],
     ["an unknown member form", ["somebody"], ME, true],
     ["a member that is not a string", [7], ME, true],
     ["a pool that is not an array", "me", ME, true],
@@ -421,6 +425,8 @@ describe("cache", () => {
       {},
       null,
       { approved: true, overridden: false, satisfied: [1], notSatisfied: [] },
+      { approved: "yes", overridden: false, satisfied: [], notSatisfied: [] },
+      { approved: true, overridden: "no", satisfied: [], notSatisfied: [] },
     ]) {
       const back = fromCache({ ...good, items: [{ ...good.items[1], rules }] }, ME, "r", [
         "a",
@@ -428,6 +434,16 @@ describe("cache", () => {
       ]);
       expect(back?.items[0]?.rules, JSON.stringify(rules)).toBeUndefined();
     }
+  });
+
+  it("leaves out a check state it does not know", () => {
+    const good = JSON.parse(JSON.stringify(toCache(inbox, "r")));
+    const back = fromCache({ ...good, items: [{ ...good.items[1], checks: "bogus" }] }, ME, "r", [
+      "a",
+      "b",
+    ]);
+    expect(back?.items[0]).toBeDefined();
+    expect(back?.items[0]).not.toHaveProperty("checks");
   });
 
   it("drops a cache with a bad date or a bad item", () => {

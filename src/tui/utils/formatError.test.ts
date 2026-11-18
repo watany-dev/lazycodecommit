@@ -412,6 +412,18 @@ describe("formatErrorMessage", () => {
       );
     });
 
+    it("hides a region with a number of two digits", () => {
+      expect(formatErrorMessage(makeError("Error", "Region eu-central-12 unavailable"))).toBe(
+        "Region [REGION] unavailable",
+      );
+    });
+
+    it("phrases approving one's own PR as CodeCommit's refusal outside the approval context", () => {
+      expect(formatErrorMessage(makeError("PullRequestCannotBeApprovedByAuthorException"))).toBe(
+        "You cannot approve your own pull request.",
+      );
+    });
+
     it("leaves words that only contain a region-like run alone", () => {
       expect(
         formatErrorMessage(makeError("Error", "Branch focus-fix-2 not found in us-west-2")),
@@ -536,6 +548,10 @@ describe("formatErrorMessage control characters", () => {
 describe("screenErrorText", () => {
   it.each(["UserError", "UsageError", "GitError"])("shows a %s as written", (name) => {
     expect(screenErrorText(makeError(name, "No such path: src/x"))).toBe("No such path: src/x");
+    // Not sanitized as an AWS message would be: the region is the user's own.
+    expect(screenErrorText(makeError(name, "No branch x in us-east-1"))).toBe(
+      "No branch x in us-east-1",
+    );
   });
 
   it("explains anything else", () => {

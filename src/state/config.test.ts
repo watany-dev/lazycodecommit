@@ -61,6 +61,11 @@ describe("loadConfig", () => {
     expect(await loadConfig({ XDG_CONFIG_HOME: dir })).toEqual({ region: "us-east-1" });
   });
 
+  it("keeps a byte order mark inside a value", async () => {
+    await write('{"region":"us-\uFEFFeast-1"}');
+    expect(await loadConfig({ XDG_CONFIG_HOME: dir })).toEqual({ region: "us-\uFEFFeast-1" });
+  });
+
   it("reports broken JSON with the path", async () => {
     await write("{ nope");
     await expect(loadConfig({ XDG_CONFIG_HOME: dir })).rejects.toThrow(
@@ -71,10 +76,15 @@ describe("loadConfig", () => {
   it("reports an unreadable file", async () => {
     await mkdir(join(dir, "lazycc", "config.json"), { recursive: true });
     await expect(loadConfig({ XDG_CONFIG_HOME: dir })).rejects.toBeInstanceOf(ConfigError);
+    await expect(loadConfig({ XDG_CONFIG_HOME: dir })).rejects.toHaveProperty(
+      "name",
+      "ConfigError",
+    );
   });
 
   it.each([
     ["[]", '"(top level)" must be an object'],
+    ['"x"', '"(top level)" must be an object'],
     ['{"profile": 1}', '"profile" must be a non-empty string'],
     ['{"region": ""}', '"region" must be a non-empty string'],
     ['{"repos": "a"}', '"repos" must be an array of non-empty strings'],

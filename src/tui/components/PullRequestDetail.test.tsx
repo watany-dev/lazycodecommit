@@ -8387,4 +8387,147 @@ describe("PullRequestDetail", () => {
       expect(screen.lastFrame()!.split("\n").length).toBeLessThanOrEqual(30);
     });
   });
+
+  describe("file list keys, from mutation testing", () => {
+    const threeFiles = ["alpha", "beta", "gamma"].map((n, i) => ({
+      beforeBlob: { blobId: `b${i}`, path: `src/${n}.ts` },
+      afterBlob: { blobId: `a${i}`, path: `src/${n}.ts` },
+    }));
+    const threeTexts = new Map(
+      threeFiles.map((_, i) => [`b${i}:a${i}`, { before: "x", after: "y" }]),
+    );
+    const show = (onQuit = vi.fn()) =>
+      render(
+        <QuitProvider onQuit={onQuit}>
+          <PullRequestDetail
+            pullRequest={pullRequest as any}
+            differences={threeFiles as any}
+            commentThreads={[]}
+            diffTexts={threeTexts}
+            onBack={vi.fn()}
+            onHelp={vi.fn()}
+            onShowActivity={vi.fn()}
+            comment={defaultCommentProps}
+            reply={defaultReplyProps}
+            approval={defaultApprovalProps}
+            merge={defaultMergeProps}
+            close={defaultCloseProps}
+            commitView={defaultCommitProps}
+            editComment={defaultEditCommentProps}
+            deleteComment={defaultDeleteCommentProps}
+            reaction={defaultReactionProps}
+          />
+        </QuitProvider>,
+      );
+    /** The cursor row of the file list, below its title. */
+    const selected = (frame: string | undefined) => {
+      const rows = (frame ?? "").split("\n");
+      return (
+        rows.slice(rows.findIndex((l) => l.includes("Files ("))).find((l) => l.includes("> ")) ?? ""
+      );
+    };
+
+    it("moves up one file with k and the up arrow", async () => {
+      const screen = show();
+      await press(screen, "f", "j", "j", "k");
+      expect(selected(screen.lastFrame())).toContain("src/beta.ts");
+      await press(screen, "\x1b[A");
+      expect(selected(screen.lastFrame())).toContain("src/alpha.ts");
+    });
+
+    it("goes to the last and first file with > and <", async () => {
+      const screen = show();
+      await press(screen, "f", ">");
+      expect(selected(screen.lastFrame())).toContain("src/gamma.ts");
+      await press(screen, "<");
+      expect(selected(screen.lastFrame())).toContain("src/alpha.ts");
+    });
+
+    it("stays open on keys it does not use, g among them, and quits on q", async () => {
+      const onQuit = vi.fn();
+      const screen = show(onQuit);
+      await press(screen, "f", "x", "g");
+      expect(screen.lastFrame()).toContain("Files (3)");
+      await press(screen, "q");
+      expect(onQuit).toHaveBeenCalled();
+    });
+  });
+
+  describe("header and reply lines, from mutation testing", () => {
+    const show = (over: Record<string, unknown> = {}) =>
+      render(
+        <PullRequestDetail
+          pullRequest={pullRequest as any}
+          differences={[]}
+          commentThreads={[]}
+          diffTexts={new Map()}
+          onBack={vi.fn()}
+          onHelp={vi.fn()}
+          onShowActivity={vi.fn()}
+          comment={defaultCommentProps}
+          reply={defaultReplyProps}
+          approval={defaultApprovalProps}
+          merge={defaultMergeProps}
+          close={defaultCloseProps}
+          commitView={defaultCommitProps}
+          editComment={defaultEditCommentProps}
+          deleteComment={defaultDeleteCommentProps}
+          reaction={defaultReactionProps}
+          {...over}
+        />,
+      );
+    const drafts = (hidden: number) => ({
+      list: [],
+      saveError: null,
+      setAside: null,
+      hidden,
+      add: vi.fn(),
+      edit: vi.fn(),
+      discard: vi.fn(),
+      postAnyway: vi.fn(),
+      submit: vi.fn(),
+      state: { isProcessing: false, progress: null, error: null, clearError: vi.fn() },
+    });
+
+    it("counts drafts kept for another version as one draft or several", () => {
+      expect(show({ drafts: drafts(1) }).lastFrame()).toContain(
+        "1 draft from another lazycc version",
+      );
+      expect(show({ drafts: drafts(2) }).lastFrame()).toContain(
+        "2 drafts from another lazycc version",
+      );
+    });
+
+    it("lists every approver, separated by commas", () => {
+      const approval = {
+        ...defaultApprovalProps,
+        approvals: [
+          { userArn: "arn:aws:iam::1:user/alice", approvalState: "APPROVE" },
+          { userArn: "arn:aws:iam::1:user/bob", approvalState: "APPROVE" },
+          { userArn: "arn:aws:iam::1:user/carol", approvalState: "REVOKE" },
+        ],
+      };
+      expect(show({ approval }).lastFrame()).toContain("Approvals: alice, bob ✓");
+    });
+
+    it.each([
+      ["a".repeat(60), `${"a".repeat(50)}...`],
+      ["b".repeat(50), "b".repeat(50)],
+    ])("shows the first 50 characters of the comment being answered", async (content, shown) => {
+      const thread = [
+        {
+          location: null,
+          comments: [{ commentId: "c1", authorArn: "arn:aws:iam::1:user/taro", content }],
+        },
+      ];
+      const screen = show({ commentThreads: thread });
+      await press(screen, "j", "j", "R");
+      await vi.waitFor(() => expect(screen.lastFrame()).toContain("Replying to taro:"));
+      const line = screen
+        .lastFrame()!
+        .split("\n")
+        .find((l) => l.includes("Replying to"))!;
+      expect(line.trim()).toBe(`Replying to taro: ${shown}`);
+    });
+  });
 });

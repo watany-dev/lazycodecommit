@@ -195,6 +195,38 @@ describe("submitDrafts", () => {
     expect(h.calls.map((c) => c.content)).toEqual(["1"]);
     expect(r.remaining.map((d) => d.problem?.kind)).toEqual(["moved"]);
   });
+
+  it("posts the drafts after a moved one, and counts only those it will post", async () => {
+    const h = harness();
+    const progress = vi.fn();
+    const drafts = reanchor([inline("old line"), general("1")], NEW, () => "new line");
+    const r = await submitDrafts(drafts, { ...h.deps, progress });
+    expect(h.calls.map((c) => c.content)).toEqual(["1"]);
+    expect(r.posted).toBe(1);
+    expect(progress).toHaveBeenLastCalledWith(1, 1);
+  });
+
+  it("leaves a draft another lazycc marked moved while this one was posting", async () => {
+    const [a, b] = [general("a"), inline()];
+    const h = harness();
+    const movedB = { ...b, problem: { kind: "moved" as const, message: "m" } };
+    h.deps.save.mockImplementationOnce(async (list) => [list[0]!, movedB]);
+    const r = await submitDrafts([a, b], h.deps);
+    expect(h.calls.map((c) => c.content)).toEqual(["a"]);
+    expect(r.remaining).toEqual([movedB]);
+  });
+
+  it("retries an unsettled send with the commits it was sent with, not the draft's", async () => {
+    const h = harness();
+    const d: CommentDraft = {
+      ...general(),
+      ...NEW,
+      sent: OLD,
+      problem: { kind: "unknown", message: "timeout" },
+    };
+    await submitDrafts([d], h.deps);
+    expect(h.calls[0]).toEqual({ content: "general", commits: OLD, token: d.token });
+  });
 });
 
 describe("reanchor", () => {
@@ -215,6 +247,26 @@ describe("reanchor", () => {
     expect(changed!.problem?.kind).toBe("moved");
     expect(changed!.afterCommitId).toBe("src1");
     expect(gone!.problem?.kind).toBe("moved");
+  });
+
+  it("moves a draft when only the destination commit changed", () => {
+    const tip = { beforeCommitId: "dest2", afterCommitId: "src1" };
+    const [d] = reanchor([general()], tip, () => undefined);
+    expect(d).toMatchObject(tip);
+  });
+
+  it("says why it marked a draft moved", () => {
+    const [d] = reanchor([inline()], NEW, () => "const a = 2;");
+    expect(d!.problem).toEqual({
+      kind: "moved",
+      message: "The pull request has new commits and this line changed.",
+    });
+  });
+
+  it("leaves a moved draft on its commits until the user posts it anyway", () => {
+    const [moved] = reanchor([inline()], NEW, () => "other");
+    const newer = { beforeCommitId: "dest1", afterCommitId: "src3" };
+    expect(reanchor([moved!], newer, () => "const a = 1;")).toEqual([moved]);
   });
 
   it("leaves drafts already on the tip, and unsettled ones, alone", () => {
@@ -340,6 +392,12 @@ describe("draftStorage", () => {
     const c = general("c");
     expect(await storage.save("7", [b, c])).toEqual({ drafts: [b, c], hidden: 2 });
     expect(state.draftLists.get("r/7")).toEqual([newer, extra, b, c]);
+    expect(await storage.save("7", [b])).toEqual({ drafts: [b], hidden: 2 });
+    expect(state.draftLists.get("r/7")).toEqual([newer, extra, b]);
+    state.draftLists.set("r/7", [b, newer]);
+    await storage.load("7");
+    await storage.save("7", [b]);
+    expect(state.draftLists.get("r/7")).toEqual([b, newer]);
   });
 
   it("leaves a draft another version rewrote to it, even if changed here", async () => {
@@ -358,7 +416,7 @@ describe("draftStorage", () => {
     const state = fakeState();
     const storage = draftStorage(state.drafts, "r");
     state.draftLists.set("r/7", { v: 2, drafts: [] });
-    expect(await storage.load("7")).toEqual({ drafts: [], hidden: 1 });
+    expect(await storage.load("7")).toStrictEqual({ drafts: [], hidden: 1 });
     await expect(storage.save("7", [general()])).rejects.toThrow(/another lazycc version/);
     expect(state.draftLists.get("r/7")).toEqual({ v: 2, drafts: [] });
   });
@@ -464,6 +522,13 @@ describe("lineReader", () => {
     expect(lineAt(at("AFTER", "c.ts", 1))).toBeUndefined();
   });
 
+  it("reads each draft's line from its own file", async () => {
+    const c = newDraft("x", { kind: "inline", location: at("AFTER", "c.ts", 1) }, OLD);
+    const lineAt = await lineReader([inline(), c], NEW, files, async (id) => `${id} 1\n`);
+    expect(lineAt(at("AFTER", "c.ts", 1))).toBe("c-new 1");
+    expect(lineAt(at("AFTER", "a.ts", 1))).toBe("b-new 1");
+  });
+
   it("reads no line in a file that became binary, not even an empty one", async () => {
     const lineAt = await lineReader([inline()], NEW, files, async () => undefined);
     expect(lineAt(at("AFTER", "a.ts", 1))).toBeUndefined();
@@ -479,5 +544,6 @@ describe("draftKey", () => {
       draftKey({ pullRequestId: "5", authorArn: "arn:aws:sts::444455556666:assumed-role/R/s" }),
     ).toBe("444455556666/5");
     expect(draftKey({ pullRequestId: "5" })).toBe("unknown/5");
+    expect(draftKey({})).toBe("unknown/");
   });
 });

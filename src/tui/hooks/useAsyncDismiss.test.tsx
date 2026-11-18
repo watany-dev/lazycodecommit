@@ -81,3 +81,25 @@ describe("useAsyncDismiss", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 });
+
+describe("useAsyncDismiss after a failure", () => {
+  it("does not dismiss when the error of a failed operation is cleared", () => {
+    const onDismiss = vi.fn();
+    const { rerender } = render(
+      <TestComponent isProcessing={true} error={null} onDismiss={onDismiss} />,
+    );
+    rerender(<TestComponent isProcessing={false} error="failed" onDismiss={onDismiss} />);
+    rerender(<TestComponent isProcessing={false} error={null} onDismiss={onDismiss} />);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("dismisses once, even when the error changes between empty values afterwards", () => {
+    const onDismiss = vi.fn();
+    const { rerender } = render(
+      <TestComponent isProcessing={true} error={null} onDismiss={onDismiss} />,
+    );
+    rerender(<TestComponent isProcessing={false} error={null} onDismiss={onDismiss} />);
+    rerender(<TestComponent isProcessing={false} error="" onDismiss={onDismiss} />);
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+});

@@ -206,6 +206,23 @@ describe("createPullRequest in a clone", () => {
     ).rejects.toBeInstanceOf(UsageError);
   });
 
+  it("refuses to open an editor without a terminal when only the body is given", async () => {
+    await expect(
+      createPullRequest({ ...FILL, fill: false, body: "only" }, deps().d),
+    ).rejects.toThrow(
+      "Not a terminal: pass --fill, or both --title and --body, to create without an editor",
+    );
+  });
+
+  it("takes a body of exactly CodeCommit's limit", async () => {
+    const api = fakeApi();
+    await createPullRequest(
+      FILL,
+      deps({ api, git: { commits: async () => [{ subject: "t", body: "y".repeat(10_240) }] } }).d,
+    );
+    expect(api.created[0]?.description).toHaveLength(10_240);
+  });
+
   it.each([
     [{ push: true, noPush: true }, "--push and --no-push"],
     [{ body: "a", bodyFile: "b" }, "--body and --body-file"],
@@ -343,6 +360,9 @@ describe("createPullRequest in a clone", () => {
       });
       const { d } = deps({ api, git: { unpushedCount: async () => null, push } });
       await expect(createPullRequest({ ...FILL, push: true }, d)).rejects.toThrow(UserError);
+      await expect(createPullRequest({ ...FILL, push: true }, d)).rejects.toThrow(
+        "git push failed: git push -u origin topic failed",
+      );
       expect(api.created).toEqual([]);
     });
 
@@ -439,6 +459,16 @@ describe("resolvePullRequest", () => {
 
   it("rejects a non-numeric id", async () => {
     await expect(resolvePullRequest("abc", deps().d)).rejects.toBeInstanceOf(UsageError);
+    for (const id of ["9a", "a9", "9\n"]) {
+      await expect(resolvePullRequest(id, deps().d)).rejects.toThrow(
+        `Not a pull request id: ${id}`,
+      );
+    }
+  });
+
+  it("gets an id of several digits", async () => {
+    const api = fakeApi([pullRequest({ id: "12" })]);
+    expect((await resolvePullRequest("12", deps({ api }).d)).id).toBe("12");
   });
 
   it("finds the current branch's PR", async () => {
@@ -452,8 +482,9 @@ describe("resolvePullRequest", () => {
   });
 
   it("needs an id outside a clone", async () => {
-    await expect(resolvePullRequest(undefined, deps({ ctx: OUTSIDE }).d)).rejects.toThrow(
-      "pass a pull request id",
+    await expect(resolvePullRequest(undefined, deps({ ctx: OUTSIDE }).d)).rejects.toHaveProperty(
+      "message",
+      "Not in a clone of the repository: pass a pull request id",
     );
   });
 
@@ -511,6 +542,7 @@ describe("checkoutPullRequest", () => {
     expect(await checkoutPullRequest("9", d)).toMatchObject({
       branch: "feature/x",
       created: true,
+      ahead: false,
     });
     expect(calls).toEqual([
       "fetch +refs/heads/feature/x:refs/remotes/origin/feature/x",
@@ -525,6 +557,8 @@ describe("checkoutPullRequest", () => {
       git: {
         switchBranch: async (b) => void calls.push(`switch ${b}`),
         fastForward: async (ref) => void calls.push(`ff ${ref}`),
+        resolveCommit: async (ref) =>
+          ref.startsWith("refs/heads/") || ref === "HEAD" ? "c" : null,
       },
     });
     expect(await checkoutPullRequest("9", d)).toMatchObject({ created: false });
@@ -599,6 +633,10 @@ describe("checkoutPullRequest", () => {
   it("works only inside a clone", async () => {
     await expect(checkoutPullRequest("9", deps({ ctx: OUTSIDE }).d)).rejects.toBeInstanceOf(
       UsageError,
+    );
+    await expect(checkoutPullRequest("9", deps({ ctx: OUTSIDE }).d)).rejects.toHaveProperty(
+      "message",
+      "pr checkout works inside a clone of the repository",
     );
   });
 });

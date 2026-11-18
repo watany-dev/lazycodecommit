@@ -78,6 +78,21 @@ describe("openPath", () => {
     });
   });
 
+  it("sorts names that come in reverse order", async () => {
+    const names = ["e", "d", "c", "b", "a"];
+    const d = deps({
+      getFolder: async () => names.map((name) => ({ name, path: name, type: "file" as const })),
+    });
+    const node = await openPath("main", "", d);
+    expect(node.kind === "folder" && node.entries.map((e) => e.name)).toEqual(names.toSorted());
+  });
+
+  it("does not try a file at the root of an empty repository", async () => {
+    const d = deps({ getFolder: async () => undefined });
+    await expect(openPath("main", "", d)).rejects.toThrow("demo has no folder  at main.");
+    expect(d.calls).toEqual([]);
+  });
+
   it("falls back to the file when the path is not a folder", async () => {
     const d = deps();
     expect(await openPath("main", "README.md", d)).toEqual({
@@ -133,6 +148,16 @@ describe("openPath", () => {
     });
   });
 
+  it("passes on another error from reading the file", async () => {
+    const d = deps({
+      getFolder: async () => undefined,
+      getFile: async () => {
+        throw Object.assign(new Error("denied"), { name: "AccessDeniedException" });
+      },
+    });
+    await expect(openPath("main", "a.bin", d)).rejects.toThrow("denied");
+  });
+
   it.each(["CommitDoesNotExistException", "InvalidCommitException"])(
     "names a ref that does not exist (%s)",
     async (name) => {
@@ -156,6 +181,7 @@ describe("openPath", () => {
     await expect(openPath("fc9417b", "", d)).rejects.toThrow(
       "demo has no commit fc9417b. CodeCommit takes only full 40-character commit IDs.",
     );
+    await expect(openPath("fc9417b0", "", d)).rejects.toThrow("takes only full 40-character");
     await expect(openPath("f".repeat(40), "", d)).rejects.toThrow(
       `demo has no branch or commit named ${"f".repeat(40)}.`,
     );
@@ -177,6 +203,12 @@ describe("browseConsoleUrl", () => {
       "https://us-east-1.console.aws.amazon.com/codesuite/codecommit/repositories/demo/browse/refs/heads/feature/x/--/src/a%20b.ts?region=us-east-1",
     );
     expect(browseConsoleUrl("us-east-1", "demo", "ABC1234", "")).toContain("/browse/ABC1234/--/");
+    expect(browseConsoleUrl("us-east-1", "demo", "abc1234-fix", "")).toContain(
+      "/browse/refs/heads/abc1234-fix/--/",
+    );
+    expect(browseConsoleUrl("us-east-1", "demo", "fix-abc1234", "")).toContain(
+      "/browse/refs/heads/fix-abc1234/--/",
+    );
     const commit = "0123456789abcdef0123456789abcdef01234567";
     expect(browseConsoleUrl("us-east-1", "demo", commit, "")).toBe(
       `https://us-east-1.console.aws.amazon.com/codesuite/codecommit/repositories/demo/browse/${commit}/--/?region=us-east-1`,

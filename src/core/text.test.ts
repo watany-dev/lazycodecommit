@@ -1,6 +1,14 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { shortArn } from "./text.js";
+import { printable, shortArn } from "./text.js";
+
+describe("printable", () => {
+  it("shows DEL as ^?, apart from the C1 controls", () => {
+    expect(printable("a\x7fb")).toBe("a^?b");
+    expect(printable("\x9b")).toBe("^[[");
+    expect(printable("a\r\n\tb")).toBe("a^M^J^Ib");
+  });
+});
 
 describe("shortArn", () => {
   it("extracts username from ARN", () => {
@@ -9,6 +17,10 @@ describe("shortArn", () => {
 
   it("keeps the role with an assumed role's session, as the CLI prints it", () => {
     expect(shortArn("arn:aws:sts::123456789012:assumed-role/admin/session")).toBe("admin/session");
+  });
+
+  it("keeps a colon inside the resource", () => {
+    expect(shortArn("arn:aws:iam::1:user/a:b")).toBe("a:b");
   });
 
   it("returns original if no slash", () => {

@@ -324,6 +324,45 @@ describe("BrowseApp refs", () => {
   });
 });
 
+describe("BrowseApp refs, from mutation testing", () => {
+  it("opens nothing for the ref already shown, or for an empty pick", async () => {
+    const a = actions({ branches: vi.fn(async () => ["main"]) });
+    const { stdin, lastFrame } = await setup(a);
+    const opened = vi.mocked(a.open).mock.calls.length;
+    await press(stdin, "b", "\r");
+    expect(a.open).toHaveBeenCalledTimes(opened);
+    const empty = await setup(actions({ branches: vi.fn(async () => []) }));
+    const before = vi.mocked(empty.a.open).mock.calls.length;
+    await press(empty.stdin, "b", "\r");
+    expect(empty.a.open).toHaveBeenCalledTimes(before);
+    expect(lastFrame()).toContain("@ main : /");
+  });
+
+  it("trims a typed ref", async () => {
+    const { stdin, a } = await setup();
+    await press(stdin, "b", "z", "z", " ", "\r");
+    expect(a.open).toHaveBeenLastCalledWith("zz", "/");
+  });
+
+  it("keeps the list cursor inside the list", async () => {
+    const { stdin, lastFrame } = await setup();
+    await press(stdin, "b", "\u001B[A");
+    expect(lastFrame()).toMatch(/> dev/);
+    await press(stdin, "\u001B[B", "\u001B[B", "\u001B[B", "\u001B[B");
+    expect(lastFrame()).toMatch(/> main/);
+  });
+
+  it("goes up a folder on h, and stays at the root", async () => {
+    const { stdin, lastFrame, a } = await setup(actions(), "src/", "long.ts");
+    await press(stdin, "h");
+    await vi.waitFor(() => expect(lastFrame()).toContain("README.md"));
+    expect(a.open).toHaveBeenLastCalledWith("main", "/");
+    const calls = vi.mocked(a.open).mock.calls.length;
+    await press(stdin, "h");
+    expect(a.open).toHaveBeenCalledTimes(calls);
+  });
+});
+
 describe("BrowseApp review fixes", () => {
   it("drops CRLF line endings instead of showing them", async () => {
     const { lastFrame } = await setup(actions(), "crlf.txt", "one");

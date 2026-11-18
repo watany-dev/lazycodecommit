@@ -84,6 +84,20 @@ describe("seen", () => {
     expect([...(await state().seen.all()).keys()]).toEqual(["a/1"]);
   });
 
+  it("overwrites an entry that is not a string, even one that would parse as a later date", async () => {
+    await put("seen.json", '{"a/1": 3000}');
+    await state().seen.mark("a/1", new Date("2026-11-01T00:00:00Z"));
+    expect((await state().seen.all()).get("a/1")).toEqual(new Date("2026-11-01T00:00:00Z"));
+  });
+
+  it("leaves a mark of the same time as it was written", async () => {
+    await put("seen.json", '{"a/1": "2026-11-01T00:00:00Z"}');
+    await state().seen.mark("a/1", new Date("2026-11-01T00:00:00Z"));
+    expect(JSON.parse(await readFile(join(dir, "seen.json"), "utf8"))).toEqual({
+      "a/1": "2026-11-01T00:00:00Z",
+    });
+  });
+
   it("overwrites an entry that is not a date", async () => {
     await put("seen.json", '{"a/1": 5}');
     await state().seen.mark("a/1", new Date("2026-11-01T00:00:00Z"));
@@ -214,8 +228,10 @@ describe("two lazycc processes saving at once", () => {
 describe("drafts", () => {
   it("keeps each PR's list, removes an emptied one, and writes the file user-only", async () => {
     const s = state();
-    expect(await s.drafts.get("r/1")).toEqual({ value: undefined });
-    expect(await s.drafts.update("r/1", () => [{ id: "a" }])).toEqual({ value: [{ id: "a" }] });
+    expect(await s.drafts.get("r/1")).toStrictEqual({ value: undefined });
+    expect(await s.drafts.update("r/1", () => [{ id: "a" }])).toStrictEqual({
+      value: [{ id: "a" }],
+    });
     await s.drafts.update("r/2", () => [{ id: "b" }]);
     expect(await s.drafts.get("r/1")).toEqual({ value: [{ id: "a" }] });
     await s.drafts.update("r/1", (current) => {
@@ -237,12 +253,37 @@ describe("drafts", () => {
       const s = state();
       const read = await s.drafts.get("r/1");
       expect(read.value).toBeUndefined();
-      expect(read.setAside).toMatch(/drafts\.json\.bad-[0-9TZ-]+$/);
+      expect(read.setAside).toMatch(/drafts\.json\.bad-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z$/);
       expect(await readFile(read.setAside as string, "utf8")).toBe(text);
       expect(await s.drafts.update("r/1", () => ["a"])).toEqual({ value: ["a"] });
       expect(await readFile(read.setAside as string, "utf8")).toBe(text);
     },
   );
+
+  it("reads and saves drafts under drafts.json's lock", async () => {
+    await put("drafts.json", "{trunc");
+    await writeFile(join(dir, "drafts.json.lock"), "");
+    const s = state();
+    let done = false;
+    const read = s.drafts.get("r/1").then(() => {
+      done = true;
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(done).toBe(false);
+    await rm(join(dir, "drafts.json.lock"));
+    await read;
+    await writeFile(join(dir, "drafts.json.lock"), "");
+    let saved = false;
+    const save = s.drafts
+      .update("r/1", () => ["a"])
+      .then(() => {
+        saved = true;
+      });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(saved).toBe(false);
+    await rm(join(dir, "drafts.json.lock"));
+    await save;
+  });
 
   it("moves a corrupt file aside when a save finds it", async () => {
     const s = state();

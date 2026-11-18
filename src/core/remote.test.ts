@@ -43,6 +43,12 @@ describe("parseRemoteUrl", () => {
     ["codecommit::us-west-2://my-repo", { repo: "my-repo", region: "us-west-2" }],
     ["codecommit://dev@my-repo", { repo: "my-repo", region: "", profile: "dev" }],
     ["codecommit://my-repo", { repo: "my-repo", region: "" }],
+    // Lines read from git's output keep their line break.
+    ["  codecommit://my-repo\n", { repo: "my-repo", region: "" }],
+    [
+      " https://git-codecommit.us-east-1.amazonaws.com/v1/repos/my-repo\n",
+      { repo: "my-repo", region: "us-east-1" },
+    ],
   ])("reads %s", (url, want) => {
     expect(parseRemoteUrl(url)).toEqual(want);
   });
@@ -53,6 +59,9 @@ describe("parseRemoteUrl", () => {
     "/tmp/repo.git",
     "https://git-codecommit.ap-northeast-1.amazonaws.com/v1/repos/",
     "codecommit::ap-northeast-1://",
+    "git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/my-repo",
+    "xcodecommit://my-repo",
+    "codecommit://my-repo/more",
     // A broken %-escape used to throw URIError and stop every command in the clone.
     "https://git-codecommit.ap-northeast-1.amazonaws.com/v1/repos/my%zzrepo",
   ])("rejects %s", (url) => {

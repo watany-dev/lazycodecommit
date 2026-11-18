@@ -6,9 +6,13 @@ const commands = {
   "pr list": { state: { type: "string", short: "s" }, json: { type: "boolean" } },
   "pr comment": { "body-file": { type: "string", short: "F" } },
   // Bare lazycc takes status's flags.
-  status: { repo: { type: "string", short: "R" }, json: { type: "boolean" } },
+  status: {
+    help: { type: "boolean", short: "h" },
+    repo: { type: "string", short: "R" },
+    json: { type: "boolean" },
+  },
   clone: { protocol: { type: "string" } },
-  completion: {},
+  completion: { title: { type: "string" } },
 } as const;
 
 /** What bash offers for `line` (the cursor at its end), using the generated script. */
@@ -48,6 +52,7 @@ describe("bash completion", () => {
     expect(bash("lazycc completion ")).toEqual(["bash", "zsh", "fish"]);
     expect(bash("lazycc pr comment -F package.j")).toEqual(["package.json"]);
     expect(bash("lazycc pr bogus -")).toEqual([]);
+    expect(bash("lazycc completion --title ")).toEqual([]);
   });
 });
 
@@ -75,5 +80,12 @@ describe("other shells", () => {
       "complete -c lazycc -n '__fish_seen_subcommand_from pr; and __fish_seen_subcommand_from comment' -l body-file -s F -r -F",
     );
     expect(fish).toContain("complete -c lazycodecommit -w lazycc");
+    expect(fish.split("\n")[0]).toBe("complete -c lazycc -f");
+    expect(fish).toContain(
+      "complete -c lazycc -n '__fish_seen_subcommand_from status' -l repo -s R -x\n",
+    );
+    expect(fish).toContain(
+      "complete -c lazycc -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'\n",
+    );
   });
 });

@@ -7,11 +7,11 @@ const GRC = "codecommit::eu-west-1://remote-profile@demo";
 describe("resolveContext", () => {
   it("reads the repository, region and profile from origin", async () => {
     const ctx = await resolveContext({
-      git: fakeGit({ remoteUrl: async () => GRC }),
+      git: fakeGit({ remoteUrl: async (name) => (name === "origin" ? GRC : null) }),
       env: {},
       config: {},
     });
-    expect(ctx).toEqual({
+    expect(ctx).toStrictEqual({
       repository: "demo",
       region: "eu-west-1",
       profile: "remote-profile",
@@ -28,7 +28,7 @@ describe("resolveContext", () => {
       env: { AWS_REGION: "x", AWS_PROFILE: "y" },
       config: {},
     });
-    expect(ctx).toEqual({
+    expect(ctx).toStrictEqual({
       repository: "demo",
       region: "eu-west-1",
       profile: "flag",
@@ -47,25 +47,33 @@ describe("resolveContext", () => {
       env,
       config,
     });
-    expect(outside).toEqual({ repository: "other", region: "env-region", profile: "env-profile" });
+    expect(outside).toStrictEqual({
+      repository: "other",
+      region: "env-region",
+      profile: "env-profile",
+    });
     const cfg = await resolveContext({
       repo: "other",
       git: fakeGit({ topLevel: async () => null }),
       env: {},
       config,
     });
-    expect(cfg).toEqual({ repository: "other", region: "cfg-region", profile: "cfg-profile" });
+    expect(cfg).toStrictEqual({
+      repository: "other",
+      region: "cfg-region",
+      profile: "cfg-profile",
+    });
   });
 
   it("accepts AWS_DEFAULT_REGION and leaves region to the SDK when nothing is set", async () => {
     const git = fakeGit({ topLevel: async () => null });
     expect(
       await resolveContext({ repo: "r", git, env: { AWS_DEFAULT_REGION: "d" }, config: {} }),
-    ).toEqual({
+    ).toStrictEqual({
       repository: "r",
       region: "d",
     });
-    expect(await resolveContext({ repo: "r", git, env: {}, config: {} })).toEqual({
+    expect(await resolveContext({ repo: "r", git, env: {}, config: {} })).toStrictEqual({
       repository: "r",
     });
   });
@@ -76,12 +84,31 @@ describe("resolveContext", () => {
       env: { AWS_REGION: "env-region" },
       config: {},
     });
-    expect(ctx).toEqual({ repository: "demo", region: "env-region", clone: { root: "/work" } });
+    expect(ctx).toStrictEqual({
+      repository: "demo",
+      region: "env-region",
+      clone: { root: "/work" },
+    });
   });
 
   it("treats --repo naming another repository as outside the clone", async () => {
     const ctx = await resolveContext({ repo: "other", git: fakeGit(), env: {}, config: {} });
-    expect(ctx).toEqual({ repository: "other", otherClone: expect.stringContaining("of demo") });
+    expect(ctx).toStrictEqual({
+      repository: "other",
+      otherClone: expect.stringContaining("of demo"),
+    });
+  });
+
+  it("names the clone's repository without a region when its remote has none", async () => {
+    const ctx = await resolveContext({
+      repo: "other",
+      git: fakeGit({ remoteUrl: async () => "codecommit://demo" }),
+      env: {},
+      config: {},
+    });
+    expect(ctx.otherClone).toBe(
+      "this clone is of demo, and --repo or --region names another repository",
+    );
   });
 
   it("treats --region naming another region as outside the clone", async () => {
@@ -114,7 +141,7 @@ describe("resolveAccountContext", () => {
       env: { AWS_PROFILE: "dev" },
       config: { region: "ap-northeast-1" },
     });
-    expect(ctx).toEqual({ region: "ap-northeast-1", profile: "dev" });
+    expect(ctx).toStrictEqual({ region: "ap-northeast-1", profile: "dev" });
   });
 
   it("keeps the clone's repository", async () => {
@@ -123,7 +150,7 @@ describe("resolveAccountContext", () => {
       env: {},
       config: {},
     });
-    expect(ctx).toEqual({
+    expect(ctx).toStrictEqual({
       repository: "demo",
       region: "eu-west-1",
       profile: "remote-profile",

@@ -271,6 +271,8 @@ describe("line endings", () => {
     mixed1: { text: "a\nb\n", lineEndings: "mixed" },
     mixed2: { text: "a\nb\n", lineEndings: "mixed" },
     edited: { text: "a\nc\n", lineEndings: "LF" },
+    lf2: { text: "a\nb\n", lineEndings: "LF" },
+    mixedEdited: { text: "a\nc\n", lineEndings: "mixed" },
     oneLine: { text: "a" },
   };
   async function textsOf(before: string | undefined, after: string | undefined) {
@@ -308,6 +310,9 @@ describe("line endings", () => {
     expect((await textsOf("oneLine", "crlf"))?.note).toBeUndefined();
     // A mode change keeps the blob.
     expect((await textsOf("mixed1", "mixed1"))?.note).toBeUndefined();
+    // Same endings on both sides: an edit, or two blobs that read the same, says nothing.
+    expect((await textsOf("lf", "lf2"))?.note).toBeUndefined();
+    expect((await textsOf("mixed1", "mixedEdited"))?.note).toBeUndefined();
     expect((await textsOf("lf", "edited"))?.note).toBeUndefined();
   });
 });

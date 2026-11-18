@@ -160,3 +160,67 @@ describe("review help", () => {
     );
   });
 });
+
+describe("HelpMenu, moving and filtering", () => {
+  const cursorRow = (frame: string | undefined) =>
+    frame?.split("\n").filter((l) => l.includes("> ")) ?? [];
+
+  it("marks only the selected row", () => {
+    expect(cursorRow(menu().lastFrame())).toHaveLength(1);
+  });
+
+  it("moves up one row with k and the up arrow, and stops at the last row going down", async () => {
+    const screen = menu();
+    await press(screen, "j", "j", "k");
+    expect(screen.lastFrame()).toMatch(/> Ctrl\+d/);
+    await press(screen, "\x1b[A");
+    expect(screen.lastFrame()).toMatch(/> j \/ k/);
+    await press(screen, ">", "j");
+    expect(screen.lastFrame()).toMatch(/> a +Approve/);
+  });
+
+  it("filters regardless of case, and keeps a row selected when the filter leaves fewer", async () => {
+    const screen = menu();
+    await press(screen, ">", "/", "A", "P", "P");
+    expect(screen.lastFrame()).toMatch(/> a +Approve/);
+  });
+
+  it("starts a filter on its first match", async () => {
+    const screen = menu();
+    await press(screen, ">", "/", "a");
+    expect(screen.lastFrame()).toMatch(/> Ctrl\+d/);
+  });
+
+  it("does nothing on a key it does not know", async () => {
+    const screen = menu();
+    await press(screen, "x");
+    expect(screen.onClose).not.toHaveBeenCalled();
+    expect(screen.onRun).not.toHaveBeenCalled();
+    expect(screen.lastFrame()).not.toContain("No key matches.");
+  });
+
+  it("shows as many rows as fit below the title, the note and the footer", () => {
+    const many: HelpSection[] = [
+      { keys: Array.from({ length: 30 }, (_, i) => [`k${i}`, `key ${i}`] as [string, string]) },
+    ];
+    const rows = (frame: string | undefined) =>
+      frame?.split("\n").filter((l) => /\bkey \d+/.test(l)).length;
+    expect(rows(menu({ sections: many }).lastFrame())).toBe(16);
+    const noNote = render(
+      <HelpMenu title="Test help" sections={many} onClose={() => {}} onRun={() => {}} />,
+    );
+    expect(rows(noNote.lastFrame())).toBe(17);
+  });
+});
+
+describe("the help of the PR screens", () => {
+  it("gives every row a key and a description, and a key to press only when set", () => {
+    for (const { keys } of [...PR_LIST_HELP, ...PR_DETAIL_HELP]) {
+      for (const [key, description, send] of keys) {
+        expect(key.length, description).toBeGreaterThan(0);
+        expect(description.length, key).toBeGreaterThan(0);
+        if (send !== undefined) expect(send.length, key).toBeGreaterThan(0);
+      }
+    }
+  });
+});

@@ -1,7 +1,7 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
 import { describe, expect, it } from "vitest";
 import type { CommentThread, ReactionsByComment } from "../../core/review.js";
-import { buildDisplayLines, diffLimitKey } from "./displayLines.js";
+import { buildDisplayLines, diffLimitKey, getThreadKey } from "./displayLines.js";
 
 const NO_REACTIONS: ReactionsByComment = new Map();
 
@@ -399,5 +399,128 @@ describe("buildDisplayLines deleted comments", () => {
       .filter((l) => l.type === "comment" || l.type === "comment-reply")
       .map((l) => l.text);
     expect(texts).toEqual(["alice: (deleted)", "└ bob: (deleted)", "└ bob: still here"]);
+  });
+});
+
+const buildWithComments = (
+  commentThreads: CommentThread[],
+  reactions: ReactionsByComment = NO_REACTIONS,
+) => {
+  const { differences, diffTexts, diffTextStatus } = makeDiff();
+  return buildDisplayLines(
+    differences,
+    diffTexts,
+    diffTextStatus,
+    new Map(),
+    commentThreads,
+    new Map(),
+    reactions,
+  );
+};
+
+describe("buildDisplayLines, comment rows", () => {
+  const at = { filePath: "src/a.ts", filePosition: 1, relativeFileVersion: "AFTER" as const };
+  const alice = "arn:aws:iam::1:user/alice";
+
+  it("shows a comment without content as empty, and leaves out a thread with no comments", () => {
+    const lines = buildWithComments([
+      { location: null, comments: [] },
+      { location: null, comments: [{ commentId: "c1", authorArn: alice }] },
+    ]);
+    expect(lines.filter((l) => l.type === "comment").map((l) => l.text)).toEqual(["alice: "]);
+  });
+
+  it("indents a comment's further lines under its first, and marks inline replies", () => {
+    const lines = buildWithComments([
+      {
+        location: at,
+        comments: [
+          { commentId: "r", content: "reply\nmore", authorArn: alice, inReplyTo: "c" },
+          { commentId: "c", content: "root", authorArn: alice },
+        ],
+      },
+    ]);
+    const thread = lines.filter((l) => l.commentId !== undefined);
+    expect(thread.map((l) => [l.type, l.text])).toEqual([
+      ["inline-comment", "💬 alice: root"],
+      ["inline-reply", "└ alice: reply"],
+      ["inline-reply", "  more"],
+    ]);
+  });
+
+  it("shows the reactions a comment has, and nothing for none", () => {
+    const reactions: ReactionsByComment = new Map([
+      [
+        "c1",
+        [
+          { emoji: "👍", count: 2 },
+          { emoji: "👀", count: 0 },
+          { emoji: "🎉", count: 1 },
+        ],
+      ],
+    ]) as unknown as ReactionsByComment;
+    const lines = buildWithComments(
+      [
+        { location: null, comments: [{ commentId: "c1", content: "a", authorArn: alice }] },
+        { location: null, comments: [{ commentId: "c2", content: "b", authorArn: alice }] },
+      ],
+      reactions,
+    );
+    const comments = lines.filter((l) => l.type === "comment");
+    expect(comments.map((l) => l.reactionText)).toEqual(["👍×2 🎉×1", ""]);
+  });
+});
+
+const manyLines = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}${i}`).join("\n");
+const buildFromTexts = (before: string, after: string, limits = new Map<string, number>()) => {
+  const { differences, diffTextStatus, blobKey } = makeDiff();
+  return buildDisplayLines(
+    differences,
+    new Map([[blobKey, { before, after }]]),
+    diffTextStatus,
+    limits,
+    [],
+    new Map(),
+    NO_REACTIONS,
+  );
+};
+
+describe("buildDisplayLines, diff size", () => {
+  it("shows a diff below the large-diff threshold whole, even past one chunk", () => {
+    const lines = buildFromTexts(manyLines("a", 200), manyLines("b", 200));
+    expect(lines.some((l) => l.type === "truncation")).toBe(false);
+    expect(lines.filter((l) => l.type === "add")).toHaveLength(200);
+  });
+
+  it("offers only the lines that are left when fewer than a chunk remain", () => {
+    const { blobKey } = makeDiff();
+    const lines = buildFromTexts(
+      manyLines("a", 200),
+      manyLines("b", 200),
+      new Map([[diffLimitKey("src/a.ts", blobKey), 350]]),
+    );
+    expect(lines.find((l) => l.type === "truncation")?.text).toBe("[t] show next 50 lines");
+  });
+
+  it("counts an unchanged row as a line of each file", () => {
+    const { blobKey } = makeDiff();
+    const lines = buildFromTexts(
+      "x\ny\nz",
+      "x\ny\nz",
+      new Map([[diffLimitKey("src/a.ts", blobKey), 4]]),
+    );
+    expect(lines.filter((l) => l.type === "context").map((l) => l.text)).toEqual([" x", " y"]);
+  });
+});
+
+describe("getThreadKey", () => {
+  it("keys a thread by its root comment, wherever it comes, or by its place without one", () => {
+    const thread: CommentThread = {
+      location: null,
+      comments: [{ commentId: "r", inReplyTo: "c" }, { commentId: "c" }],
+    };
+    expect(getThreadKey(thread, 0)).toBe("c");
+    expect(getThreadKey({ location: null, comments: [] }, 3)).toBe("thread-3");
   });
 });

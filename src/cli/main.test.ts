@@ -87,7 +87,7 @@ describe("top level", () => {
     expect(await cli([flag])).toMatchObject({ code: 0, out: version });
   });
 
-  it.each([[["--help"]], [["-h"]], [["help"]], [["pr", "--help"]]])(
+  it.each([[["--help"]], [["-h"]], [["help"]], [["pr", "--help"]], [["pr", "-h"]]])(
     "prints usage for %j",
     async (args) => {
       expect(await cli(args)).toMatchObject({ code: 0, out: USAGE });
@@ -106,6 +106,16 @@ describe("top level", () => {
     expect(r.out).toContain(line);
     expect(r.out).toContain("--profile <name>");
     expect(r.out).not.toContain("lazycc pr view");
+  });
+
+  it("lays a command's usage out as Usage, its lines, then the common flags", async () => {
+    const lines = (await cli(["pr", "list", "--help"])).out.split("\n");
+    expect(lines.slice(0, 4)).toEqual([
+      "Usage:",
+      "  lazycc pr list [--state open|closed] [-L limit]   the newest N created, most recently active first",
+      "",
+      "Flags for every command:",
+    ]);
   });
 
   it("exits 2 for bare `pr`", async () => {
@@ -257,6 +267,37 @@ describe("pr create", () => {
       api: fakeApi([pullRequest({ id: "5" })]),
     });
     expect(keys(existing.out)).toEqual([...keys(view.out), "existing"].toSorted());
+    expect(existing.err.split("\n")).toHaveLength(1);
+  });
+
+  it("creates from the base and head flags", async () => {
+    const api = fakeApi();
+    const r = await cli(["pr", "create", "--fill", "-B", "dev", "-H", "feature"], { api });
+    expect(r.code).toBe(0);
+    expect(api.created[0]).toMatchObject({ destinationBranch: "dev", sourceBranch: "feature" });
+  });
+
+  it("pushes with --push without asking", async () => {
+    const pushed: string[] = [];
+    const r = await cli(["pr", "create", "--fill", "--push"], {
+      interactive: true,
+      git: { unpushedCount: async () => 1, push: async (b) => void pushed.push(b) },
+    });
+    expect(r.code).toBe(0);
+    expect(pushed).toEqual(["topic"]);
+    expect(r.confirms).toEqual([]);
+  });
+
+  it("opens the editor on a terminal unless --fill is given", async () => {
+    const edits: string[] = [];
+    const edit = async (t: string) => {
+      edits.push(t);
+      return t;
+    };
+    await cli(["pr", "create"], { interactive: true, edit });
+    expect(edits).toHaveLength(1);
+    await cli(["pr", "create", "--fill"], { interactive: true, edit });
+    expect(edits).toHaveLength(1);
   });
 
   it("exits 1 and points at an existing PR", async () => {
@@ -303,6 +344,14 @@ describe("pr create", () => {
     expect(
       (await cli(["pr", "create", "--fill", "--push", "-F", "x.md"], { git, api })).err,
     ).toContain("x.md does not exist");
+  });
+});
+
+describe("arguments after --", () => {
+  it("are positionals for commands other than clone", async () => {
+    const r = await cli(["pr", "view", "--", "6"], { api: fakeApi([pullRequest({ id: "6" })]) });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("#6");
   });
 });
 
@@ -801,6 +850,7 @@ describe("pr merge", () => {
     });
     expect(r.code).toBe(2);
     expect(a.writes).toEqual([]);
+    expect(r.apiOptions).toEqual([]);
   });
 
   it("explains a merge that needs a person", async () => {
@@ -863,6 +913,13 @@ describe("completion", () => {
     expect(bash).toContain('"pr merge") flags="');
     expect(bash).toContain("status");
     expect(bash).not.toMatch(/\bhome\b/);
+  });
+
+  it("completes the flags every command takes, and ends without a blank line", async () => {
+    const bash = (await cli(["completion", "bash"])).out;
+    expect(bash).toMatch(/"pr view"\) flags="[^"]*--profile/);
+    expect(bash).toMatch(/"pr view"\) flags="[^"]*--region/);
+    expect(bash.endsWith("\n")).toBe(false);
   });
 
   it.each([[["completion"]], [["completion", "tcsh"]]])("exits 2 for %j", async (args) => {
@@ -965,6 +1022,36 @@ describe("browse", () => {
     expect(r.tops[0]).not.toHaveProperty("cloneRepository");
   });
 
+  it("takes the repository from --repo alone", async () => {
+    const r = await cli(["browse", "-R", "other", "--path", "README.md"], { api: browseApi() });
+    expect(r).toMatchObject({ code: 0, out: "# other@main" });
+  });
+
+  it("drops only the file's final line break", async () => {
+    const api = fakeApi([], {
+      getFolder: async () => undefined,
+      getFile: async () => Buffer.from("a\nb\n"),
+    });
+    expect((await cli(["browse", "--path", "f.txt"], { api })).out).toBe("a\nb");
+  });
+
+  it("points at the console for a file it does not print", async () => {
+    const r = await cli(["browse", "--path", "logo.png"], { api: browseApi() });
+    expect(r.err.split("\n")[1]).toContain("/browse/refs/heads/main/--/logo.png");
+  });
+
+  it("keeps the profile for the advice when the browse screen fails", async () => {
+    const r = await cli(["browse", "--profile", "dev"], {
+      api: browseApi(),
+      interactive: true,
+      onTop: async () => {
+        throw Object.assign(new Error("expired"), { name: "ExpiredTokenException" });
+      },
+    });
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("aws sso login --profile dev");
+  });
+
   it("rejects --repo next to a repository argument", async () => {
     const r = await cli(["browse", "a", "-R", "b"]);
     expect(r.code).toBe(2);
@@ -998,6 +1085,14 @@ describe("clone", () => {
       "--json",
     ]);
     expect(json(r.out)).toEqual({ repository: "other", url: "codecommit::eu-west-1://dev@other" });
+  });
+
+  it("passes no git flags when there is no --", async () => {
+    const cloned: unknown[] = [];
+    await cli(["clone", "other"], {
+      git: { clone: async (url, args) => void cloned.push([url, args]) },
+    });
+    expect(cloned).toEqual([["https://git-codecommit.us-west-2.amazonaws.com/v1/repos/other", []]]);
   });
 
   it("needs a repository name and rejects --repo", async () => {
@@ -1145,6 +1240,32 @@ describe("branch", () => {
       { pullRequestId: "3" },
       { message: expect.stringContaining("is the base branch") },
     ]);
+  });
+
+  it("creates from the branch screen with the editor, asking before a push", async () => {
+    const edits: string[] = [];
+    let outcome: unknown;
+    const r = await cli(["branch"], {
+      api: branchApi(),
+      git: { ...git, unpushedCount: async () => 1 },
+      interactive: true,
+      edit: async (text) => {
+        edits.push(text);
+        return text;
+      },
+      onTop: async (request) => {
+        outcome = await request.views.branches("demo").createPullRequest("topic2");
+      },
+    });
+    expect(edits).toHaveLength(1);
+    expect(r.confirms).toEqual(["topic2 has 1 commit(s) not on origin. Push it to origin?"]);
+    expect(outcome).toEqual({ pullRequestId: expect.any(String) });
+  });
+
+  it("switches branches only in the clone's repository", async () => {
+    const r = await cli(["branch"], { api: branchApi(), git, interactive: true });
+    expect(r.tops[0]?.views.branches("demo").actions.switchBranch).toBeDefined();
+    expect(r.tops[0]?.views.branches("other").actions.switchBranch).toBeUndefined();
   });
 
   it("explains AWS errors from a create", async () => {

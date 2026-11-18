@@ -11,6 +11,21 @@ fixed number of cases in CI. `FC_RUNS_SCALE=10 bun run test` runs every
 property ten times as many (explicit `numRuns` and the default 100 alike), with
 the test timeouts scaled to match; use it to look for cases CI's runs miss.
 
+## Mutation testing
+
+`bun run mutation` runs [mutator](https://github.com/mizchi/mutator) over
+`src/` (scope in `mutator.config.json`: tests, `src/testing/` and `src/cli.ts`
+are left out, as in the coverage gate). It is not part of `bun run ci`: a full
+run takes a long time, and mutator needs Node.js 24 or later, while the test
+jobs run Node 22. It caches results in `.mutator/` (ignored by git), so a
+second run re-runs only mutants in functions that changed, and
+`bun run mutation --since main` checks just a branch's diff.
+`bun run mutation --reporter agent > .mutator/agent.json` lists each undetected
+mutant with the kind of gap: not reached (no test runs it), not infected (no
+input changes its value) or not detected (no assertion notices). Mutants no
+input can observe are recorded in `mutator.accepted.json` with
+`bunx mutator accept <key> --reason "..."`.
+
 ## Workflows
 
 `ci.yml`, on every PR and push to `main`:

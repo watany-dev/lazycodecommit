@@ -60,15 +60,18 @@ describe("recentBuilds", () => {
   it("takes a commit ID it was started on while the source is not resolved yet", async () => {
     // A queued build has no resolvedSourceVersion until it downloads the source.
     const commit = "0123456789abcdef0123456789abcdef01234567";
-    cb.on(ListBuildsForProjectCommand).resolves({ ids: ["p:2", "p:1"] });
+    cb.on(ListBuildsForProjectCommand).resolves({ ids: ["p:2", "p:1", "p:0", "p:x"] });
     cb.on(BatchGetBuildsCommand).resolves({
       builds: [
         { id: "p:2", buildStatus: "IN_PROGRESS", sourceVersion: commit },
         { id: "p:1", buildStatus: "IN_PROGRESS", sourceVersion: "refs/heads/main" },
+        // A branch named like a commit ID, but longer, is not one.
+        { id: "p:0", buildStatus: "IN_PROGRESS", sourceVersion: `x${commit}` },
+        { id: "p:x", buildStatus: "IN_PROGRESS", sourceVersion: `${commit}x` },
       ],
     });
     const runs = await api().recentBuilds("p", 20);
-    expect(runs.map((r) => r.commits)).toEqual([[commit], []]);
+    expect(runs.map((r) => r.commits)).toEqual([[commit], [], [], []]);
   });
 
   it("does not call BatchGetBuilds for a project with no builds", async () => {
@@ -116,6 +119,15 @@ describe("recentExecutions", () => {
         url: executionUrl("ap-northeast-1", "release", "e1"),
       },
     ]);
+  });
+
+  it("leaves the end of a stopping execution unset", async () => {
+    cp.on(ListPipelineExecutionsCommand).resolves({
+      pipelineExecutionSummaries: [
+        { pipelineExecutionId: "e3", status: "Stopping", lastUpdateTime: new Date(0) },
+      ],
+    });
+    expect((await api().recentExecutions("release", 20))[0]?.endedAt).toBeUndefined();
   });
 
   it("returns nothing for a pipeline that never ran", async () => {
