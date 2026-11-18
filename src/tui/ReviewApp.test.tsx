@@ -1210,7 +1210,9 @@ describe("App", () => {
       expect(lastFrame()).toContain("first pr");
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The list is drawn, but its key handler may still be a render behind (Esc
+    // lands a tick later than q did): give useInput time to take it.
+    await settle();
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -5838,6 +5840,7 @@ describe("App", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #1"));
     stdin.write("\u001B");
     await vi.waitFor(() => expect(lastFrame()).toContain("second"));
+    await settle();
     await press(stdin, "j", "\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("PR #2"));
     expect(markSeen.mock.calls.map(([pr]) => pr.id)).toEqual(["1", "1", "2"]);
