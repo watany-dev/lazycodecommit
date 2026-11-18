@@ -188,7 +188,7 @@ export function buildDisplayLines(
   for (let i = 0; i < commentThreads.length; i++) {
     const thread = commentThreads[i]!;
     const location = thread.location;
-    if (!location) continue;
+    if (!location || thread.outdated) continue;
 
     let fileIndex = inlineThreadsByFile.get(location.filePath);
     if (!fileIndex) {
@@ -315,6 +315,30 @@ export function buildDisplayLines(
     lines.push({ type: "separator", text: SEPARATOR_TEXT });
     lines.push({ type: "comment-header", text: `Comments (${totalComments}):` });
     for (const { thread, index: threadIdx } of generalThreads) {
+      appendThreadLines(
+        lines,
+        thread,
+        threadIdx,
+        collapsedThreads,
+        getThreadKey(thread, threadIdx),
+        "general",
+        reactionsByComment,
+      );
+    }
+  }
+
+  // A line number from before a push may point at another line now, so these
+  // are listed with where they were written instead of on the diff.
+  const earlier = commentThreads
+    .map((t, i) => ({ thread: t, index: i }))
+    .filter(({ thread }) => thread.location !== null && thread.outdated);
+  if (earlier.length > 0) {
+    lines.push({ type: "separator", text: SEPARATOR_TEXT });
+    lines.push({ type: "comment-header", text: `Earlier revisions (${earlier.length}):` });
+    for (const { thread, index: threadIdx } of earlier) {
+      const { filePath, filePosition, relativeFileVersion } = thread.location!;
+      const side = relativeFileVersion === "BEFORE" ? " (old)" : "";
+      lines.push({ type: "comment-header", text: `${printable(filePath)}:${filePosition}${side}` });
       appendThreadLines(
         lines,
         thread,

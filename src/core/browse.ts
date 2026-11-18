@@ -38,6 +38,7 @@ export const ENTRY_MARK: Record<FolderEntry["type"], string> = {
 };
 
 const BAD_REF = new Set(["CommitDoesNotExistException", "InvalidCommitException"]);
+const SHORT_COMMIT_ID = /^[0-9a-f]{7,39}$/i;
 /** git's own test: a NUL in the first 8000 bytes means binary. */
 const BINARY_SNIFF = 8000;
 
@@ -97,8 +98,14 @@ export async function openPath(ref: string, path: string, deps: BrowseDeps): Pro
           text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
         };
   } catch (error) {
-    if (BAD_REF.has((error as Error).name))
+    if (BAD_REF.has((error as Error).name)) {
+      // GetFolder and GetCommit take no abbreviated ID (realcheck, 2026-11-18).
+      if (SHORT_COMMIT_ID.test(ref))
+        throw new UserError(
+          `${ctx.repository} has no commit ${ref}. CodeCommit takes only full 40-character commit IDs.`,
+        );
       throw new UserError(`${ctx.repository} has no branch or commit named ${ref}.`);
+    }
     throw error;
   }
 }

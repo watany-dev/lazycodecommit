@@ -29,3 +29,14 @@ the pull request」だけで、どの操作が含まれるかは書かれてい�
 - フェーズ1〜2の実装はこの判断に依存しない。
 - 確認結果はこの ADR に追記する。
 - 確認は `scripts/realcheck/realcheck.mjs` で行う（[手順](../dev/real-aws-check.md)）。
+
+## 実機の結果（2026-11-18、ap-northeast-1）
+
+自分の操作では、コメント・インラインコメント・返信・タイトル変更・ソースブランチへの
+push で `lastActivityDate` が動いた。リアクションでは動かなかった。他人の操作は
+`--other-profile` なしで回したため未確認。
+
+リアクションは未読の理由にしない。GitHub もリアクションでは通知しない。拾うには
+コメントごとに `GetCommentReactions` を呼ぶことになり、ホームを開くたびの呼び出しが
+コメント数に比例して増え、見合わない。realcheck は、リアクションで動かないことを
+DIFF ではなく INFO として記録する。

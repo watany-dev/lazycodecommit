@@ -54,6 +54,8 @@ export interface CommentThread {
     filePosition: number;
     relativeFileVersion: "BEFORE" | "AFTER";
   } | null;
+  /** Inline, and written on an earlier source tip: its line may be elsewhere now. */
+  outdated?: boolean;
   comments: Comment[];
 }
 
@@ -340,45 +342,32 @@ export function createReviewApi(client: CodeCommitClient) {
         : loadDifferences
           ? loadDifferences(target!)
           : getAllDifferences(repositoryName, target!.destinationCommit!, target!.sourceCommit!),
-      getComments(pullRequestId, {
-        repositoryName,
-        ...(hasCommits
-          ? {
-              afterCommitId: target!.sourceCommit!,
-              beforeCommitId: target!.destinationCommit!,
-            }
-          : {}),
-      }),
+      getComments(pullRequestId, target?.sourceCommit),
     ]);
 
     return { pullRequest, differences, commentThreads };
   }
 
+  /**
+   * Every revision's comments. Filtering by the current tips (afterCommitId,
+   * beforeCommitId) drops those written before a push, as realcheck showed on
+   * CodeCommit; repositoryName alone is refused. `sourceCommit` is the current
+   * source tip, against which inline threads are marked outdated.
+   */
   async function getComments(
     pullRequestId: string,
-    params?: {
-      repositoryName?: string;
-      afterCommitId?: string;
-      beforeCommitId?: string;
-    },
+    sourceCommit?: string,
   ): Promise<CommentThread[]> {
     // By location and commits: a page ends after maxResults comments, so one
     // line's comments can go on over the next page.
-    const groups = new Map<string, { location: CommentThread["location"]; comments: Comment[] }>();
-    const baseInput = {
-      pullRequestId,
-      ...(params?.repositoryName ? { repositoryName: params.repositoryName } : {}),
-      ...(params?.afterCommitId && params?.beforeCommitId
-        ? {
-            afterCommitId: params.afterCommitId,
-            beforeCommitId: params.beforeCommitId,
-          }
-        : {}),
-    };
+    const groups = new Map<
+      string,
+      { location: CommentThread["location"]; outdated: boolean; comments: Comment[] }
+    >();
     let nextToken: string | undefined;
     do {
       const commentsResponse = await client.send(
-        new GetCommentsForPullRequestCommand({ ...baseInput, nextToken }),
+        new GetCommentsForPullRequestCommand({ pullRequestId, nextToken }),
       );
       for (const thread of commentsResponse.commentsForPullRequestData ?? []) {
         const location = thread.location?.filePath
@@ -391,13 +380,21 @@ export function createReviewApi(client: CodeCommitClient) {
           : null;
         const key = JSON.stringify([thread.beforeCommitId, thread.afterCommitId, location]);
         let group = groups.get(key);
-        if (!group) groups.set(key, (group = { location, comments: [] }));
+        if (!group) {
+          const outdated =
+            location !== null && !!sourceCommit && thread.afterCommitId !== sourceCommit;
+          groups.set(key, (group = { location, outdated, comments: [] }));
+        }
         group.comments.push(...(thread.comments ?? []));
       }
       nextToken = commentsResponse.nextToken;
     } while (nextToken);
-    return [...groups.values()].flatMap(({ location, comments }) =>
-      splitThreads(comments).map((thread) => ({ location, comments: thread })),
+    return [...groups.values()].flatMap(({ location, outdated, comments }) =>
+      splitThreads(comments).map((thread) => ({
+        location,
+        ...(outdated ? { outdated } : {}),
+        comments: thread,
+      })),
     );
   }
 

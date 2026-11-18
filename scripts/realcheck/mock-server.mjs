@@ -141,6 +141,9 @@ export function startMockServer(gitRoot) {
   const tip = (repo, branch) =>
     tryGit(repo, ["rev-parse", "--verify", `refs/heads/${branch}^{commit}`]);
   const commitOf = (repo, spec) => {
+    // CodeCommit takes no abbreviated commit ID.
+    if (/^[0-9a-f]{7,39}$/i.test(spec))
+      throw new ApiError("CommitDoesNotExistException", `Could not find commit ${spec}`);
     const id = tryGit(repo, ["rev-parse", "--verify", `${spec}^{commit}`]);
     if (!id) throw new ApiError("CommitDoesNotExistException", `Could not find commit ${spec}`);
     return id;
@@ -279,6 +282,9 @@ export function startMockServer(gitRoot) {
       return { deletedBranch: { branchName, commitId } };
     },
     CreatePullRequest({ title, description, targets }, c) {
+      // Characters, not bytes (realcheck, 2026-11-18).
+      if ([...title].length > 150)
+        throw new ApiError("InvalidTitleException", "cannot exceed 150 valid characters");
       const [{ repositoryName, sourceReference, destinationReference }] = targets;
       repoOf(repositoryName, c.region);
       const source = tip(repositoryName, strip(sourceReference));
@@ -462,7 +468,10 @@ export function startMockServer(gitRoot) {
       const commitId = commitOf(repositoryName, commitSpecifier);
       const path = (folderPath ?? "/").replace(/^\/+|\/+$/g, "");
       const spec = `${commitId}:${path}`;
-      if (tryGit(repositoryName, ["cat-file", "-t", spec]) !== "tree")
+      const kind = tryGit(repositoryName, ["cat-file", "-t", spec]);
+      if (kind === "blob")
+        throw new ApiError("InvalidPathException", "A path to a folder was expected");
+      if (kind !== "tree")
         throw new ApiError("FolderDoesNotExistException", `${folderPath} is not a folder`);
       const out = {
         commitId,
@@ -506,6 +515,8 @@ export function startMockServer(gitRoot) {
       return { content: b64(git(repositoryName, ["cat-file", "blob", blobId], "")) };
     },
     GetCommit({ repositoryName, commitId }) {
+      if (/^[0-9a-f]{7,39}$/i.test(commitId))
+        throw new ApiError("InvalidCommitIdException", `${commitId} is not a valid Git object ID`);
       const id = commitOf(repositoryName, commitId);
       const raw = git(repositoryName, ["cat-file", "commit", id]);
       const [head, ...msg] = raw.split("\n\n");

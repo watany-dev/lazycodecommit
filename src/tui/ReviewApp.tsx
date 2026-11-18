@@ -685,15 +685,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
   async function reloadComments(pullRequestId: string, loadId = detailLoadRef.current) {
     // Optimized: fetch only comments instead of full PR detail
     const target = prDetail?.pullRequestTargets?.[0];
-    const threads = await service.getComments(pullRequestId, {
-      repositoryName: selectedRepo,
-      ...(target?.sourceCommit && target?.destinationCommit
-        ? {
-            afterCommitId: target.sourceCommit,
-            beforeCommitId: target.destinationCommit,
-          }
-        : {}),
-    });
+    const threads = await service.getComments(pullRequestId, target?.sourceCommit);
     if (isDetailLoadStale(loadId)) return;
     setCommentThreads(threads);
     await reloadReactions(threads, loadId);
