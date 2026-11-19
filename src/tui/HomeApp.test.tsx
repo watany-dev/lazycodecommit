@@ -432,3 +432,147 @@ describe("HomeApp with hostile text", () => {
     expect(lastFrame()).not.toContain("\u009b");
   });
 });
+
+describe("HomeApp, from mutation testing", () => {
+  const four = () =>
+    inbox([
+      awaiting("11", "Add retry"),
+      awaiting("13", "Third"),
+      awaiting("14", "Fourth"),
+      mine("21", "Mine"),
+      mine("22", "Also mine"),
+    ]);
+  const cursorOn = (frame: string | undefined) =>
+    frame
+      ?.split("\n")
+      .filter((l) => /^ ?> /.test(l))
+      .map((l) => /#(\d+)/.exec(l)?.[1]);
+
+  async function ready() {
+    const r = await setup(actions({ fetch: vi.fn(async () => four()) }));
+    await vi.waitFor(() => expect(r.a.save).toHaveBeenCalled());
+    return r;
+  }
+
+  it("moves one row at a time with j k and the arrows, and stays inside the list", async () => {
+    const { stdin, lastFrame } = await ready();
+    expect(cursorOn(lastFrame())).toEqual(["11"]);
+    await press(stdin, "k");
+    expect(cursorOn(lastFrame())).toEqual(["11"]);
+    await press(stdin, "j");
+    expect(cursorOn(lastFrame())).toEqual(["13"]);
+    await press(stdin, "\u001B[B");
+    expect(cursorOn(lastFrame())).toEqual(["14"]);
+    await press(stdin, "j");
+    expect(cursorOn(lastFrame())).toEqual(["14"]);
+    await press(stdin, "k");
+    expect(cursorOn(lastFrame())).toEqual(["13"]);
+    await press(stdin, "\u001B[A");
+    expect(cursorOn(lastFrame())).toEqual(["11"]);
+  });
+
+  it("switches sections with Tab, ] and [, each from the first row", async () => {
+    const { stdin, lastFrame } = await ready();
+    for (const key of ["\t", "]", "["]) {
+      await press(stdin, "j", key);
+      const frame = lastFrame() ?? "";
+      expect(cursorOn(frame)?.length).toBe(1);
+      expect(["11", "21"]).toContain(cursorOn(frame)?.[0]);
+    }
+    expect(lastFrame()).toContain("Also mine");
+    await press(stdin, "]");
+    expect(cursorOn(lastFrame())).toEqual(["11"]);
+    expect(lastFrame()).toContain("Fourth");
+  });
+
+  it("filters by title or repository, whatever the case", async () => {
+    const { stdin, lastFrame } = await ready();
+    await press(stdin, "j", "/", "T", "H", "I", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("filter: THI"));
+    expect(lastFrame()).toContain("Third");
+    expect(lastFrame()).not.toContain("Add retry");
+    expect(cursorOn(lastFrame())).toEqual(["13"]);
+    await press(stdin, "/", "\u001B", "]", "/", "I", "N", "F", "R", "A", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("filter: INFRA"));
+    expect(lastFrame()).toContain("Also mine");
+  });
+
+  it("shows the URL only on u, and goes to the last row on >", async () => {
+    const { stdin, lastFrame } = await ready();
+    await press(stdin, "x");
+    expect(lastFrame()).not.toContain("https://console");
+    await press(stdin, ">");
+    expect(cursorOn(lastFrame())).toEqual(["14"]);
+    await press(stdin, "u");
+    expect(lastFrame()).toContain("https://console/demo/14");
+    // Any key clears the note.
+    await press(stdin, "x");
+    expect(lastFrame()).not.toContain("https://console");
+  });
+
+  it("marks unread PRs and the selected one only", async () => {
+    const { lastFrame } = await ready();
+    const lines = (lastFrame() ?? "").split("\n").filter((l) => /#\d+/.test(l));
+    expect(lines.filter((l) => l.includes("●"))).toHaveLength(3);
+    expect(lines.filter((l) => /^ ?> /.test(l))).toHaveLength(1);
+  });
+
+  it("names one repository, counts several, and says when it refreshes", async () => {
+    let finish: (v: Inbox) => void = () => {};
+    const a = actions({
+      initial: ["demo"],
+      watched: () => ["demo"],
+      cached: vi.fn(async () => inbox([awaiting("9", "Cached one")])),
+      fetch: vi.fn(() => new Promise<Inbox>((r) => (finish = r))),
+    });
+    const r = render(<HomeApp actions={a} reviewService={() => service} />);
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("Cached one"));
+    expect(r.lastFrame()).toMatch(/\) {3}demo {2}refreshing…/);
+    finish(inbox(FRESH));
+    await vi.waitFor(() => expect(r.lastFrame()).not.toContain("refreshing…"));
+    const many = await setup();
+    expect(many.lastFrame()).toMatch(/\) {3}2 repositories/);
+  });
+
+  it("offers 2 and 3 in the footer only when it can switch views", async () => {
+    const { lastFrame } = await setup();
+    expect(lastFrame()).toContain("r repositories / filter");
+    const r = render(
+      <HomeApp actions={actions()} reviewService={() => service} onSwitch={vi.fn()} />,
+    );
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("Add retry"));
+    expect(r.lastFrame()).toContain("r repositories 2 branches 3 browse / filter");
+  });
+
+  it("does not show a refresh failure without a list", async () => {
+    const r = render(
+      <HomeApp
+        actions={actions({
+          fetch: vi.fn(async () => {
+            throw new Error("expired");
+          }),
+        })}
+        reviewService={() => service}
+      />,
+    );
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("Error: expired"));
+    expect(r.lastFrame()).not.toContain("Refresh failed");
+  });
+
+  it("clears an earlier failure when a refresh succeeds", async () => {
+    let fail = true;
+    const a = actions({
+      cached: vi.fn(async () => inbox([awaiting("9", "Cached one")])),
+      fetch: vi.fn(async () => {
+        if (fail) throw new Error("expired");
+        return inbox(FRESH);
+      }),
+    });
+    const r = render(<HomeApp actions={a} reviewService={() => service} />);
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("Refresh failed"));
+    fail = false;
+    await press(r.stdin, "R");
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("Add retry"));
+    expect(r.lastFrame()).not.toContain("Refresh failed");
+  });
+});

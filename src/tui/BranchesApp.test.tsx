@@ -311,3 +311,103 @@ describe("BranchesApp with hostile text", () => {
     expect(lastFrame()).not.toMatch(RAW);
   });
 });
+
+describe("BranchesApp, from mutation testing", () => {
+  const cursorOn = (frame: string | undefined) =>
+    frame
+      ?.split("\n")
+      .filter((l) => /^ ?> /.test(l))
+      .map((l) => l.replace(/^ ?> +(\* )?/, "").split(/\s+/)[0]);
+
+  it("moves one row at a time and stays inside the table", async () => {
+    const { stdin, lastFrame } = await setup();
+    expect(cursorOn(lastFrame())).toEqual(["main"]);
+    await press(stdin, "k");
+    expect(cursorOn(lastFrame())).toEqual(["main"]);
+    await press(stdin, "j", "\u001B[B");
+    expect(cursorOn(lastFrame())).toEqual(["done"]);
+    await press(stdin, "j", "j");
+    expect(cursorOn(lastFrame())).toEqual(["wip"]);
+    await press(stdin, "\u001B[A");
+    expect(cursorOn(lastFrame())).toEqual(["done"]);
+  });
+
+  it("starts a filter from the first match", async () => {
+    const { stdin, lastFrame } = await setup();
+    await press(stdin, "j", "j", "/", "n", "\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("filter: n"));
+    expect(cursorOn(lastFrame())).toEqual(["main"]);
+  });
+
+  it("shows the URL only on u, and clears a note on the next key", async () => {
+    const { stdin, lastFrame } = await setup();
+    await press(stdin, "x");
+    expect(lastFrame()).not.toContain("https://console");
+    await press(stdin, "u");
+    expect(lastFrame()).toContain("https://console/main");
+    await press(stdin, "x");
+    expect(lastFrame()).not.toContain("https://console");
+  });
+
+  it("reviews only an open PR, not a merged one", async () => {
+    const { stdin, lastFrame } = await setup();
+    await press(stdin, "j", "j", "\r");
+    expect(lastFrame()).toContain("done has no open pull request. Press o to create one.");
+  });
+
+  it("refuses to delete the default branch, and reports a switch", async () => {
+    const { stdin, lastFrame } = await setup();
+    await press(stdin, "d");
+    expect(lastFrame()).toContain("main is the default branch.");
+    await press(stdin, "j", "j", "j", " ");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Switched to wip."));
+  });
+
+  it("marks only the selected row, and leaves the counts blank when unknown", async () => {
+    const { lastFrame } = await setup();
+    const lines = (lastFrame() ?? "").split("\n");
+    expect(lines.filter((l) => /^ ?> /.test(l))).toHaveLength(1);
+    const wip = lines.find((l) => l.includes("wip")) ?? "";
+    expect(wip).not.toContain("↑");
+    expect(lines.find((l) => l.includes("feature/login"))).toContain("↑2 ↓1");
+  });
+
+  it("says Working while it reloads over a table, and offers Space only in a clone", async () => {
+    let finish: (t: BranchTable) => void = () => {};
+    let calls = 0;
+    const table: BranchTable = { repository: "demo", defaultBranch: "main", rows: ROWS };
+    const a = actions({
+      load: vi.fn(() => {
+        calls++;
+        return calls === 1 ? Promise.resolve(table) : new Promise<BranchTable>((r) => (finish = r));
+      }),
+    });
+    const { stdin, lastFrame } = await setup(a);
+    expect(lastFrame()).toContain("d delete Space switch / filter");
+    await press(stdin, "R");
+    expect(lastFrame()).toContain("Working...");
+    expect(lastFrame()).toContain("wip");
+    finish(table);
+    await vi.waitFor(() => expect(lastFrame()).not.toContain("Working..."));
+    const { switchBranch: _, ...noClone } = actions();
+    const outside = await setup(noClone);
+    expect(outside.lastFrame()).toContain("d delete / filter");
+  });
+
+  it("clears a load error when a refresh works", async () => {
+    let fail = true;
+    const table: BranchTable = { repository: "demo", defaultBranch: "main", rows: ROWS };
+    const a = actions({
+      load: vi.fn(async () => {
+        if (fail) throw new Error("denied");
+        return table;
+      }),
+    });
+    const r = render(<BranchesApp actions={a} service={service} start={null} onCreate={vi.fn()} />);
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("Error: denied"));
+    fail = false;
+    await press(r.stdin, "R");
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("wip"));
+    expect(r.lastFrame()).not.toContain("Error");
+  });
+});

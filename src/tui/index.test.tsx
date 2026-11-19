@@ -261,4 +261,47 @@ describe("openTop", () => {
     const outside = (render.mock.calls[0]![0] as Node).props.reviewService;
     expect(outside("demo")).toBe(outside("other"));
   });
+
+  it("gives the home screen a service of its own, keeping the merge strategy", async () => {
+    script();
+    const markSeen = vi.fn();
+    await openTop({ start: "home", views: views(), mergeStrategy: "squash", home: { markSeen } });
+    const { reviewService } = (render.mock.calls[0]![0] as Node).props;
+    const s = reviewService("any") as { markSeen?: unknown; mergeStrategy?: unknown };
+    expect(s.markSeen).toBe(markSeen);
+    expect(s.mergeStrategy).toBe("squash");
+  });
+
+  it("falls back from browse once it has opened, even when browse was the start", async () => {
+    let calls = 0;
+    const browse = vi.fn(async () => {
+      if (++calls > 1) throw new Error("gone");
+      return {} as never;
+    });
+    script(
+      (n) => n.props.onSwitch({ view: "home" }),
+      (n) => n.props.onSwitch({ view: "browse" }),
+      () => {},
+    );
+    await openTop({ start: "browse", repository: "demo", views: views({ browse }) });
+    expect(render.mock.calls[2]![0]).toMatchObject({ type: HomeApp, props: { note: "gone" } });
+  });
+});
+
+describe("the review service", () => {
+  it("carries the drafts and checks it is given, and only those", async () => {
+    render.mockClear();
+    const drafts = {} as never;
+    const checks = {} as never;
+    await openReview({ repository: "demo", start: null, drafts, checks });
+    await openReview({ repository: "demo", start: null });
+    const services = render.mock.calls.map(
+      ([node]) => (node as { props: { service: object } }).props.service,
+    );
+    expect(services[0]).toMatchObject({ drafts, checks });
+    expect(services[1]).not.toHaveProperty("drafts");
+    expect(services[1]).not.toHaveProperty("checks");
+    expect(services[1]).not.toHaveProperty("markSeen");
+    expect(services[1]).not.toHaveProperty("mergeStrategy");
+  });
 });

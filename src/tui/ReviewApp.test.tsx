@@ -2881,6 +2881,36 @@ describe("App", () => {
     });
   });
 
+  it("drops only the closed PR from the list it returns to", async () => {
+    const pr = (pullRequestId: string, title: string) => ({
+      pullRequestId,
+      title,
+      authorArn: "arn:aws:iam::123456789012:user/watany",
+      creationDate: new Date("2026-02-13T10:00:00Z"),
+      status: "OPEN" as const,
+    });
+    vi.mocked(listPullRequests).mockResolvedValue({
+      pullRequests: [pr("42", "fix: login"), pr("43", "feat: search")],
+    });
+    vi.mocked(getPullRequestDetail).mockResolvedValue({
+      pullRequest: { pullRequestId: "42", title: "fix: login", pullRequestTargets: [] },
+      differences: [],
+      commentThreads: [],
+    });
+    vi.mocked(closePullRequest).mockResolvedValue({} as any);
+    const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
+    await vi.waitFor(() => expect(lastFrame()).toContain("feat: search"));
+    stdin.write("\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("PR #42"));
+    stdin.write("x");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Close this pull request"));
+    stdin.write("y");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Open Pull Requests"));
+    expect(lastFrame()).toContain("feat: search");
+    expect(lastFrame()).not.toContain("fix: login");
+    expect(listPullRequests).toHaveBeenCalledTimes(1);
+  });
+
   it("shows close error for PullRequestAlreadyClosedException", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -4698,6 +4728,35 @@ describe("App", () => {
             repoName === "my-service" && pageToken === "page-2" && apiStatus === "CLOSED",
         ),
     ).toBe(true);
+  });
+
+  it("pages MERGED results 25 at a time, keeping the rest of a CLOSED page for the next", async () => {
+    const merged = Array.from({ length: 30 }, (_, i) => ({
+      pullRequestId: String(100 + i),
+      title: `merged ${String(i + 1).padStart(2, "0")}`,
+      authorArn: "arn:aws:iam::123456789012:user/watany",
+      creationDate: new Date("2026-02-11T10:00:00Z"),
+      status: "MERGED" as const,
+    }));
+    vi.mocked(listPullRequests).mockImplementation(async (_repo, _token, apiStatus) =>
+      apiStatus === "OPEN" ? { pullRequests: [] } : { pullRequests: merged },
+    );
+    const { lastFrame, stdin } = render(<App service={svc} repository="my-service" start={null} />);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Page 1"));
+    stdin.write("f");
+    await vi.waitFor(() => expect(lastFrame()).toContain("[Closed]"));
+    stdin.write("f");
+    await vi.waitFor(() => expect(lastFrame()).toContain("merged 01"));
+    expect(lastFrame()).toMatch(/Page 1[^\n]*\. next/);
+    const calls = vi.mocked(listPullRequests).mock.calls.length;
+    stdin.write("n");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Page 2"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("merged 26"));
+    expect(lastFrame()).toContain("merged 30");
+    expect(lastFrame()).not.toContain("merged 25");
+    expect(lastFrame()).not.toMatch(/Page 2[^\n]*\. next/);
+    // The rest came from the first CLOSED page: no new request.
+    expect(vi.mocked(listPullRequests)).toHaveBeenCalledTimes(calls);
   });
 
   // v0.8: Pagination integration tests

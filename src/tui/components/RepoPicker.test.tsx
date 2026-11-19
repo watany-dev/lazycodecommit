@@ -101,3 +101,46 @@ describe("RepoPicker", () => {
     expect(lastFrame()).toContain("none watched yet: press w");
   });
 });
+
+describe("RepoPicker, from mutation testing", () => {
+  const cursorOn = (frame: string | undefined) =>
+    frame
+      ?.split("\n")
+      .filter((l) => /^ ?> /.test(l))
+      .map((l) => l.replace(/^ ?> +(★ )?/, "").trim());
+
+  it("moves one row at a time and stays inside the list", async () => {
+    const { lastFrame, stdin } = setup();
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+    await press(stdin, "k");
+    expect(cursorOn(lastFrame())).toEqual(["demo"]);
+    await press(stdin, "j", "\u001B[B", "j");
+    expect(cursorOn(lastFrame())).toEqual(["sandbox"]);
+    await press(stdin, "k");
+    expect(cursorOn(lastFrame())).toEqual(["infra"]);
+    await press(stdin, "\u001B[A");
+    expect(cursorOn(lastFrame())).toEqual(["demo"]);
+  });
+
+  it("filters whatever the case, from the first match", async () => {
+    const { lastFrame, stdin, onSelect } = setup();
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+    await press(stdin, "j", "/", "S", "A", "N", "\r");
+    expect(lastFrame()).not.toContain("infra");
+    await press(stdin, "\r");
+    expect(onSelect).toHaveBeenCalledWith("sandbox");
+  });
+
+  it("clears a note on the next key, and saves one watch at a time", async () => {
+    let finish: (v: readonly string[]) => void = () => {};
+    const toggleWatch = vi.fn(() => new Promise<readonly string[]>((r) => (finish = r)));
+    const { lastFrame, stdin } = setup({ toggleWatch });
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+    await press(stdin, "w", "w");
+    expect(toggleWatch).toHaveBeenCalledOnce();
+    finish(["infra", "demo"]);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Watching demo."));
+    await press(stdin, "j");
+    expect(lastFrame()).not.toContain("Watching demo.");
+  });
+});
