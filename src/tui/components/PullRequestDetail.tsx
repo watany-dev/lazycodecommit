@@ -385,7 +385,6 @@ export function PullRequestDetail({
     if (dialogOpen) return;
     setConflictCheckError(null);
 
-    // === 2-key sequence: ]c / [c for change navigation ===
     if (pendingBracket && input === "c") {
       const isNext = pendingBracket === "]";
       setPendingBracket(null);
