@@ -1,6 +1,7 @@
 import type { Comment } from "@aws-sdk/client-codecommit";
 import type { PullRequest } from "../aws/codecommit.js";
 import type { CommentThread, ReviewApi } from "../aws/review.js";
+import type { DraftLocation } from "./commentDrafts.js";
 import { UsageError, UserError } from "./errors.js";
 import { commentBody, type PrDeps, resolvePullRequest } from "./pr.js";
 import { head, shortArn } from "./text.js";
@@ -11,11 +12,7 @@ export type CommentApi = Pick<
   "getComments" | "postComment" | "postCommentReply" | "updateComment" | "deleteComment"
 >;
 
-interface InlineTarget {
-  readonly filePath: string;
-  readonly filePosition: number;
-  readonly relativeFileVersion: "BEFORE" | "AFTER";
-}
+type InlineTarget = Omit<DraftLocation, "lineText">;
 
 /** What `pr comment` does; the TUI's c, C, R, e and x. */
 export type CommentAction =
