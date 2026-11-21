@@ -170,7 +170,6 @@ export function PullRequestList({
         <Text bold>{repositoryName}</Text>
       </Box>
 
-      {/* Status filter tabs */}
       <Box marginBottom={1}>
         {STATUS_CYCLE.map((s) => (
           <Text key={s}>
@@ -186,7 +185,6 @@ export function PullRequestList({
         ))}
       </Box>
 
-      {/* Search input */}
       {isSearching && (
         <Box marginBottom={1}>
           <Text>Search: </Text>
@@ -194,7 +192,6 @@ export function PullRequestList({
         </Box>
       )}
 
-      {/* PR list header */}
       <Box marginBottom={1}>
         <Text bold wrap="truncate">
           {label} Pull Requests{searchQuery ? ` matching "${searchQuery}"` : ""} (
@@ -202,7 +199,6 @@ export function PullRequestList({
         </Text>
       </Box>
 
-      {/* PR list */}
       {filteredPullRequests.length === 0 ? (
         <Box>
           <Text dimColor>
@@ -229,7 +225,6 @@ export function PullRequestList({
         })
       )}
 
-      {/* Pagination info */}
       <Box marginTop={1}>
         <Text dimColor>
           Page {pagination.currentPage}
@@ -238,7 +233,6 @@ export function PullRequestList({
         </Text>
       </Box>
 
-      {/* Footer */}
       <Box marginTop={0}>
         <Text dimColor>
           {isSearching

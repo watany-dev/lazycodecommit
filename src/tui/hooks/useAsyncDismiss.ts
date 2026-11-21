@@ -1,11 +1,5 @@
 import { useEffect, useRef } from "react";
 
-/**
- * Calls `onDismiss` when an async operation completes successfully.
- *
- * Pattern: tracks whether `isProcessing` was true, and when it transitions
- * to false with no error, invokes `onDismiss` to close the modal/UI state.
- */
 export function useAsyncDismiss(
   isProcessing: boolean,
   error: string | null,

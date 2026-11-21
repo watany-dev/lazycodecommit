@@ -1,10 +1,4 @@
-/**
- * Coalesces rapid item arrivals into a single `apply` call.
- *
- * The first `enqueue` starts a timer; further items join the same batch until
- * the delay elapses or `flush` is called. Used to collapse per-file blob
- * arrivals into one React state update.
- */
+/** Collapses per-file blob arrivals into one React state update. */
 export function createBatcher<T>(
   apply: (items: T[]) => void,
   delayMs: number,

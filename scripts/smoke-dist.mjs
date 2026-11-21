@@ -110,7 +110,6 @@ const env = {
 };
 
 const children = new Set();
-/** Starts a process; its `result` resolves with the exit and the output. */
 function start(cmd, args, cwd) {
   const child = spawn(cmd, args, { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
   children.add(child);

@@ -33,7 +33,6 @@ export interface HomeActions {
   /** Marks a PR read now (spec: レビュー画面を開いた時点で既読). */
   markSeen(pr: SeenPr): void;
   listRepositories(): Promise<string[]>;
-  /** Adds or removes `repository` in the config's repos; returns the new list. */
   toggleWatch(repository: string): Promise<readonly string[]>;
   consoleUrl(pr: PullRequest): string;
 }
