@@ -195,7 +195,8 @@ and labels, then the body) and one file per comment under
 (`issues.branch` in the config). Writing there instead of the default branch
 keeps issue updates from starting pipelines or meeting rules that guard the
 default branch. lazycc reads and writes them through the API, no clone needed;
-the first write creates the branch from the default branch's tip. Each write is
+the first `issue create` makes the branch from the default branch's tip (an
+empty repository is refused, since its first branch would become the default). Each write is
 a commit on top of the tip lazycc read, so two people writing at once never
 overwrite each other: the later one reads again and retries. The files are
 plain Markdown, so you can also edit them in a clone. See

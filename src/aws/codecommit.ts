@@ -86,8 +86,8 @@ export interface FileChange {
 export interface NewCommit {
   readonly repository: string;
   readonly branch: string;
-  /** The tip the change was made against; absent only in an empty repository. */
-  readonly parent?: string;
+  /** The tip the change was made against. */
+  readonly parent: string;
   readonly message: string;
   readonly files: readonly FileChange[];
 }
@@ -476,7 +476,7 @@ export function createCodeCommitApi(options: {
         new CreateCommitCommand({
           repositoryName: input.repository,
           branchName: input.branch,
-          ...(input.parent ? { parentCommitId: input.parent } : {}),
+          parentCommitId: input.parent,
           commitMessage: input.message,
           putFiles: input.files.map((f) => ({
             filePath: f.path,

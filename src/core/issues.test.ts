@@ -275,12 +275,28 @@ describe("createIssue", () => {
     await expect(createIssue(deps, { title: "t", body: "", labels: [] })).rejects.toBe(denied);
   });
 
-  it("makes the first commit in an empty repository", async () => {
+  it("refuses an empty repository, where it would make the default branch", async () => {
     const r = repo();
     r.tips.delete("main");
-    await createIssue(r.deps, { title: "t", body: "", labels: [] });
-    expect(r.commits[0]?.parent).toBeUndefined();
-    expect(r.fileAt("issue/1/issue.md")).toContain("title: t");
+    await expect(createIssue(r.deps, { title: "t", body: "", labels: [] })).rejects.toThrow(
+      "demo has no commits yet. Push a first commit before adding issues.",
+    );
+    expect(r.commits).toEqual([]);
+  });
+
+  it("does not create the issue twice when its commit landed but the reply was lost", async () => {
+    const r = repo({ files: { "issue/1/issue.md": issue("one") } });
+    r.loseReplyOnce();
+    const created = await createIssue(r.deps, { title: "mine", body: "", labels: [] });
+    expect(created.number).toBe(2);
+    expect(r.commits).toHaveLength(1);
+    expect(r.fileAt("issue/3/issue.md")).toBeUndefined();
+  });
+
+  it("still numbers after an issue someone else created at the number it tried", async () => {
+    const r = repo({ files: { "issue/1/issue.md": issue("one") } });
+    r.raceOnce(() => r.put({ "issue/2/issue.md": "broken" }));
+    expect((await createIssue(r.deps, { title: "mine", body: "", labels: [] })).number).toBe(3);
   });
 
   it("refuses an empty title", async () => {
@@ -300,25 +316,27 @@ describe("commentOnIssue", () => {
       body: "Looks bad.",
     });
     expect(r.commits[0]?.message).toBe("issue #1: comment");
-    expect(r.fileAt("issue/1/comments/20261121T051000Z-abc123.md")).toBe(
+    const path = r.commits[0]?.files[0]?.path as string;
+    expect(path).toMatch(/^issue\/1\/comments\/20261121T051000Z-[0-9a-f]{6}\.md$/);
+    expect(r.fileAt(path)).toBe(
       "---\nauthor: arn:aws:iam::123456789012:user/me\ncreated: 2026-11-21T05:10:00.123Z\n---\nLooks bad.\n\n",
     );
   });
 
-  it("uses a random suffix by default", async () => {
+  it("does not comment twice when its commit landed but the reply was lost", async () => {
     const r = repo({ files: { "issue/1/issue.md": issue("one") } });
-    const { nonce: _, ...deps } = r.deps;
-    await commentOnIssue(deps, 1, "x");
-    expect(r.commits[0]?.files[0]?.path).toMatch(
-      /^issue\/1\/comments\/20261121T051000Z-[0-9a-f]{6}\.md$/,
-    );
+    r.loseReplyOnce();
+    expect((await commentOnIssue(r.deps, 1, "once")).body).toBe("once");
+    expect(r.commits).toHaveLength(1);
   });
 
   it("refuses an empty comment and a missing issue", async () => {
     const r = repo({ files: { "issue/1/issue.md": issue("one") } });
     await expect(commentOnIssue(r.deps, 1, "  \n")).rejects.toThrow("The comment is empty");
     await expect(commentOnIssue(r.deps, 2, "x")).rejects.toThrow("Issue #2 does not exist");
-    await expect(commentOnIssue(repo().deps, 1, "x")).rejects.toThrow("Issue #1 does not exist");
+    const empty = repo();
+    await expect(commentOnIssue(empty.deps, 1, "x")).rejects.toThrow("Issue #1 does not exist");
+    expect(empty.tips.has("issues")).toBe(false);
   });
 });
 
@@ -357,9 +375,9 @@ describe("setIssueState", () => {
     expect(r.fileAt("issue/1/issue.md")).toContain("state: closed");
   });
 
-  it("fails for a missing issue", async () => {
-    await expect(setIssueState(repo().deps, 1, "closed")).rejects.toThrow(
-      "Issue #1 does not exist",
-    );
+  it("fails for a missing issue without creating the branch", async () => {
+    const r = repo();
+    await expect(setIssueState(r.deps, 1, "closed")).rejects.toThrow("Issue #1 does not exist");
+    expect(r.tips.has("issues")).toBe(false);
   });
 });

@@ -495,7 +495,7 @@ describe("createCodeCommitApi", () => {
     });
   });
 
-  it("commits files as UTF-8 on top of a parent, or as the first commit", async () => {
+  it("commits files as UTF-8 on top of a parent", async () => {
     cc.on(CreateCommitCommand).resolves({ commitId: "c1" });
     expect(
       await api.createCommit({
@@ -513,13 +513,15 @@ describe("createCodeCommitApi", () => {
       commitMessage: "issue #1: create",
       putFiles: [{ filePath: "issue/1/issue.md", fileContent: new Uint8Array([0xc3, 0xa9]) }],
     });
-    await api.createCommit({ repository: "demo", branch: "issues", message: "m", files: [] });
-    expect(cc.commandCalls(CreateCommitCommand)[1]?.args[0].input).not.toHaveProperty(
-      "parentCommitId",
-    );
     cc.on(CreateCommitCommand).resolves({});
     await expect(
-      api.createCommit({ repository: "demo", branch: "issues", message: "m", files: [] }),
+      api.createCommit({
+        repository: "demo",
+        branch: "issues",
+        parent: "c0",
+        message: "m",
+        files: [],
+      }),
     ).rejects.toThrow("CodeCommit returned no commit id");
   });
 });

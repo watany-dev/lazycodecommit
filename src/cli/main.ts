@@ -187,9 +187,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     options: { ref: { type: "string" }, path: { type: "string" } },
   },
   home: { positionals: 0, options: {} },
-  ...structuredClone(
-    ISSUE_COMMANDS as unknown as Record<string, { options: Options; positionals: number }>,
-  ),
+  ...ISSUE_COMMANDS,
 };
 
 const MERGE_FLAGS: Record<string, MergeStrategy> = {

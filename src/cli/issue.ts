@@ -1,3 +1,4 @@
+import type { ParseArgsConfig } from "node:util";
 import type { CodeCommitApi } from "../aws/codecommit.js";
 import { UsageError, UserError } from "../core/errors.js";
 import {
@@ -17,8 +18,10 @@ import { printable, shortArn } from "../core/text.js";
 import type { Config } from "../state/config.js";
 import { align } from "./format.js";
 
+type Options = NonNullable<ParseArgsConfig["options"]>;
+
 /** The flags of the issue commands, for main's table (ADR 0011). */
-export const ISSUE_COMMANDS = {
+export const ISSUE_COMMANDS: Record<string, { options: Options; positionals: number }> = {
   "issue list": {
     positionals: 0,
     options: {
@@ -45,7 +48,7 @@ export const ISSUE_COMMANDS = {
   },
   "issue close": { positionals: 1, options: {} },
   "issue reopen": { positionals: 1, options: {} },
-} as const;
+};
 
 export const ISSUE_USAGE = `  lazycc issue list [--state open|closed|all] [-L limit]
   lazycc issue view <number>
@@ -72,7 +75,6 @@ export interface IssueRun {
   readonly config: Config;
   readonly json: boolean;
   print(value: unknown): void;
-  now?: () => Date;
 }
 
 const str = (v: Values, key: string) =>
@@ -98,16 +100,24 @@ async function givenBody(values: Values, io: IssueIo): Promise<string | undefine
 }
 
 const EDIT_HINT =
-  "\n\n# The first line is the title, the rest is the body. Lines starting with # are dropped.\n";
+  "# lazycc: the first line is the title, the rest is the body. This line is dropped.";
+const TITLE_HINT = "# lazycc: write the issue's title on the first line. This line is dropped.";
 
-/** Title on the first line, then the body, as in a commit message. */
+/** Title on the first non-blank line, then the body, as in a commit message. */
 function splitEdited(text: string): { title: string; body: string } {
   const lines = text
     .replace(/\r\n?/g, "\n")
     .split("\n")
-    .filter((l) => !l.startsWith("#"));
-  const [title = "", ...rest] = lines;
-  return { title: title.trim(), body: rest.join("\n").trim() };
+    .filter((l) => l !== EDIT_HINT && l !== TITLE_HINT);
+  const first = lines.findIndex((l) => l.trim() !== "");
+  if (first === -1) return { title: "", body: "" };
+  return {
+    title: (lines[first] as string).trim(),
+    body: lines
+      .slice(first + 1)
+      .join("\n")
+      .trim(),
+  };
 }
 
 function labels(values: Values): string[] {
@@ -175,7 +185,7 @@ export async function runIssue(
     api: run.api,
     repository: run.repository,
     config: run.config,
-    now: run.now ?? (() => new Date()),
+    now: () => new Date(),
   };
   switch (command) {
     case "issue list": {
@@ -207,10 +217,13 @@ export async function runIssue(
         if (!io.interactive)
           throw new UsageError("Not a terminal: pass both --title and --body to create an issue");
         if (title === undefined) {
-          const edited = splitEdited(await io.edit(`${body ?? ""}${EDIT_HINT}`));
+          // A body given with -b stays the body; the editor then asks for the title only.
+          const edited = splitEdited(
+            await io.edit(body === undefined ? `\n\n${EDIT_HINT}\n` : `\n\n${TITLE_HINT}\n`),
+          );
           if (!edited.title) throw new UserError("Aborted: the title is empty.");
           title = edited.title;
-          body = edited.body;
+          body ??= edited.body;
         } else body = (await io.edit("")).trim();
       }
       const issue = await createIssue(deps, { title, body: body.trim(), labels: labels(values) });

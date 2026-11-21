@@ -210,16 +210,28 @@ describe("issue create", () => {
     expect(err).toContain("pass both --title and --body");
   });
 
-  it("opens the editor for the title and body on a terminal", async () => {
+  it("opens the editor for the title and body on a terminal, keeping # headings", async () => {
     const r = issueRepo();
-    const { out, edits } = await cli(["issue", "create", "-b", "draft"], {
+    const { out, edits } = await cli(["issue", "create"], {
       api: r.deps.api,
       interactive: true,
-      edit: async () => "# comment\n Title here \n\nBody\nmore\n",
+      edit: async (t) => `\n Title here \n\n## Steps\nBody${t}`,
     });
-    expect(edits[0]).toMatch(/^draft\n\n# The first line is the title/);
+    expect(edits[0]).toMatch(/^\n\n# lazycc: the first line is the title/);
     expect(out).toBe("Created issue #1: Title here");
-    expect(r.fileAt("issue/1/issue.md")).toContain("---\nBody\nmore\n");
+    expect(r.fileAt("issue/1/issue.md")).toContain("---\n## Steps\nBody\n");
+  });
+
+  it("asks only for the title when -b gives the body", async () => {
+    const r = issueRepo();
+    const { edits } = await cli(["issue", "create", "-b", "Steps:\n1. open"], {
+      api: r.deps.api,
+      interactive: true,
+      edit: async (t) => `T${t}`,
+    });
+    expect(edits[0]).toMatch(/^\n\n# lazycc: write the issue's title/);
+    expect(r.fileAt("issue/1/issue.md")).toContain("title: T\n");
+    expect(r.fileAt("issue/1/issue.md")).toContain("---\nSteps:\n1. open\n");
   });
 
   it("opens the editor for the body when only the title is given", async () => {

@@ -22,6 +22,8 @@ export function issueRepo(options: { files?: Record<string, string>; branches?: 
   const encoder = new TextEncoder();
   /** Runs once before the next commit lands, as if someone else committed first. */
   let interloper: (() => void) | undefined;
+  /** The next commit lands but answers as outdated, as an SDK retry of a lost reply would. */
+  let lostReply = false;
   const api = fakeApi([], {
     branchCommit: async (_r, b) => tips.get(b),
     defaultBranch: async () => "main",
@@ -62,6 +64,10 @@ export function issueRepo(options: { files?: Record<string, string>; branches?: 
       const id = snapshot(files);
       tips.set(input.branch, id);
       commits.push(input);
+      if (lostReply) {
+        lostReply = false;
+        throw Object.assign(new Error("outdated"), { name: "ParentCommitIdOutdatedException" });
+      }
       return id;
     },
   });
@@ -70,7 +76,6 @@ export function issueRepo(options: { files?: Record<string, string>; branches?: 
     repository: "demo",
     config: {},
     now: () => new Date("2026-11-21T05:10:00.123Z"),
-    nonce: () => "abc123",
   };
   const fileAt = (path: string) => snapshots.get(tips.get("issues") ?? "")?.get(path);
   return {
@@ -78,6 +83,9 @@ export function issueRepo(options: { files?: Record<string, string>; branches?: 
     commits,
     tips,
     fileAt,
+    loseReplyOnce() {
+      lostReply = true;
+    },
     raceOnce(change: () => void) {
       interloper = change;
     },

@@ -41,8 +41,6 @@ export interface IssueDeps {
   readonly repository: string;
   readonly config: Config;
   readonly now: () => Date;
-  /** Six hex digits for a comment's file name; random outside tests. */
-  readonly nonce?: () => string;
 }
 
 function issueBranch(config: Config): string {
@@ -87,12 +85,13 @@ function field(fields: FrontMatter["fields"], key: string): string | undefined {
   return fields.find(([k]) => k === key)?.[1];
 }
 
+/** Sets a field in place (appended when new); undefined removes it. */
 function withField(fields: FrontMatter["fields"], key: string, value: string | undefined) {
-  const rest = fields.filter(([k]) => k !== key);
-  if (value === undefined) return rest;
-  const at = fields.findIndex(([k]) => k === key);
+  if (value === undefined) return fields.filter(([k]) => k !== key);
   const entry = [key, value] as const;
-  return at === -1 ? [...rest, entry] : [...rest.slice(0, at), entry, ...rest.slice(at)];
+  return field(fields, key) === undefined
+    ? [...fields, entry]
+    : fields.map((f) => (f[0] === key ? entry : f));
 }
 
 export function parseIssue(number: number, path: string, text: string): Issue | UnreadableIssue {
@@ -209,20 +208,28 @@ export async function viewIssue(
   return { issue, comments };
 }
 
-/** The branch's tip, creating the branch off the default branch the first time (ADR 0011). */
-async function branchTip(deps: IssueDeps, branch: string): Promise<string | undefined> {
+/**
+ * The issue branch's tip. Only creating an issue makes the branch, off the
+ * default branch's tip (ADR 0011); anything else on a missing branch is
+ * `notFound`, so a mistyped number leaves nothing behind.
+ */
+async function branchTip(deps: IssueDeps, branch: string, notFound?: UserError): Promise<string> {
   const { api, repository } = deps;
   const tip = await api.branchCommit(repository, branch);
   if (tip) return tip;
+  if (notFound) throw notFound;
   const base = await api.defaultBranch(repository);
   const baseTip = base && (await api.branchCommit(repository, base));
-  // An empty repository: the first commit makes the branch.
-  if (!baseTip) return undefined;
+  // A first commit would make the issue branch the repository's default branch.
+  if (!baseTip)
+    throw new UserError(
+      `${repository} has no commits yet. Push a first commit before adding issues.`,
+    );
   try {
     await api.createBranch(repository, branch, baseTip);
   } catch (error) {
     if ((error as Error).name !== "BranchNameExistsException") throw error;
-    return api.branchCommit(repository, branch);
+    return branchTip(deps, branch, notFound);
   }
   return baseTip;
 }
@@ -237,22 +244,25 @@ interface Change<T> {
 /**
  * Commits `change(tip)` on the issue branch with the tip as parent. When
  * someone else committed in between, CodeCommit refuses and this reads the
- * new tip and asks again, so nobody's write is lost (ADR 0011).
+ * new tip and asks again, so nobody's write is lost (ADR 0011). The refusal
+ * can also be the SDK retrying our own commit that landed, so each change
+ * first checks whether the tip already has it.
  */
 async function commitChange<T>(
   deps: IssueDeps,
-  change: (tip: string | undefined) => Promise<Change<T>>,
+  notFound: UserError | undefined,
+  change: (tip: string) => Promise<Change<T>>,
 ): Promise<T> {
   const branch = issueBranch(deps.config);
   for (let attempt = 1; ; attempt++) {
-    const tip = await branchTip(deps, branch);
+    const tip = await branchTip(deps, branch, notFound);
     const { message, files, result } = await change(tip);
     if (files.length === 0) return result;
     try {
       await deps.api.createCommit({
         repository: deps.repository,
         branch,
-        ...(tip ? { parent: tip } : {}),
+        parent: tip,
         message,
         files,
       });
@@ -274,23 +284,29 @@ export async function createIssue(deps: IssueDeps, input: NewIssue): Promise<Iss
   const title = oneLine(input.title);
   if (!title) throw new UserError("An issue needs a title");
   const author = await deps.api.callerArn();
-  return commitChange(deps, async (tip) => {
-    const numbers = tip ? await issueNumbers(deps, tip) : [];
-    const number = (numbers[0] ?? 0) + 1;
+  const created = deps.now().toISOString();
+  let tried: number | undefined;
+  return commitChange(deps, undefined, async (tip) => {
+    if (tried !== undefined) {
+      const landed = await readIssue(deps, tip, tried);
+      if (landed && !isUnreadable(landed) && landed.created === created && landed.author === author)
+        return { message: "", files: [], result: landed };
+    }
+    const number = ((await issueNumbers(deps, tip))[0] ?? 0) + 1;
+    tried = number;
     const fields: [string, string][] = [
       ["title", title],
       ["state", "open"],
       ["author", author],
-      ["created", deps.now().toISOString()],
+      ["created", created],
     ];
     const labels = input.labels.map(oneLine).filter(Boolean);
     if (labels.length > 0) fields.push(["labels", labels.join(", ")]);
     const text = formatFrontMatter(fields, input.body);
-    const issue = parseIssue(number, issuePath(number), text) as Issue;
     return {
       message: `issue #${number}: create`,
       files: [{ path: issuePath(number), content: text }],
-      result: issue,
+      result: parseIssue(number, issuePath(number), text) as Issue,
     };
   });
 }
@@ -309,29 +325,22 @@ export async function commentOnIssue(
 ): Promise<IssueComment> {
   if (!body.trim()) throw new UserError("The comment is empty");
   const author = await deps.api.callerArn();
-  return commitChange(deps, async (tip) => {
-    if (!tip) throw missing(number);
+  const now = deps.now();
+  const created = now.toISOString();
+  const path = `${commentsPath(number)}/${stamp(now)}-${randomBytes(3).toString("hex")}.md`;
+  const result = { author, created, body: body.replace(/\n+$/, "") };
+  return commitChange(deps, missing(number), async (tip) => {
     await readableIssue(deps, tip, number);
-    const now = deps.now();
-    const nonce = deps.nonce?.() ?? randomBytes(3).toString("hex");
-    const created = now.toISOString();
-    const path = `${commentsPath(number)}/${stamp(now)}-${nonce}.md`;
-    return {
-      message: `issue #${number}: comment`,
-      files: [
-        {
-          path,
-          content: formatFrontMatter(
-            [
-              ["author", author],
-              ["created", created],
-            ],
-            body,
-          ),
-        },
+    if (await deps.api.getFile(deps.repository, tip, path))
+      return { message: "", files: [], result };
+    const content = formatFrontMatter(
+      [
+        ["author", author],
+        ["created", created],
       ],
-      result: { author, created, body: body.replace(/\n+$/, "") },
-    };
+      body,
+    );
+    return { message: `issue #${number}: comment`, files: [{ path, content }], result };
   });
 }
 
@@ -341,8 +350,7 @@ export function setIssueState(
   number: number,
   state: IssueState,
 ): Promise<{ issue: Issue; changed: boolean }> {
-  return commitChange<{ issue: Issue; changed: boolean }>(deps, async (tip) => {
-    if (!tip) throw missing(number);
+  return commitChange<{ issue: Issue; changed: boolean }>(deps, missing(number), async (tip) => {
     const issue = await readableIssue(deps, tip, number);
     if (issue.state === state) return { message: "", files: [], result: { issue, changed: false } };
     let fields = withField(issue.fields, "state", state);
