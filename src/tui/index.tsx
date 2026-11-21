@@ -154,6 +154,8 @@ export async function openTop(request: TopRequest): Promise<void> {
     if (view !== "home" && repository === undefined) next = { pick: true };
     else if (view === "home") {
       const actions = await views.home();
+      // What the branch table and browse showed before the home's first pick, for its Esc.
+      let beforeHomePick: { repository: string | undefined } | undefined;
       await run(
         <HomeApp
           actions={actions}
@@ -161,6 +163,12 @@ export async function openTop(request: TopRequest): Promise<void> {
           note={note}
           onSwitch={onSwitch}
           onRepository={(r) => {
+            if (r === undefined) {
+              if (beforeHomePick) repository = beforeHomePick.repository;
+              beforeHomePick = undefined;
+              return;
+            }
+            beforeHomePick ??= { repository };
             repository = r;
           }}
         />,

@@ -13,7 +13,7 @@ create a PR, `m` to merge, `y` to confirm) still work beside them.
 | --- | --- |
 | `j` / `↓`, `k` / `↑` | Move the cursor |
 | `<` / `Home`, `>` / `End` | First / last row |
-| `Esc` | Go back or close; does nothing on a top screen |
+| `Esc` | Go back or close; on a top screen it does nothing (except on home, see below) |
 | `q`, `Ctrl+c` | Quit lazycc, from any screen (in a text box, `q` is typed) |
 | `?` | Open the keys of this screen as a menu |
 
@@ -46,6 +46,7 @@ and `Esc` clears it.
 | `]` / `[`, `Tab` | Switch between "awaiting your approval" and "your PRs" |
 | `Enter` | Open the PR in the review screen (marks it read) |
 | `r` / `Ctrl+r` | Open the repository picker |
+| `Esc` | After `Enter` in the picker showed one repository, go back to the watched ones (the header says `<repo> only  Esc back to …`) |
 | `/` | Filter |
 | `R` | Refresh |
 | `u` | Show the PR's console URL |
@@ -54,7 +55,7 @@ and `Esc` clears it.
 
 | Key | Action |
 | --- | --- |
-| `Enter` | Show only this repository (on the home screen; on the branch and browse screens, switch to it) |
+| `Enter` | Show only this repository (on the home screen, until `Esc` there; on the branch and browse screens, switch to it) |
 | `w` | Add to or remove from the watch list (the config's `repos`) |
 | `p` | Open the repository's PR list |
 | `/` | Filter |

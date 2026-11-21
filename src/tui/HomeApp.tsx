@@ -31,8 +31,8 @@ interface Props {
   note?: string | null;
   /** 2 / 3: leave for the branch table or browse. */
   onSwitch?: (s: TopSwitch) => void;
-  /** A repository picked with Enter, for the branch table and browse too. */
-  onRepository?: (repository: string) => void;
+  /** A repository picked with Enter, for the branch table and browse too; undefined when Esc undoes it. */
+  onRepository?: (repository: string | undefined) => void;
 }
 
 type View =
@@ -50,6 +50,9 @@ const SECTION_TITLE: Record<Section, string> = {
   awaiting: "Awaiting your approval",
   mine: "Your PRs",
 };
+
+const label = (repos: readonly string[]) =>
+  repos.length === 1 ? repos[0] : `${repos.length} repositories`;
 
 const same = (a: readonly string[] | undefined, b: readonly string[]) =>
   a !== undefined && a.length === b.length && a.every((r, i) => r === b[i]);
@@ -69,6 +72,11 @@ export function HomeApp({
   // Repositories from the config follow it when w changes the watch list.
   const [followsConfig, setFollowsConfig] = useState(same(actions.initial, actions.watched()));
   const [view, setView] = useState<View>(actions.initial ? { kind: "home" } : { kind: "picker" });
+  // What the home showed before the first Enter in the picker, for Esc to go back to.
+  const [beforePick, setBeforePick] = useState<{
+    readonly repos: readonly string[] | undefined;
+    readonly followsConfig: boolean;
+  } | null>(null);
   const [inbox, setInbox] = useState<Inbox | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -136,6 +144,20 @@ export function HomeApp({
   const index = Math.max(Math.min(cursor, rows.length - 1), 0);
   const selected = rows[index];
 
+  /** Where Esc goes from a picked repository: the watch list as it is now, else the start. */
+  function back(): readonly string[] | undefined {
+    if (!beforePick) return undefined;
+    const watched = actions.watched();
+    const target =
+      beforePick.followsConfig || !beforePick.repos
+        ? watched.length > 0
+          ? watched
+          : undefined
+        : beforePick.repos;
+    return target && !same(repos, target) ? target : undefined;
+  }
+  const backTo = back();
+
   useKeys(
     (input, key) => {
       if (filterBox.handleKey(key)) return;
@@ -150,7 +172,14 @@ export function HomeApp({
         onSwitch?.(top);
         exit();
       } else if (input === "?") help.show();
-      else if (key.tab || input === "]" || input === "[") {
+      else if (key.escape) {
+        const target = back();
+        if (!target) return;
+        setFollowsConfig(same(target, actions.watched()));
+        setBeforePick(null);
+        setRepos(target);
+        onRepository?.(undefined);
+      } else if (key.tab || input === "]" || input === "[") {
         setSection(section === "awaiting" ? "mine" : "awaiting");
         setCursor(0);
       } else if (input === "R") {
@@ -210,6 +239,7 @@ export function HomeApp({
         current={repos}
         onSelect={(repository) => {
           onRepository?.(repository);
+          if (!beforePick) setBeforePick({ repos, followsConfig });
           setFollowsConfig(false);
           setRepos([repository]);
           setView({ kind: "home" });
@@ -268,7 +298,8 @@ export function HomeApp({
         ))}
         <Text dimColor>
           {"  "}
-          {repos ? (repos.length === 1 ? repos[0] : `${repos.length} repositories`) : ""}
+          {repos ? label(repos) : ""}
+          {backTo ? ` only  Esc back to ${label(backTo)}` : ""}
           {refreshing ? "  refreshing…" : ""}
         </Text>
       </Text>
@@ -408,6 +439,7 @@ const HOME_HELP: HelpSection["keys"] = [
   ["] / [, Tab", "Switch between awaiting your approval and your PRs", "]"],
   ["Enter", "Review the PR (marks it read)", "\r"],
   ["r / Ctrl+r", "Pick repositories (w watches, p lists PRs)", "r"],
+  ["Esc", "Back from a repository picked with Enter to the watched ones"],
   ["2", "Branch table, for the clone or the repository picked", "2"],
   ["3", "Browse, for the clone or the repository picked", "3"],
   ["/", "Filter by title or repository", "/"],

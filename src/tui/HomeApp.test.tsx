@@ -352,6 +352,78 @@ describe("HomeApp", () => {
     expect(a.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it("goes back from a picked repository to the watched ones on Esc", async () => {
+    const a = actions();
+    const onRepository = vi.fn();
+    const { lastFrame, stdin } = render(
+      <HomeApp actions={a} reviewService={() => service} onRepository={onRepository} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add retry"));
+    await press(stdin, "\u001B");
+    expect(a.fetch).toHaveBeenCalledTimes(1);
+    await press(stdin, "r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+    await press(stdin, "j", "j", "\r");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["sandbox"]));
+    expect(lastFrame()).toContain("sandbox only");
+    expect(lastFrame()).toContain("Esc back to 2 repositories");
+    expect(onRepository).toHaveBeenLastCalledWith("sandbox");
+    await press(stdin, "\u001B");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["demo", "infra"]));
+    expect(lastFrame()).not.toContain("only");
+    expect(onRepository).toHaveBeenLastCalledWith(undefined);
+    await press(stdin, "\u001B");
+    expect(a.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("goes back to the watch list as it is now, after w changed it", async () => {
+    let watched = ["demo", "infra"];
+    const a = actions({ watched: () => watched });
+    const { lastFrame, stdin } = await setup(a);
+    await press(stdin, "r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("sandbox"));
+    await press(stdin, "j", "j", "\r");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["sandbox"]));
+    watched = ["infra"];
+    await press(stdin, "\u001B");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["infra"]));
+  });
+
+  it("goes back to the repository it started on when nothing is watched", async () => {
+    const a = actions({ initial: ["clone"], watched: () => [] });
+    const r = render(<HomeApp actions={a} reviewService={() => service} />);
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledWith(["clone"]));
+    await press(r.stdin, "r");
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("sandbox"));
+    await press(r.stdin, "j", "j", "\r");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["sandbox"]));
+    expect(r.lastFrame()).toContain("Esc back to clone");
+    await press(r.stdin, "\u001B");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["clone"]));
+  });
+
+  it("has nothing to go back to after picking the repository it started on", async () => {
+    const a = actions({ initial: ["demo"], watched: () => [] });
+    const r = render(<HomeApp actions={a} reviewService={() => service} />);
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledWith(["demo"]));
+    await press(r.stdin, "r");
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("sandbox"));
+    await press(r.stdin, "\r");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenCalledTimes(2));
+    expect(r.lastFrame()).not.toContain("Esc back");
+  });
+
+  it("has nothing to go back to when it started on the picker and nothing is watched", async () => {
+    const a = actions({ initial: undefined, watched: () => [] });
+    const r = render(<HomeApp actions={a} reviewService={() => service} />);
+    await vi.waitFor(() => expect(r.lastFrame()).toContain("sandbox"));
+    await press(r.stdin, "j", "j", "\r");
+    await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["sandbox"]));
+    expect(r.lastFrame()).not.toContain("Esc back");
+    await press(r.stdin, "\u001B");
+    expect(a.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("opens a repository's PR list from the picker and returns to the picker", async () => {
     const { lastFrame, stdin, reviewService } = await setup();
     await press(stdin, "r");
