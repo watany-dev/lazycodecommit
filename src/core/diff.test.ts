@@ -198,22 +198,8 @@ describe("pullRequestDiff in a clone", () => {
     expect(apiCalls).toEqual([]);
   });
 
-  it("asks git for the merge base when CodeCommit gives none", async () => {
-    const calls: string[] = [];
-    const git = fakeGit({
-      mergeBase: async () => "gitbase",
-      diff: async (before, after) => {
-        calls.push(`${before}..${after}`);
-        return "";
-      },
-    });
-    await pullRequestDiff(pullRequest(), { api: apiWith([], {}).api, git });
-    expect(calls).toEqual(["gitbase..s1"]);
-  });
-
   it("asks the API when git does not have the commits", async () => {
     const git = fakeGit({
-      mergeBase: async () => null,
       diff: async () => {
         throw new GitError(["diff"], "fatal: bad object s1", 128);
       },

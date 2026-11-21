@@ -16,22 +16,21 @@ export async function pullRequestDiff(
   deps: { api: CodeCommitApi; git?: Git },
 ): Promise<string> {
   const { api, git } = deps;
+  const base = pr.mergeBase ?? pr.destinationCommit;
   if (git) {
     try {
-      const base =
-        pr.mergeBase ?? (await git.mergeBase(pr.destinationCommit, pr.sourceCommit)) ?? "";
-      if (base) return await git.diff(base, pr.sourceCommit);
+      return await git.diff(base, pr.sourceCommit);
     } catch {
       // Commits not fetched yet: the API gives the same diff.
     }
   }
-  const base = pr.mergeBase ?? pr.destinationCommit;
   const changes = await api.differences(pr.repository, base, pr.sourceCommit);
   const read = (id: string | undefined) => (id ? api.blob(pr.repository, id) : undefined);
   // The client caps the calls in flight, so every blob can be asked for at once.
   const files = await Promise.all(
     changes
-      .toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+      // Paths are unique, so no two compare equal.
+      .toSorted((a, b) => (a.path < b.path ? -1 : 1))
       .map(async (change) => {
         const sameBlob = change.before?.id === change.after?.id;
         const [before, after] = sameBlob
