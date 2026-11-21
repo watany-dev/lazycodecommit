@@ -68,13 +68,18 @@ function createDeferred<T>() {
 describe("App", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    // Default: no reactions
     vi.mocked(getReactionsForComments).mockResolvedValue(new Map());
     vi.mocked(putReaction).mockResolvedValue(undefined);
+    // Default: empty activity
     vi.mocked(getPullRequestActivity).mockResolvedValue({ events: [], nextToken: undefined });
+    // Default: no commits
     vi.mocked(getCommitsForPR).mockResolvedValue([]);
     vi.mocked(getAllDifferences).mockResolvedValue([]);
+    // Default: no approvals, no rules
     vi.mocked(getApprovalStates).mockResolvedValue([]);
     vi.mocked(evaluateApprovalRules).mockResolvedValue(null);
+    // Default: no conflicts
     vi.mocked(getMergeConflicts).mockResolvedValue({
       mergeable: true,
       conflictCount: 0,
@@ -110,6 +115,7 @@ describe("App", () => {
     });
   });
 
+  // formatError tests for all error types
   it("shows auth error for CredentialsProviderError", async () => {
     const error = new Error("bad");
     error.name = "CredentialsProviderError";
@@ -207,6 +213,7 @@ describe("App", () => {
     });
   });
 
+  // Screen navigation tests
   it("navigates from PRs to detail on selection", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -313,6 +320,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Pull requests help");
     });
 
+    // Close help by pressing ? again
     stdin.write("?");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("my-service");
@@ -679,11 +687,13 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Enter comment mode and submit
     stdin.write("c");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("New Comment:");
     });
 
+    // Mock reload after post
     vi.mocked(getPullRequestDetail).mockResolvedValue({
       pullRequest: {
         pullRequestId: "42",
@@ -1072,6 +1082,7 @@ describe("App", () => {
     expect(postComment).not.toHaveBeenCalled();
   });
 
+  // v0.3: Approval integration tests
   it("loads approval states when opening PR detail", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -1277,15 +1288,18 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Press 'a' to start approve
     stdin.write("a");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Approve this pull request?");
     });
 
+    // Mock reload after approve
     vi.mocked(getApprovalStates).mockResolvedValue([
       { userArn: "arn:aws:iam::123456789012:user/watany", approvalState: "APPROVE" },
     ]);
 
+    // Confirm with 'y'
     stdin.write("y");
     await vi.waitFor(() => {
       expect(updateApprovalState).toHaveBeenCalledWith(
@@ -1462,11 +1476,13 @@ describe("App", () => {
 
     stdin.write("\r");
     await vi.waitFor(() => {
+      // Should still load PR detail without Rules line
       expect(lastFrame()).toContain("PR #42");
       expect(lastFrame()).not.toContain("Rules:");
     });
   });
 
+  // formatApprovalError edge cases
   it("shows PullRequestCannotBeApprovedByAuthorException error", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -1860,6 +1876,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Access denied. Check your IAM policy.");
     });
 
+    // Press any key to clear error and return to normal mode
     stdin.write("x");
     await vi.waitFor(() => {
       expect(lastFrame()).not.toContain("Access denied");
@@ -1953,6 +1970,7 @@ describe("App", () => {
     });
   });
 
+  // v0.4: Inline comment integration tests
   it("shows inline comment error on failure", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -2073,6 +2091,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Move cursor to a diff line, wait for render, then press C
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2084,6 +2103,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Mock reload after post
     vi.mocked(getComments).mockResolvedValue([
       {
         location: {
@@ -2119,6 +2139,7 @@ describe("App", () => {
     });
   });
 
+  // v0.5: Reply integration tests
   it("shows reply error on failure", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -2174,6 +2195,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("fix: login");
     });
 
+    // Select PR
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("PR #42");
@@ -2186,6 +2208,7 @@ describe("App", () => {
       expect(lastFrame()).toMatch(/> .*taro: Please fix/);
     });
 
+    // Open reply mode
     stdin.write("R");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Replying to taro:");
@@ -2251,6 +2274,7 @@ describe("App", () => {
       inReplyTo: "c1",
     });
 
+    // Mock reload after post
     vi.mocked(getComments).mockResolvedValue([
       {
         location: null,
@@ -2280,6 +2304,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Navigate to comment line
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2564,6 +2589,7 @@ describe("App", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("> Squash"));
   });
 
+  // v0.6: Merge integration tests
   it("merges PR and returns to PR list", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -2797,6 +2823,7 @@ describe("App", () => {
     });
   });
 
+  // v0.6: Close PR integration tests
   it("closes PR and returns to PR list", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -3338,6 +3365,7 @@ describe("App", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("(Enter/y, Esc/n)");
     });
+    // getMergeConflicts should NOT have been called since commits are missing
     expect(getMergeConflicts).not.toHaveBeenCalled();
 
     stdin.write("y");
@@ -3796,6 +3824,7 @@ describe("App", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("[Commit 2/2]");
     });
+    // getCommitsForPR should NOT be called again
     expect(getCommitsForPR).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => {
       expect(getAllDifferences).toHaveBeenCalledTimes(2);
@@ -3963,6 +3992,7 @@ describe("App", () => {
     });
   });
 
+  // v0.7: Comment edit/delete tests
   it("calls updateComment and reloads comments on successful edit", async () => {
     vi.mocked(listPullRequests).mockResolvedValue({
       pullRequests: [
@@ -4521,6 +4551,7 @@ describe("App", () => {
     });
   });
 
+  // v0.8: Status filter integration tests
   it("changes filter to CLOSED and reloads PRs", async () => {
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
@@ -4728,6 +4759,7 @@ describe("App", () => {
     expect(vi.mocked(listPullRequests)).toHaveBeenCalledTimes(calls);
   });
 
+  // v0.8: Pagination integration tests
   it("navigates to next page with n key", async () => {
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
@@ -4785,6 +4817,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("fix: login");
     });
 
+    // Go to page 2
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -4802,6 +4835,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Page 2");
     });
 
+    // Go back to page 1
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -4839,6 +4873,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("fix: login");
     });
 
+    // Go to page 2
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -4902,6 +4937,7 @@ describe("App", () => {
     });
   });
 
+  // v0.2.0: Reaction integration test
   it("loads reactions with PR detail and calls putReaction on g key", async () => {
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
@@ -4952,15 +4988,18 @@ describe("App", () => {
       expect(lastFrame()).toContain("fix: login");
     });
 
+    // Select the PR
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Verify reactions loaded (badge displayed)
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("👍×1");
     });
 
+    // Verify getReactionsForComments was called
     expect(vi.mocked(getReactionsForComments)).toHaveBeenCalledWith(["comment-1"]);
   });
 
@@ -5020,6 +5059,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("React to comment:");
     });
 
+    // Mock successful reaction and reload
     vi.mocked(putReaction).mockResolvedValueOnce(undefined);
     vi.mocked(getReactionsForComments).mockResolvedValueOnce(
       new Map([["c1", [{ emoji: "👍", shortCode: ":thumbsup:", count: 1, userArns: [] }]]]),
@@ -5032,6 +5072,7 @@ describe("App", () => {
         reactionValue: ":thumbsup:",
       });
     });
+    // Badge should appear after reactions reload
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("👍×1");
     });
@@ -5195,11 +5236,13 @@ describe("App", () => {
       expect(lastFrame()).toContain(">  taro: OK");
     });
 
+    // Open reaction picker
     stdin.write("g");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("React to comment:");
     });
 
+    // Make putReaction fail
     const error = new Error("deleted");
     error.name = "CommentDeletedException";
     vi.mocked(putReaction).mockRejectedValueOnce(error);
@@ -5279,6 +5322,7 @@ describe("App", () => {
     });
   });
 
+  // Activity timeline tests
   describe("Activity timeline", () => {
     function setupPRListAndDetail() {
       vi.mocked(listPullRequests).mockResolvedValue({

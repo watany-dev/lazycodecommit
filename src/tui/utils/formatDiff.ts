@@ -26,6 +26,7 @@ export interface DisplayLine {
 /** Lookahead window for detecting nearby matching lines (reorders/small edits). */
 const LOOKAHEAD_WINDOW = 5;
 
+/** Returns true if `target` appears in `lines` within the lookahead window starting at `start`. */
 function hasNearbyMatch(lines: string[], start: number, target: string): boolean {
   const end = Math.min(lines.length, start + LOOKAHEAD_WINDOW);
   for (let i = start; i < end; i++) {
@@ -35,22 +36,33 @@ function hasNearbyMatch(lines: string[], start: number, target: string): boolean
 }
 
 /**
- * A greedy diff that prefers matching lines over a minimal edit distance. The
- * lookahead stops a run of deletions or additions at a line that matches
- * soon after, so reordered lines do not turn into long delete/add blocks.
+ * Computes a simplified line-by-line diff between two sets of lines.
+ *
+ * Algorithm:
+ * 1. When lines match at current positions: add as context and advance both indices
+ * 2. When lines differ:
+ *    a. Process deletions: consume lines from 'before' until we find a match
+ *       - Stop early if a matching line is found within the next 5 lines (optimization)
+ *    b. Process additions: consume lines from 'after' until we find a match
+ *       - Stop early if a matching line is found within the next 5 lines (optimization)
+ *
+ * This is a greedy algorithm that prioritizes matching lines over minimal edit distance.
+ * The 5-line lookahead prevents excessive deletions/additions when lines are just reordered.
  */
 export function computeSimpleDiff(beforeLines: string[], afterLines: string[]): DisplayLine[] {
   const result: DisplayLine[] = [];
   // Inputs are never mutated, so hoist lengths out of the hot loop.
   const blen = beforeLines.length;
   const alen = afterLines.length;
-  let bi = 0;
-  let ai = 0;
+  let bi = 0; // Index for beforeLines
+  let ai = 0; // Index for afterLines
 
+  // Process both arrays until all lines are consumed
   while (bi < blen || ai < alen) {
     const beforeLine = beforeLines[bi];
     const afterLine = afterLines[ai];
 
+    // Case 1: Lines match at current position - add as context
     if (bi < blen && ai < alen && beforeLine === afterLine) {
       result.push({
         type: "context",
@@ -61,12 +73,15 @@ export function computeSimpleDiff(beforeLines: string[], afterLines: string[]): 
       bi++;
       ai++;
     } else {
+      // Case 2: Lines differ - process deletions first, then additions
       const startBi = bi;
       const startAi = ai;
 
+      // Process deletions: consume lines from 'before' that don't match current 'after'
       // oxlint-disable-next-line no-unmodified-loop-condition -- ai stays put while deletions are consumed
       while (bi < blen && (ai >= alen || beforeLines[bi] !== afterLines[ai])) {
         const bl = beforeLines[bi]!;
+        // Optimization: stop if this line appears within the lookahead window in 'after'
         if (hasNearbyMatch(afterLines, ai, bl)) break;
         result.push({
           type: "delete",
@@ -76,9 +91,11 @@ export function computeSimpleDiff(beforeLines: string[], afterLines: string[]): 
         bi++;
       }
 
+      // Process additions: consume lines from 'after' that don't match current 'before'
       // oxlint-disable-next-line no-unmodified-loop-condition -- bi stays put while additions are consumed
       while (ai < alen && (bi >= blen || afterLines[ai] !== beforeLines[bi])) {
         const al = afterLines[ai]!;
+        // Optimization: stop if this line appears within the lookahead window in 'before'
         if (hasNearbyMatch(beforeLines, bi, al)) break;
         result.push({
           type: "add",

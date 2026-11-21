@@ -32,6 +32,8 @@ describe("formatRelativeDate", () => {
   });
 });
 
+// --- Property-Based Tests ---
+
 // Constrain dates to a reasonable range to avoid Invalid Date from arithmetic overflow
 const reasonableDate = fc.date({
   min: new Date("2000-01-01T00:00:00Z"),

@@ -82,6 +82,7 @@ export interface Git {
   mergeBase(a: string, b: string): Promise<string | null>;
   /** Changed files between two commits, like GetDifferences: no rename detection. */
   diffTree(before: string, after: string): Promise<TreeChange[]>;
+  /** Contents of a blob. */
   blob(id: string): Promise<Buffer>;
   /** Up to `max` commits in `base..head` along first parents, oldest first. */
   firstParentLog(base: string, head: string, max: number): Promise<LoggedCommit[]>;

@@ -67,6 +67,7 @@ describe("CommentInput", () => {
         onClearError={vi.fn()}
       />,
     );
+    // Write exactly at limit
     const maxText = "a".repeat(COMMENT_MAX_LENGTH);
     stdin.write(maxText);
     await vi.waitFor(() => {
@@ -216,6 +217,7 @@ describe("CommentInput", () => {
         initialValue="existing content"
       />,
     );
+    // Submit the prefilled value directly
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith("existing content");
