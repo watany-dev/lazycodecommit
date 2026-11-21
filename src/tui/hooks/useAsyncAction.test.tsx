@@ -55,7 +55,6 @@ describe("useAsyncAction", () => {
     );
 
     captured!.execute();
-    // Allow state update to propagate
     rerender(
       <TestComponent
         action={action}
@@ -206,7 +205,6 @@ describe("useAsyncAction", () => {
       />,
     );
 
-    // First call fails
     captured!.execute();
     await new Promise((r) => setTimeout(r, 0));
     rerender(
@@ -219,7 +217,6 @@ describe("useAsyncAction", () => {
     );
     expect(captured!.error).not.toBeNull();
 
-    // Second call succeeds — error should clear
     captured!.execute();
     await new Promise((r) => setTimeout(r, 0));
     rerender(

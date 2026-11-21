@@ -463,10 +463,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
     });
   }
 
-  /**
-   * Wrapper for async operations with automatic loading/error state management.
-   * Eliminates repetitive try-catch-finally patterns.
-   */
   async function withLoadingState<T>(
     operation: () => Promise<T>,
     onError?: (err: unknown) => void,
@@ -584,7 +580,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
       setCommitDiffTexts(new Map());
       commitsPromiseRef.current = Promise.resolve([]);
 
-      // Background: blob texts (batched so each arrival does not rebuild all lines)
+      // Batched so each arrival does not rebuild all lines.
       type BlobUpdate =
         | { key: string; status: "loaded"; texts: BlobTexts }
         | { key: string; status: "error" };
@@ -618,7 +614,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
         },
       }).then(() => blobBatcher.flush());
 
-      // Background: commits (parent-chain walk cannot be parallelized)
+      // The parent-chain walk cannot be parallelized.
       const sourceCommit = detail.pullRequest.pullRequestTargets?.[0]?.sourceCommit;
       const mergeBase = detail.pullRequest.pullRequestTargets?.[0]?.mergeBase;
       if (sourceCommit && mergeBase) {
@@ -633,12 +629,11 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: approvals
       const revisionId = detail.pullRequest.revisionId;
       if (revisionId) void reloadApprovals(pullRequestId, revisionId, loadId);
 
-      // Background: CI. Each lookup's failure is inside the result; a failure
-      // to load the CI clients at all leaves the line out.
+      // Each lookup's failure is inside the result; a failure to load the CI
+      // clients at all leaves the line out.
       if (service.checks && sourceCommit) {
         service.checks({ repository: selectedRepo, sourceCommit }).then(
           (loaded) => {
@@ -648,7 +643,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: reactions
       void reloadReactions(detail.commentThreads, loadId);
     });
   }

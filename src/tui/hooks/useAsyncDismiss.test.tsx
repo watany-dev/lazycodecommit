@@ -61,7 +61,6 @@ describe("useAsyncDismiss", () => {
     rerender(<TestComponent isProcessing={false} error={null} onDismiss={onDismiss} />);
     expect(onDismiss).toHaveBeenCalledTimes(1);
 
-    // Second operation
     rerender(<TestComponent isProcessing={true} error={null} onDismiss={onDismiss} />);
     rerender(<TestComponent isProcessing={false} error={null} onDismiss={onDismiss} />);
     expect(onDismiss).toHaveBeenCalledTimes(2);
@@ -75,7 +74,6 @@ describe("useAsyncDismiss", () => {
     rerender(<TestComponent isProcessing={false} error="Failed" onDismiss={onDismiss} />);
     expect(onDismiss).not.toHaveBeenCalled();
 
-    // Second operation succeeds
     rerender(<TestComponent isProcessing={true} error={null} onDismiss={onDismiss} />);
     rerender(<TestComponent isProcessing={false} error={null} onDismiss={onDismiss} />);
     expect(onDismiss).toHaveBeenCalledOnce();

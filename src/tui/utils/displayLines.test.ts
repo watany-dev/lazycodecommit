@@ -122,7 +122,6 @@ describe("buildDisplayLines diff cache", () => {
       cache,
     );
 
-    // Every diff line must carry the path of the header it is rendered under
     let currentHeader = "";
     let checked = 0;
     for (const line of lines) {

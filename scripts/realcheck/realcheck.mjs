@@ -96,8 +96,6 @@ const work = mkdtempSync(join(tmpdir(), "lazycc-realcheck-"));
 const reportPath = resolve(opt.out ?? `lazycc-realcheck-${stamp}.md`);
 const cli = resolve(opt.lazycc ?? join(ROOT, "dist/cli.mjs"));
 
-// ---------------------------------------------------------------- recording
-
 const results = [];
 const runs = [];
 const captures = {};
@@ -125,8 +123,6 @@ const block = (lang, s) => `\`\`\`${lang}\n${s.replaceAll("```", "ˋˋˋ")}\n\`\
 const ESCAPES = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Z]/g;
 const has = (obj, path) =>
   path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj) !== undefined;
-
-// ---------------------------------------------------------------- environment
 
 // Keep git config the caller passed the same way (scripts/emulator/env.sh does).
 const gitConfig = Array.from({ length: Number(process.env.GIT_CONFIG_COUNT ?? 0) }, (_, i) => [
@@ -250,8 +246,6 @@ function expectRun(id, title, r, { exit = 0, needle } = {}) {
     record(id, title, "FAIL", `output lacks ${needle}: ${trim(text.trim(), 300)}`);
   else record(id, title, "PASS", `exit ${r.exit}, ${r.ms} ms`);
 }
-
-// ---------------------------------------------------------------- steps
 
 const state = {};
 
@@ -1674,8 +1668,6 @@ async function cleanup() {
   );
 }
 
-// ---------------------------------------------------------------- report
-
 function report() {
   const counts = {};
   for (const r of results) counts[r.status] = (counts[r.status] ?? 0) + 1;
@@ -1787,8 +1779,6 @@ function replaceName(text, name, tag) {
   }
   return out + text.slice(from);
 }
-
-// ---------------------------------------------------------------- main
 
 let failed = false;
 if (!existsSync(cli)) {

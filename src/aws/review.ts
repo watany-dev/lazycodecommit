@@ -107,7 +107,6 @@ const REACHED_HANDLER = {
   name: "lazyccReachedHandler",
 } as const;
 
-/** Sends a post; an error raised before it reached the handler is marked as not sent. */
 async function sendMarked<Output extends object>(
   client: CodeCommitClient,
   command: PostCommentForPullRequestCommand | PostCommentReplyCommand,
@@ -159,7 +158,6 @@ function commitDate(date: string | undefined): Date {
 /** The most commits the review screen lists for one PR. */
 export const MAX_COMMITS = 100;
 
-/** Aggregated reaction information for a single comment */
 export interface ReactionSummary {
   emoji: string;
   shortCode: string;
@@ -170,7 +168,6 @@ export interface ReactionSummary {
 /** commentId → ReactionSummary[] mapping */
 export type ReactionsByComment = Map<string, ReactionSummary[]>;
 
-/** PR アクティビティイベントの表示用データ */
 export interface PrActivityEvent {
   eventDate: Date;
   eventType: string;

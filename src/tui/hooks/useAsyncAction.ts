@@ -8,9 +8,6 @@ export interface AsyncActionState<T extends unknown[] = unknown[]> {
   clearError: () => void;
 }
 
-/**
- * Eliminates repetitive `setIsXxx(true); try { ... } catch { setXxxError(...) } finally { setIsXxx(false) }` patterns.
- */
 export function useAsyncAction<T extends unknown[]>(
   action: (...args: T) => Promise<void>,
   formatError: (err: unknown, ...args: T) => string = (err, ..._args) => formatErrorMessage(err),

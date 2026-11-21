@@ -249,7 +249,6 @@ describe("getPullRequestDetail", () => {
 
     const detail = await getPullRequestDetail("42", "my-service");
 
-    // Third call is GetCommentsForPullRequestCommand
     expect(mockSend.mock.calls[2]![0].input).toEqual({ pullRequestId: "42" });
     expect(detail.commentThreads[0]!.outdated).toBe(true);
   });

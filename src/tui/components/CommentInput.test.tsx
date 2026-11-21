@@ -67,16 +67,13 @@ describe("CommentInput", () => {
         onClearError={vi.fn()}
       />,
     );
-    // Write exactly at limit
     const maxText = "a".repeat(COMMENT_MAX_LENGTH);
     stdin.write(maxText);
     await vi.waitFor(() => {
       expect(lastFrame()).toContain(`${COMMENT_MAX_LENGTH}/${COMMENT_MAX_LENGTH}`);
     });
-    // Try to write one more char - should be rejected by handleChange
     stdin.write("b");
     await vi.waitFor(() => {
-      // Counter should still show max, not max+1
       expect(lastFrame()).toContain(`${COMMENT_MAX_LENGTH}/${COMMENT_MAX_LENGTH}`);
     });
   });
@@ -217,7 +214,6 @@ describe("CommentInput", () => {
         initialValue="existing content"
       />,
     );
-    // Submit the prefilled value directly
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith("existing content");

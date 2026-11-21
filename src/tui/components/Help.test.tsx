@@ -48,7 +48,6 @@ describe("HelpMenu", () => {
     expect(frame.indexOf("Moving")).toBeLessThan(frame.indexOf("Acting"));
     expect(frame).toMatch(/> j \/ k/);
     expect(frame).toContain("Enter run / filter Esc close q quit");
-    // descriptions line up in one column past the longest key
     const lines = frame.split("\n");
     const col = (text: string) => lines.find((l) => l.includes(text))!.indexOf(text);
     expect(col("Move")).toBe(col("Half a page"));
