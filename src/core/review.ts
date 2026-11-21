@@ -85,7 +85,6 @@ export function openReviewService(
   };
 }
 
-/** The TUI's reopen, the same as `pr reopen`'s. */
 export async function reopenById(
   id: string,
   repository: string,

@@ -438,7 +438,6 @@ export async function closePullRequest(
   return deps.api.close(pr);
 }
 
-/** Says which open PR stands where `pr create` or `pr reopen` would have opened one. */
 export function alreadyOpen(pr: PullRequest): string {
   return `A pull request from ${pr.sourceBranch} into ${pr.destinationBranch} is already open: #${pr.id} ${printable(pr.title)}`;
 }

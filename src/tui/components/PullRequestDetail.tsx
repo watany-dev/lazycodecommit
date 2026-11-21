@@ -222,7 +222,7 @@ export function PullRequestDetail({
   const prId = pullRequest.pullRequestId ?? "";
   const author = shortArn(pullRequest.authorArn ?? "unknown");
   const status = pullRequest.pullRequestStatus ?? "OPEN";
-  // spec: PR の再オープン. On a closed PR x opens a new one; a merged PR has neither.
+  // spec: PR の再オープン.
   const xKey =
     status !== "CLOSED" ? "close" : reopen && !target?.mergeMetadata?.isMerged ? "reopen" : null;
   const creationDate = pullRequest.creationDate ? formatRelativeDate(pullRequest.creationDate) : "";
