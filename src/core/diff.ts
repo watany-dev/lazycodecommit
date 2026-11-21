@@ -4,6 +4,7 @@ import { isBinary } from "./browse.js";
 import { computeSimpleDiff, type DiffRow } from "./lineDiff.js";
 
 const CONTEXT = 3;
+const SUBMODULE = "160000";
 const decoder = new TextDecoder();
 
 /**
@@ -25,7 +26,11 @@ export async function pullRequestDiff(
     }
   }
   const changes = await api.differences(pr.repository, base, pr.sourceCommit);
-  const read = (id: string | undefined) => (id ? api.blob(pr.repository, id) : undefined);
+  // A submodule's id is a commit, which GetBlob refuses; git diff writes this line for it.
+  const read = async (side: FileChange["before"]) =>
+    side?.mode === SUBMODULE
+      ? new TextEncoder().encode(`Subproject commit ${side.id}\n`)
+      : side && api.blob(pr.repository, side.id);
   // The client caps the calls in flight, so every blob can be asked for at once.
   const files = await Promise.all(
     changes
@@ -35,7 +40,7 @@ export async function pullRequestDiff(
         const sameBlob = change.before?.id === change.after?.id;
         const [before, after] = sameBlob
           ? []
-          : await Promise.all([read(change.before?.id), read(change.after?.id)]);
+          : await Promise.all([read(change.before), read(change.after)]);
         return fileDiff(change, before, after);
       }),
   );

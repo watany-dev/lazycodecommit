@@ -161,6 +161,24 @@ describe("pullRequestDiff from the API", () => {
     );
   });
 
+  it("writes a submodule as git does, without reading its commit as a blob", async () => {
+    const { api } = apiWith(
+      [{ path: "lib", before: side("c1", "160000"), after: side("c2", "160000") }],
+      {},
+    );
+    expect(await pullRequestDiff(pullRequest(), { api })).toBe(
+      [
+        "diff --git a/lib b/lib",
+        "--- a/lib",
+        "+++ b/lib",
+        "@@ -1 +1 @@",
+        "-Subproject commit c1",
+        "+Subproject commit c2",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("orders files by path, as git diff does", async () => {
     const { api } = apiWith(
       [
