@@ -98,6 +98,8 @@ interface Props {
     preferred?: MergeStrategy | undefined;
   };
   close: AsyncActionState<[]>;
+  /** Absent: x does nothing on a closed PR. */
+  reopen?: AsyncActionState<[]> | undefined;
   commitView: CommitViewProps;
   editComment: AsyncActionState<[commentId: string, content: string]>;
   deleteComment: AsyncActionState<[commentId: string]>;
@@ -137,6 +139,7 @@ export function PullRequestDetail({
   approval,
   merge,
   close,
+  reopen,
   commitView: {
     commits,
     differences: commitDifferences,
@@ -168,6 +171,7 @@ export function PullRequestDetail({
   /** Why the conflict check failed, shown until the next key. */
   const [conflictCheckError, setConflictCheckError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
   const [viewIndex, setViewIndex] = useState(-1); // -1 = All changes
   const [collapsedThreads, setCollapsedThreads] = useState<Map<string, boolean>>(() =>
     buildCollapsedThreadState(commentThreads),
@@ -218,6 +222,9 @@ export function PullRequestDetail({
   const prId = pullRequest.pullRequestId ?? "";
   const author = shortArn(pullRequest.authorArn ?? "unknown");
   const status = pullRequest.pullRequestStatus ?? "OPEN";
+  // spec: PR の再オープン. On a closed PR x opens a new one; a merged PR has neither.
+  const xKey =
+    status !== "CLOSED" ? "close" : reopen && !target?.mergeMetadata?.isMerged ? "reopen" : null;
   const creationDate = pullRequest.creationDate ? formatRelativeDate(pullRequest.creationDate) : "";
   const destRef = printable(target?.destinationReference?.replace("refs/heads/", "") ?? "");
   const sourceRef = printable(target?.sourceReference?.replace("refs/heads/", "") ?? "");
@@ -321,6 +328,7 @@ export function PullRequestDetail({
       approvalAction ||
       mergeStep ||
       isClosing ||
+      isReopening ||
       reactionTarget ||
       showDrafts,
   );
@@ -335,8 +343,8 @@ export function PullRequestDetail({
       : pendingBracket
         ? `${pendingBracket}_ Press c for ${pendingBracket === "]" ? "next" : "previous"} change, other key to cancel`
         : viewIndex >= 0
-          ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge x close q quit ? help${hasTruncation ? " t more" : ""}`
-          : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge x close A activity q ? help${hasTruncation ? " t more" : ""}`;
+          ? `Tab next Shift+Tab prev ↑↓ ]c/[c change e edit d del a/r approve m merge${xKey ? ` x ${xKey}` : ""} q quit ? help${hasTruncation ? " t more" : ""}`
+          : `${commits.length > 0 || commitsAvailable ? "Tab view " : ""}↑↓ n/N file ]c/[c change f list c comment C inline R reply D drafts o fold e edit d del g react a/r approve m merge${xKey ? ` x ${xKey}` : ""} A activity q ? help${hasTruncation ? " t more" : ""}`;
   const conflictError =
     conflictCheckError && `Could not check for conflicts: ${conflictCheckError}`;
   // The key line and an error wrap rather than lose words: count their rows.
@@ -584,7 +592,8 @@ export function PullRequestDetail({
       return;
     }
     if (input === "x") {
-      setIsClosing(true);
+      if (xKey === "close") setIsClosing(true);
+      else if (xKey === "reopen") setIsReopening(true);
       return;
     }
     if (input === "A") {
@@ -910,6 +919,23 @@ export function PullRequestDetail({
           onClearError={() => {
             close.clearError();
             setIsClosing(false);
+          }}
+        />
+      )}
+      {isReopening && reopen && (
+        <ConfirmPrompt
+          message="CodeCommit cannot reopen a pull request. Open a new one from its branches?"
+          onConfirm={() => reopen.execute()}
+          onCancel={() => {
+            setIsReopening(false);
+            reopen.clearError();
+          }}
+          isProcessing={reopen.isProcessing}
+          processingMessage="Opening..."
+          error={reopen.error}
+          onClearError={() => {
+            reopen.clearError();
+            setIsReopening(false);
           }}
         />
       )}

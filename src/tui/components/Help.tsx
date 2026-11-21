@@ -189,7 +189,7 @@ export const PR_DETAIL_HELP: HelpSection[] = [
       ["a", "Approve", "a"],
       ["r", "Revoke approval", "r"],
       ["m / M", "Merge", "m"],
-      ["x", "Close without merging", "x"],
+      ["x", "Close without merging; on a closed PR, open a new one from its branches", "x"],
       ["A", "Activity timeline", "A"],
     ],
   },

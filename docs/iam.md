@@ -26,6 +26,7 @@ permission.
 | `pr approve` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestApprovalState` |
 | `pr merge` | `GetPullRequest` (`ListPullRequests` without an id), one of `MergePullRequestByFastForward`, `MergePullRequestBySquash`, `MergePullRequestByThreeWay` |
 | `pr close` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestStatus` |
+| `pr reopen`, and `x` on a closed PR in the review screen | `GetPullRequest`, `ListPullRequests`, `GetBranch`, `CreatePullRequest` |
 | `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `R` runs `git fetch`, which needs `GitPull` |
 | `browse` | `GetFolder`, `GetFile`, `ListBranches` (the `b` ref picker), `GetRepository` (without `--ref`) |
 | `clone` | `GetRepository`, `GitPull` |

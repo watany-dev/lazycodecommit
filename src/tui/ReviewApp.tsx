@@ -346,6 +346,15 @@ export function App({ service, repository, start, onExit }: AppProps) {
     (err) => formatErrorMessage(err, "close"),
   );
 
+  const reopenAction = useAsyncAction(
+    async () => {
+      if (!prDetail?.pullRequestId || !service.reopenPullRequest) return;
+      const id = await service.reopenPullRequest(prDetail.pullRequestId, selectedRepo);
+      await loadPullRequestDetail(id);
+    },
+    (err) => formatErrorMessage(err),
+  );
+
   const updateCommentAction = useAsyncAction(
     async (commentId: string, content: string) => {
       if (!prDetail?.pullRequestId) return;
@@ -840,6 +849,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
       if (!prDetail) return null;
       return (
         <PullRequestDetail
+          // A reopen shows the new PR here: its screen starts afresh.
+          key={prDetail.pullRequestId}
           pullRequest={prDetail}
           differences={prDifferences}
           commentThreads={commentThreads}
@@ -858,6 +869,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
             preferred: service.mergeStrategy,
           }}
           close={closePRAction}
+          reopen={service.reopenPullRequest ? reopenAction : undefined}
           commitView={{
             commits,
             differences: commitDifferences,

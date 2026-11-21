@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ReviewApi } from "../aws/review.js";
 import { GitError } from "../git/git.js";
+import * as cc from "../testing/fakes.js";
 import { fakeGit } from "../testing/fakes.js";
-import { createReviewService, openReviewService } from "./review.js";
+import { createReviewService, openReviewService, reopenById } from "./review.js";
 
 function fakeApi() {
   return {
@@ -297,5 +298,23 @@ describe("blob contents", () => {
     expect(await createReviewService(api).getBlobContent("demo", "b")).toEqual({
       binarySize: 1024 * 1024 + 1,
     });
+  });
+});
+
+describe("reopenById", () => {
+  const closed = cc.pullRequest({ id: "6", status: "CLOSED" });
+
+  it("answers the new PR's id", async () => {
+    const codecommit = cc.fakeApi([closed]);
+    expect(await reopenById("6", "demo", codecommit)).toBe("42");
+    expect(codecommit.created).toHaveLength(1);
+  });
+
+  it("refuses, naming the open PR, when one from the same branches is open", async () => {
+    const codecommit = cc.fakeApi([closed, cc.pullRequest({ id: "7", title: "Again" })]);
+    await expect(reopenById("6", "demo", codecommit)).rejects.toThrow(
+      "A pull request from topic into main is already open: #7 Again",
+    );
+    expect(codecommit.created).toEqual([]);
   });
 });

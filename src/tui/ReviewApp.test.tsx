@@ -2881,6 +2881,91 @@ describe("App", () => {
     });
   });
 
+  describe("x on a closed PR", () => {
+    const detail = (pullRequestId: string, over: Record<string, unknown> = {}) => ({
+      pullRequest: {
+        pullRequestId,
+        title: `PR ${pullRequestId} title`,
+        pullRequestTargets: [],
+        ...over,
+      },
+      differences: [],
+      commentThreads: [],
+    });
+    const closedDetail = detail("42", { pullRequestStatus: "CLOSED" });
+    const reopen = vi.fn();
+    const withReopen = { ...service, reopenPullRequest: reopen } as unknown as ReviewService;
+
+    beforeEach(() => {
+      reopen.mockReset();
+      vi.mocked(getPullRequestDetail).mockImplementation(async (id: string) =>
+        id === "42" ? closedDetail : detail(id, { pullRequestStatus: "OPEN" }),
+      );
+    });
+
+    it("offers to open a new PR from its branches, then shows that PR", async () => {
+      reopen.mockResolvedValue("43");
+      const { lastFrame, stdin } = render(
+        <App service={withReopen} repository="my-service" start={{ pullRequestId: "42" }} />,
+      );
+      await vi.waitFor(() => expect(lastFrame()).toContain("x reopen"));
+      expect(lastFrame()).not.toContain("x close");
+      stdin.write("x");
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain(
+          "CodeCommit cannot reopen a pull request. Open a new one from its branches?",
+        ),
+      );
+      stdin.write("y");
+      await vi.waitFor(() => expect(lastFrame()).toContain("PR 43 title"));
+      expect(reopen).toHaveBeenCalledWith("42", "my-service");
+      expect(closePullRequest).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(lastFrame()).toContain("x close"));
+      expect(lastFrame()).not.toContain("Open a new one");
+    });
+
+    it("shows why no PR was opened", async () => {
+      reopen.mockRejectedValue(
+        new Error("A pull request from topic into main is already open: #7 Again"),
+      );
+      const { lastFrame, stdin } = render(
+        <App service={withReopen} repository="my-service" start={{ pullRequestId: "42" }} />,
+      );
+      await vi.waitFor(() => expect(lastFrame()).toContain("x reopen"));
+      stdin.write("x");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Open a new one"));
+      stdin.write("y");
+      await vi.waitFor(() => expect(lastFrame()).toContain("already open: #7 Again"));
+    });
+
+    it("does nothing on a merged PR", async () => {
+      vi.mocked(getPullRequestDetail).mockResolvedValue(
+        detail("42", {
+          pullRequestStatus: "CLOSED",
+          pullRequestTargets: [{ mergeMetadata: { isMerged: true } }],
+        }) as any,
+      );
+      const { lastFrame, stdin } = render(
+        <App service={withReopen} repository="my-service" start={{ pullRequestId: "42" }} />,
+      );
+      await vi.waitFor(() => expect(lastFrame()).toContain("PR 42 title"));
+      expect(lastFrame()).not.toMatch(/x (close|reopen)/);
+      await press(stdin, "x");
+      expect(lastFrame()).not.toContain("Open a new one");
+      expect(lastFrame()).not.toContain("Close this pull request");
+    });
+
+    it("does nothing without a way to reopen", async () => {
+      const { lastFrame, stdin } = render(
+        <App service={svc} repository="my-service" start={{ pullRequestId: "42" }} />,
+      );
+      await vi.waitFor(() => expect(lastFrame()).toContain("PR 42 title"));
+      expect(lastFrame()).not.toMatch(/x (close|reopen)/);
+      await press(stdin, "x");
+      expect(lastFrame()).not.toContain("Close this pull request");
+    });
+  });
+
   it("drops only the closed PR from the list it returns to", async () => {
     const pr = (pullRequestId: string, title: string) => ({
       pullRequestId,

@@ -19,6 +19,7 @@ import {
   withTemplate,
 } from "./draft.js";
 import { UsageError, UserError } from "./errors.js";
+import { printable } from "./text.js";
 
 const DEFAULT_TEMPLATE = ".codecommit/pull_request_template.md";
 const DEFAULT_CONCURRENCY = 8;
@@ -284,20 +285,22 @@ export async function resolvePullRequest(
   id: string | undefined,
   deps: Pick<PrDeps, "api" | "ctx" | "config" | "git">,
 ): Promise<PullRequest> {
-  if (id !== undefined) {
-    if (!/^\d+$/.test(id)) throw new UsageError(`Not a pull request id: ${id}`);
-    const [pr] = (await deps.api.getPullRequests([id], 1)) as [PullRequest];
-    // Ids are unique per region, not per repository.
-    if (pr.repository !== deps.ctx.repository) {
-      throw new UserError(
-        `#${id} belongs to ${pr.repository}, not ${deps.ctx.repository}. Pass --repo ${pr.repository}.`,
-      );
-    }
-    return pr;
-  }
+  if (id !== undefined) return getPullRequest(id, deps);
   const branch = await currentBranchOfClone(deps);
   const pr = await findOpenPullRequest(deps, branch);
   if (!pr) throw new UserError(`No open pull request from ${branch} in ${deps.ctx.repository}.`);
+  return pr;
+}
+
+async function getPullRequest(id: string, deps: Pick<PrDeps, "api" | "ctx">): Promise<PullRequest> {
+  if (!/^\d+$/.test(id)) throw new UsageError(`Not a pull request id: ${id}`);
+  const [pr] = (await deps.api.getPullRequests([id], 1)) as [PullRequest];
+  // Ids are unique per region, not per repository.
+  if (pr.repository !== deps.ctx.repository) {
+    throw new UserError(
+      `#${id} belongs to ${pr.repository}, not ${deps.ctx.repository}. Pass --repo ${pr.repository}.`,
+    );
+  }
   return pr;
 }
 
@@ -433,4 +436,54 @@ export async function closePullRequest(
   const pr = await resolvePullRequest(id, deps);
   requireOpen(pr);
   return deps.api.close(pr);
+}
+
+/** Says which open PR stands where `pr create` or `pr reopen` would have opened one. */
+export function alreadyOpen(pr: PullRequest): string {
+  return `A pull request from ${pr.sourceBranch} into ${pr.destinationBranch} is already open: #${pr.id} ${printable(pr.title)}`;
+}
+
+export interface ReopenResult {
+  /** "exists": an open PR from the same branches was found, and none was opened. */
+  readonly kind: "reopened" | "exists";
+  readonly from: PullRequest;
+  readonly pr: PullRequest;
+}
+
+/**
+ * spec: PR の再オープン. CodeCommit cannot set a closed PR back to OPEN, so this
+ * opens a new PR from the closed one's branches, title and description.
+ */
+export async function reopenPullRequest(
+  id: string,
+  deps: Pick<PrDeps, "api" | "ctx" | "config">,
+): Promise<ReopenResult> {
+  const from = await getPullRequest(id, deps);
+  if (from.status === "OPEN") throw new UserError(`#${id} is already open.`);
+  if (from.isMerged)
+    throw new UserError(`#${id} is merged, and a merged pull request cannot be reopened.`);
+  const existing = await findOpenPullRequest(deps, from.sourceBranch, from.destinationBranch);
+  if (existing) return { kind: "exists", from, pr: existing };
+  for (const [what, branch] of [
+    ["source", from.sourceBranch],
+    ["destination", from.destinationBranch],
+  ]) {
+    if ((await deps.api.branchCommit(from.repository, branch as string)) === undefined) {
+      throw new UserError(
+        `#${id}'s ${what} branch ${branch} no longer exists in ${from.repository}. Push it again, then retry.`,
+      );
+    }
+  }
+  const note = `Reopened from #${id}.`;
+  const noted = from.description ? `${from.description}\n\n${note}` : note;
+  const pr = await deps.api.createPullRequest({
+    repository: from.repository,
+    title: from.title,
+    // The old description already fit; a note that would not is left off.
+    description: noted.length > MAX_BODY ? from.description : noted,
+    sourceBranch: from.sourceBranch,
+    destinationBranch: from.destinationBranch,
+    clientRequestToken: randomUUID(),
+  });
+  return { kind: "reopened", from, pr };
 }

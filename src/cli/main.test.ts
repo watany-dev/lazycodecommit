@@ -877,6 +877,47 @@ describe("pr close", () => {
   });
 });
 
+describe("pr reopen", () => {
+  const closedPr = pullRequest({ id: "6", status: "CLOSED", title: "Fix it" });
+
+  it("opens a new PR from the closed one's branches", async () => {
+    const api = fakeApi([closedPr]);
+    const r = await cli(["pr", "reopen", "6"], { api });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")).toEqual([
+      "Opened #42 Fix it from the branches of #6 (CodeCommit cannot reopen a closed pull request)",
+      expect.stringContaining("/pull-requests/42/details"),
+    ]);
+    expect(api.created).toHaveLength(1);
+    const j = await cli(["pr", "reopen", "6", "--json"], { api: fakeApi([closedPr]) });
+    expect(json(j.out)).toMatchObject({ reopenedFrom: "6", id: "42", status: "OPEN" });
+  });
+
+  it("exits 1 and points at an open PR from the same branches", async () => {
+    const api = fakeApi([closedPr, pullRequest({ id: "7", title: "Again" })]);
+    const r = await cli(["pr", "reopen", "6"], { api });
+    expect(r.code).toBe(1);
+    expect(r.out).toBe("");
+    expect(r.err).toContain("A pull request from topic into main is already open: #7 Again");
+    expect(r.err).toContain("/pull-requests/7/details");
+    const j = await cli(["pr", "reopen", "6", "--json"], { api });
+    expect(j.code).toBe(1);
+    expect(json(j.out)).toMatchObject({ existing: true, id: "7" });
+    expect(api.created).toEqual([]);
+  });
+
+  it("needs an id", async () => {
+    const r = await cli(["pr", "reopen"], { api: fakeApi([closedPr]) });
+    expect(r).toMatchObject({ code: 2 });
+    expect(r.err).toContain("pr reopen needs a pull request id");
+  });
+
+  it("refuses an open PR with exit 1", async () => {
+    const r = await cli(["pr", "reopen", "1"], { api: fakeApi([pullRequest()]) });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: #1 is already open." });
+  });
+});
+
 describe("writes to a PR that is no longer open", () => {
   it.each([[["pr", "approve", "6"]], [["pr", "merge", "6", "--ff"]], [["pr", "close", "6"]]])(
     "%j refuses a merged PR without calling AWS",

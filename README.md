@@ -14,7 +14,7 @@ lazygit. The command is `lazycc`. It is the successor to
 
 - Open a pull request from the branch you are on, pushing it first if needed:
   `lazycc pr create --fill --push`
-- List, view, check out, comment on, approve, merge and close pull requests
+- List, view, check out, comment on, approve, merge, close and reopen pull requests
   from the command line, with `--json` for scripts
 - An inbox across repositories: PRs awaiting your approval and your own open
   PRs, with unread markers (`lazycc`, or `lazycc status` as text)
@@ -146,6 +146,7 @@ is optional, the current branch's open PR is used.
 | `lazycc pr approve [<id>]` | Approve; `--revoke` takes the approval back |
 | `lazycc pr merge [<id>]` | Merge with one of `--ff`, `--squash`, `--three-way`, or without a flag by the config's `pr.mergeOption`. Refuses if the source branch moved since the PR was read |
 | `lazycc pr close [<id>]` | Close without merging |
+| `lazycc pr reopen <id>` | Open a new PR from a closed one's branches, title and description. CodeCommit cannot set a closed PR back to open, so the new PR has a new id and none of the old comments or approvals. Exits 1 if one from the same branches is already open |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc browse [<repo>]` | Read a repository's tree and files through the API, no clone needed. `--ref` picks a branch or a full 40-character commit ID (default: the default branch), `--path` where to start. On a terminal it opens the browse screen; otherwise it prints the folder listing or the file |
 | `lazycc clone <repo> [<dir>]` | Clone by name. `--protocol https\|ssh\|grc` (default `https`; `grc` is [git-remote-codecommit](https://github.com/aws/git-remote-codecommit)). Flags after `--` go to `git clone` |
@@ -248,7 +249,7 @@ opens on that picker.
   review-codecommit. `n`/`N` move between files, `f` or `Ctrl+g` lists them,
   `c` comments on the PR, `C` on the cursor line, `R` replies, `a` approves,
   `m` or `M` merges (opening on the
-  config's `pr.mergeOption`), `x` closes, `A` shows the activity. In a comment
+  config's `pr.mergeOption`), `x` closes (on a closed PR, opens a new one from its branches), `A` shows the activity. In a comment
   box `Enter` posts and `Tab` keeps a draft; `D` lists the drafts and `S`
   there posts them all. With the config's `ci`, the CodeBuild and CodePipeline
   results of the PR's commit show in the header. Inside a clone the diff comes

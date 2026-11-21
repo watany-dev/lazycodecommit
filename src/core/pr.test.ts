@@ -16,6 +16,7 @@ import {
   listPullRequests,
   type PrDeps,
   pullRequestStatus,
+  reopenPullRequest,
   resolvePullRequest,
 } from "./pr.js";
 
@@ -637,6 +638,82 @@ describe("checkoutPullRequest", () => {
     await expect(checkoutPullRequest("9", deps({ ctx: OUTSIDE }).d)).rejects.toHaveProperty(
       "message",
       "pr checkout works inside a clone of the repository",
+    );
+  });
+});
+
+const closedPr = (over: Parameters<typeof pullRequest>[0] = {}) =>
+  pullRequest({ id: "6", status: "CLOSED", title: "Fix it", description: "Why.", ...over });
+
+describe("reopenPullRequest", () => {
+  it("opens a new PR from the closed one's branches, title and description", async () => {
+    const api = fakeApi([closedPr()]);
+    const r = await reopenPullRequest("6", deps({ api, ctx: OUTSIDE }).d);
+    expect(r).toMatchObject({ kind: "reopened", from: { id: "6" }, pr: { id: "42" } });
+    expect(api.created).toEqual([
+      {
+        repository: "demo",
+        title: "Fix it",
+        description: "Why.\n\nReopened from #6.",
+        sourceBranch: "topic",
+        destinationBranch: "main",
+        clientRequestToken: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      },
+    ]);
+  });
+
+  it("notes the old PR alone when it had no description", async () => {
+    const api = fakeApi([closedPr({ description: "" })]);
+    await reopenPullRequest("6", deps({ api }).d);
+    expect(api.created[0]?.description).toBe("Reopened from #6.");
+  });
+
+  it("keeps a description too long for the note as it was", async () => {
+    const description = "x".repeat(10_235);
+    const api = fakeApi([closedPr({ description })]);
+    await reopenPullRequest("6", deps({ api }).d);
+    expect(api.created[0]?.description).toBe(description);
+  });
+
+  it("answers the open PR from the same branches instead of opening another", async () => {
+    const open = pullRequest({ id: "7" });
+    const api = fakeApi([closedPr(), open]);
+    const r = await reopenPullRequest("6", deps({ api }).d);
+    expect(r).toMatchObject({ kind: "exists", from: { id: "6" }, pr: { id: "7" } });
+    expect(api.created).toEqual([]);
+  });
+
+  it("opens one when the open PR from the branch goes into another branch", async () => {
+    const api = fakeApi([closedPr(), pullRequest({ id: "7", destinationBranch: "release" })]);
+    expect((await reopenPullRequest("6", deps({ api }).d)).kind).toBe("reopened");
+  });
+
+  it.each([
+    [{ status: "OPEN" as const }, "#6 is already open."],
+    [{ isMerged: true }, "#6 is merged, and a merged pull request cannot be reopened."],
+  ])("refuses %j without opening a PR", async (over, message) => {
+    const api = fakeApi([closedPr(over)]);
+    const err = await reopenPullRequest("6", deps({ api }).d).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UserError);
+    expect(err).toHaveProperty("message", message);
+    expect(api.created).toEqual([]);
+  });
+
+  it.each([
+    [{ sourceBranch: "missing" }, "source branch missing"],
+    [{ destinationBranch: "missing" }, "destination branch missing"],
+  ])("refuses when a branch is gone: %j", async (over, what) => {
+    const api = fakeApi([closedPr(over)]);
+    await expect(reopenPullRequest("6", deps({ api }).d)).rejects.toThrow(
+      `#6's ${what} no longer exists in demo. Push it again, then retry.`,
+    );
+    expect(api.created).toEqual([]);
+  });
+
+  it("refuses a PR from another repository", async () => {
+    const api = fakeApi([closedPr({ repository: "other" })]);
+    await expect(reopenPullRequest("6", deps({ api }).d)).rejects.toThrow(
+      "#6 belongs to other, not demo. Pass --repo other.",
     );
   });
 });

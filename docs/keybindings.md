@@ -151,7 +151,7 @@ Pull request:
 | --- | --- |
 | `a` / `r` | Approve / revoke approval (asks to confirm) |
 | `m` / `M` | Merge: pick fast-forward, squash or three-way |
-| `x` | Close without merging |
+| `x` | Close without merging. On a closed PR, open a new one from its branches (CodeCommit cannot reopen a PR); nothing on a merged PR |
 | `A` | Activity timeline |
 
 Confirmation prompts take `Enter` or `y` to go ahead, `Esc` or `n` to cancel.
