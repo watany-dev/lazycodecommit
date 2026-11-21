@@ -159,7 +159,6 @@ function commitDate(date: string | undefined): Date {
 /** The most commits the review screen lists for one PR. */
 export const MAX_COMMITS = 100;
 
-/** Aggregated reaction information for a single comment */
 export interface ReactionSummary {
   emoji: string;
   shortCode: string;
@@ -167,10 +166,8 @@ export interface ReactionSummary {
   userArns: string[];
 }
 
-/** commentId → ReactionSummary[] mapping */
 export type ReactionsByComment = Map<string, ReactionSummary[]>;
 
-/** PR アクティビティイベントの表示用データ */
 export interface PrActivityEvent {
   eventDate: Date;
   eventType: string;

@@ -247,7 +247,6 @@ describe("PullRequestList", () => {
     it("shows no badge for open PRs", () => {
       const { lastFrame } = render(<PullRequestList {...defaultProps} />);
       const output = lastFrame() ?? "";
-      // Open PRs should not have CLOSED or MERGED badge
       const lines = output.split("\n");
       const prLine = lines.find((l: string) => l.includes("#42"));
       expect(prLine).not.toContain("CLOSED");

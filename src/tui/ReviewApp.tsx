@@ -621,7 +621,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: approvals
       const revisionId = detail.pullRequest.revisionId;
       if (revisionId) void reloadApprovals(pullRequestId, revisionId, loadId);
 
@@ -636,7 +635,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: reactions
       void reloadReactions(detail.commentThreads, loadId);
     });
   }
