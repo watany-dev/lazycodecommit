@@ -440,6 +440,12 @@ export function startMockServer(gitRoot) {
     },
     UpdatePullRequestStatus({ pullRequestId, pullRequestStatus }, c) {
       const pr = prOf(pullRequestId);
+      // CodeCommit's API reference: a closed PR cannot be set back to OPEN.
+      if (pr.pullRequestStatus === "CLOSED" && pullRequestStatus === "OPEN")
+        throw new ApiError(
+          "InvalidPullRequestStatusUpdateException",
+          "The only valid update is from OPEN to CLOSED.",
+        );
       pr.pullRequestStatus = pullRequestStatus;
       touch(pr, "PULL_REQUEST_STATUS_CHANGED", c.caller.arn);
       return { pullRequest: view(pr) };
