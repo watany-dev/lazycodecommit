@@ -446,7 +446,6 @@ export function alreadyOpen(pr: PullRequest): string {
 export interface ReopenResult {
   /** "exists": an open PR from the same branches was found, and none was opened. */
   readonly kind: "reopened" | "exists";
-  readonly from: PullRequest;
   readonly pr: PullRequest;
 }
 
@@ -463,7 +462,7 @@ export async function reopenPullRequest(
   if (from.isMerged)
     throw new UserError(`#${id} is merged, and a merged pull request cannot be reopened.`);
   const existing = await findOpenPullRequest(deps, from.sourceBranch, from.destinationBranch);
-  if (existing) return { kind: "exists", from, pr: existing };
+  if (existing) return { kind: "exists", pr: existing };
   for (const [what, branch] of [
     ["source", from.sourceBranch],
     ["destination", from.destinationBranch],
@@ -485,5 +484,5 @@ export async function reopenPullRequest(
     destinationBranch: from.destinationBranch,
     clientRequestToken: randomUUID(),
   });
-  return { kind: "reopened", from, pr };
+  return { kind: "reopened", pr };
 }

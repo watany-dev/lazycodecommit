@@ -2924,6 +2924,33 @@ describe("App", () => {
       expect(lastFrame()).not.toContain("Open a new one");
     });
 
+    it("reads the list again on the way back, which now holds the new PR", async () => {
+      reopen.mockResolvedValue("43");
+      const summary = (pullRequestId: string) => ({
+        pullRequestId,
+        title: `PR ${pullRequestId} title`,
+        authorArn: "arn:aws:iam::123456789012:user/watany",
+        creationDate: new Date("2026-02-13T10:00:00Z"),
+        status: "OPEN" as const,
+      });
+      vi.mocked(listPullRequests)
+        .mockResolvedValueOnce({ pullRequests: [summary("42")] })
+        .mockResolvedValue({ pullRequests: [summary("43")] });
+      const { lastFrame, stdin } = render(
+        <App service={withReopen} repository="my-service" start={null} />,
+      );
+      await vi.waitFor(() => expect(lastFrame()).toContain("PR 42 title"));
+      stdin.write("\r");
+      await vi.waitFor(() => expect(lastFrame()).toContain("x reopen"));
+      stdin.write("x");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Open a new one"));
+      stdin.write("y");
+      await vi.waitFor(() => expect(lastFrame()).toContain("x close"));
+      stdin.write("\u001b");
+      await vi.waitFor(() => expect(lastFrame()).toContain("PR 43 title"));
+      expect(listPullRequests).toHaveBeenCalledTimes(2);
+    });
+
     it("shows why no PR was opened", async () => {
       reopen.mockRejectedValue(
         new Error("A pull request from topic into main is already open: #7 Again"),

@@ -601,17 +601,18 @@ async function runCommand(
       return 0;
     }
     case "pr reopen": {
-      const { kind, from, pr } = await reopenPullRequest(positionals[0] as string, prDeps);
+      const from = positionals[0] as string;
+      const { kind, pr } = await reopenPullRequest(from, prDeps);
       if (kind === "exists") {
         if (json) print({ existing: true, ...(await viewJson(pr)) });
         io.err(alreadyOpen(pr));
         if (!json) io.err(consoleUrl(region, pr.repository, pr.id));
         return 1;
       }
-      if (json) print({ reopenedFrom: from.id, ...(await viewJson(pr)) });
+      if (json) print({ reopenedFrom: from, ...(await viewJson(pr)) });
       else
         done(
-          `Opened #${pr.id} ${printable(pr.title)} from the branches of #${from.id} (CodeCommit cannot reopen a closed pull request)`,
+          `Opened #${pr.id} ${printable(pr.title)} from the branches of #${from} (CodeCommit cannot reopen a closed pull request)`,
           pr,
         );
       return 0;

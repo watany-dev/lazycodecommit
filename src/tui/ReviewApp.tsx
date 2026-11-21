@@ -346,10 +346,13 @@ export function App({ service, repository, start, onExit }: AppProps) {
     (err) => formatErrorMessage(err, "close"),
   );
 
+  /** A reopen added a PR the list has not read: read it again on the way back. */
+  const listStaleRef = useRef(false);
   const reopenAction = useAsyncAction(
     async () => {
       if (!prDetail?.pullRequestId || !service.reopenPullRequest) return;
       const id = await service.reopenPullRequest(prDetail.pullRequestId, selectedRepo);
+      listStaleRef.current = true;
       await loadPullRequestDetail(id);
     },
     (err) => formatErrorMessage(err),
@@ -780,8 +783,14 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   /** Esc. At the top (lazycc pr view or pr list on its own) it stays, as in lazygit: q quits. */
   function handleBack() {
-    if (screen === "detail" && hasList) setScreen("prs");
-    else onExit?.();
+    if (screen === "detail" && hasList) {
+      setScreen("prs");
+      if (listStaleRef.current) {
+        listStaleRef.current = false;
+        setPagination(createInitialPagination());
+        void loadPullRequests(repository, statusFilter);
+      }
+    } else onExit?.();
   }
 
   /**

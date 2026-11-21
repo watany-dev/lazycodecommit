@@ -92,9 +92,7 @@ export async function reopenById(
   api: CodeCommitApi,
 ): Promise<string> {
   const { kind, pr } = await reopenPullRequest(id, { api, ctx: { repository }, config: {} });
-  if (kind === "exists") {
-    throw new UserError(alreadyOpen(pr));
-  }
+  if (kind === "exists") throw new UserError(alreadyOpen(pr));
   return pr.id;
 }
 

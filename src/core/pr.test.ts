@@ -649,7 +649,7 @@ describe("reopenPullRequest", () => {
   it("opens a new PR from the closed one's branches, title and description", async () => {
     const api = fakeApi([closedPr()]);
     const r = await reopenPullRequest("6", deps({ api, ctx: OUTSIDE }).d);
-    expect(r).toMatchObject({ kind: "reopened", from: { id: "6" }, pr: { id: "42" } });
+    expect(r).toMatchObject({ kind: "reopened", pr: { id: "42" } });
     expect(api.created).toEqual([
       {
         repository: "demo",
@@ -679,7 +679,7 @@ describe("reopenPullRequest", () => {
     const open = pullRequest({ id: "7" });
     const api = fakeApi([closedPr(), open]);
     const r = await reopenPullRequest("6", deps({ api }).d);
-    expect(r).toMatchObject({ kind: "exists", from: { id: "6" }, pr: { id: "7" } });
+    expect(r).toMatchObject({ kind: "exists", pr: { id: "7" } });
     expect(api.created).toEqual([]);
   });
 
