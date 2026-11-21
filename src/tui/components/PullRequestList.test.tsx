@@ -154,7 +154,6 @@ describe("PullRequestList", () => {
     expect(lastFrame()).toContain("#42");
   });
 
-  // Status filter tests
   describe("status filter", () => {
     it("shows current filter as highlighted", () => {
       const { lastFrame } = render(<PullRequestList {...defaultProps} statusFilter="OPEN" />);
@@ -247,7 +246,6 @@ describe("PullRequestList", () => {
     it("shows no badge for open PRs", () => {
       const { lastFrame } = render(<PullRequestList {...defaultProps} />);
       const output = lastFrame() ?? "";
-      // Open PRs should not have CLOSED or MERGED badge
       const lines = output.split("\n");
       const prLine = lines.find((l: string) => l.includes("#42"));
       expect(prLine).not.toContain("CLOSED");
@@ -260,7 +258,6 @@ describe("PullRequestList", () => {
     });
   });
 
-  // Search tests
   describe("search", () => {
     it("enters search mode on / key", async () => {
       const { lastFrame, stdin } = render(<PullRequestList {...defaultProps} />);
@@ -371,7 +368,6 @@ describe("PullRequestList", () => {
     });
   });
 
-  // Pagination tests
   describe("pagination", () => {
     it("shows page number", () => {
       const { lastFrame } = render(<PullRequestList {...defaultProps} />);

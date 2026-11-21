@@ -451,10 +451,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
     });
   }
 
-  /**
-   * Wrapper for async operations with automatic loading/error state management.
-   * Eliminates repetitive try-catch-finally patterns.
-   */
   async function withLoadingState<T>(
     operation: () => Promise<T>,
     onError?: (err: unknown) => void,
@@ -621,7 +617,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: approvals
       const revisionId = detail.pullRequest.revisionId;
       if (revisionId) void reloadApprovals(pullRequestId, revisionId, loadId);
 
@@ -636,7 +631,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: reactions
       void reloadReactions(detail.commentThreads, loadId);
     });
   }
