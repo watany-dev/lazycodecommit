@@ -143,15 +143,60 @@ export async function deleteRemoteBranch(row: BranchRow, deps: BranchDeps): Prom
       `${row.name} has moved since it was listed (now ${tip.slice(0, 7)}). Refresh and try again.`,
     );
   }
+  await refuseOpen(row.name, deps);
+  await deleteAndDrop(row.name, deps);
+}
+
+/**
+ * `lazycc branch delete`: the same refusals as the table's d, read now. The
+ * question names the tip, which is read again after the answer, so commits
+ * pushed while it was open are never dropped.
+ */
+export async function deleteBranchByName(
+  name: string,
+  deps: BranchDeps & { readonly confirm?: (question: string) => Promise<boolean> },
+): Promise<{ readonly tip: string }> {
+  const { api, ctx } = deps;
+  const [defaultBranch, tip] = await Promise.all([
+    api.defaultBranch(ctx.repository),
+    api.branchCommit(ctx.repository, name),
+  ]);
+  if (tip === undefined) throw new UserError(`${ctx.repository} has no branch named ${name}.`);
+  if (name === defaultBranch) throw new UserError(`${name} is the default branch.`);
+  await refuseOpen(name, deps);
+  if (deps.confirm) {
+    const question = `Delete ${name} (${tip.slice(0, 7)}) on CodeCommit?`;
+    if (!(await deps.confirm(question)))
+      throw new UserError("Aborted: the branch was not deleted.");
+    const now = await api.branchCommit(ctx.repository, name);
+    if (now !== tip) {
+      throw new UserError(
+        now === undefined
+          ? `${name} no longer exists on CodeCommit.`
+          : `${name} has moved since the question (now ${now.slice(0, 7)}). Run it again.`,
+      );
+    }
+    // A PR opened from it while the question was open, with no new commit.
+    await refuseOpen(name, deps);
+  }
+  await deleteAndDrop(name, deps);
+  return { tip };
+}
+
+async function refuseOpen(name: string, deps: BranchDeps): Promise<void> {
   const open = await listPullRequests({ state: "OPEN", limit: OPEN_SCAN_LIMIT }, deps);
-  const pr = open.find((p) => p.sourceBranch === row.name);
-  if (pr) throw new UserError(`${row.name} has an open pull request (#${pr.id}).`);
-  await api.deleteBranch(ctx.repository, row.name);
-  if (deps.ctx.clone) {
+  const pr = open.find((p) => p.sourceBranch === name);
+  if (pr) throw new UserError(`${name} has an open pull request (#${pr.id}).`);
+}
+
+async function deleteAndDrop(name: string, deps: BranchDeps): Promise<void> {
+  const { api, ctx } = deps;
+  await api.deleteBranch(ctx.repository, name);
+  if (ctx.clone) {
     // Drop origin/<branch> too, or the table keeps showing it: a single-branch
     // clone's fetch --prune never touches a ref pr checkout fetched outside its
     // refspec. Best effort: the branch is already gone.
-    await deps.git.dropRemoteBranch(row.name).catch(() => undefined);
+    await deps.git.dropRemoteBranch(name).catch(() => undefined);
   }
 }
 

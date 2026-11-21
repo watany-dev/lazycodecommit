@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { fakeApi, fakeGit, fakeState, pullRequest } from "../testing/fakes.js";
+import { fakeApi, fakeGit, fakeReviewApi, fakeState, pullRequest } from "../testing/fakes.js";
 import { type Deps, run } from "./main.js";
 
 const prs = [
@@ -24,6 +24,7 @@ function deps(interactive: boolean, out: string[], err: string[]): Deps {
     },
     createGit: () => fakeGit(),
     createApi: async () => fakeApi(prs),
+    createReviewApi: async () => fakeReviewApi(),
     createCiApi: async () => ({ recentBuilds: async () => [], recentExecutions: async () => [] }),
     loadConfig: async () => ({}),
     createState: () => fakeState(),

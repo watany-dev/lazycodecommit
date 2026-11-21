@@ -22,11 +22,14 @@ permission.
 | `pr status` | `ListPullRequests`, `GetPullRequest`, `GetPullRequestApprovalStates`, `EvaluatePullRequestApprovalRules`, `GetMergeConflicts` |
 | `pr create` | `GetRepository` (without `--base`), `ListPullRequests`, `GetPullRequest`, `CreatePullRequest`; `GitPush` when it pushes; `GetBranch` outside a clone, or when the branch has no local copy |
 | `pr checkout` | `GetPullRequest`, `GitPull` |
-| `pr comment` | `GetPullRequest` (`ListPullRequests` without an id), `PostCommentForPullRequest` |
+| `pr view --comments` | `pr view`'s, and `GetCommentsForPullRequest` |
+| `pr comment` | `GetPullRequest` (`ListPullRequests` without an id), `PostCommentForPullRequest`; with `--reply-to`, `--edit` or `--delete`, `GetCommentsForPullRequest` and one of `PostCommentReply`, `UpdateComment`, `DeleteCommentContent` |
+| `pr drafts` | `GetPullRequest` (`ListPullRequests` without an id); `--submit` adds `GetDifferences`, `GetBlob` (outside a clone, or when git cannot read them), `PostCommentForPullRequest`, `PostCommentReply` |
 | `pr approve` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestApprovalState` |
 | `pr merge` | `GetPullRequest` (`ListPullRequests` without an id), one of `MergePullRequestByFastForward`, `MergePullRequestBySquash`, `MergePullRequestByThreeWay` |
 | `pr close` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestStatus` |
 | `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `R` runs `git fetch`, which needs `GitPull` |
+| `branch delete` | `GetRepository`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `DeleteBranch` |
 | `browse` | `GetFolder`, `GetFile`, `ListBranches` (the `b` ref picker), `GetRepository` (without `--ref`) |
 | `clone` | `GetRepository`, `GitPull` |
 | CI results in `pr view`, `pr status`, the review screen and the home screen, only for repositories listed under `ci` in the config | `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codepipeline:ListPipelineExecutions`. The result is informational; see [CI results](configuration.md#ci-results) for who can influence it |

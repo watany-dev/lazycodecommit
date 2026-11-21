@@ -4,6 +4,7 @@ import type {
   NewPullRequest,
   PullRequest,
 } from "../aws/codecommit.js";
+import type { CommentThread, ReviewApi } from "../aws/review.js";
 import type { Commit, Git } from "../git/git.js";
 import type { LocalState } from "../state/local.js";
 
@@ -175,4 +176,50 @@ export function fakeState(): FakeState {
       set: async (k, v) => void sections.set(k, JSON.parse(JSON.stringify(v))),
     },
   };
+}
+
+export interface FakeReviewApi extends ReviewApi {
+  /** Every write, in order: "comment 6 LGTM", "reply k1 Thanks", "edit k1 Fixed", "delete k1"... */
+  readonly writes: string[];
+}
+
+/**
+ * The review screen's calls for the CLI's comment and draft commands: `threads`
+ * are every PR's comments, `blobs` the file contents by blob id. Calls the
+ * commands never make are left out.
+ */
+export function fakeReviewApi(
+  threads: CommentThread[] = [],
+  overrides: Partial<ReviewApi> = {},
+  blobs: Record<string, string> = {},
+): FakeReviewApi {
+  const writes: string[] = [];
+  let next = 0;
+  const posted = () => ({ commentId: `n${++next}` });
+  const api: Partial<FakeReviewApi> = {
+    writes,
+    getComments: async () => threads,
+    postComment: async (p) => {
+      const at = p.location
+        ? ` ${p.location.filePath}:${p.location.filePosition}:${p.location.relativeFileVersion}`
+        : "";
+      writes.push(`comment ${p.pullRequestId}${at} ${p.content}`);
+      return posted();
+    },
+    postCommentReply: async (p) => {
+      writes.push(`reply ${p.inReplyTo} ${p.content}`);
+      return posted();
+    },
+    updateComment: async (p) => {
+      writes.push(`edit ${p.commentId} ${p.content}`);
+      return { commentId: p.commentId };
+    },
+    deleteComment: async (p) => {
+      writes.push(`delete ${p.commentId}`);
+      return { commentId: p.commentId };
+    },
+    getBlobContent: async (_repo, blobId) => new TextEncoder().encode(blobs[blobId] ?? ""),
+    ...overrides,
+  };
+  return api as FakeReviewApi;
 }

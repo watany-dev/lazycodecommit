@@ -56,14 +56,16 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc status | ホームと同じ内容をテキストで出す | 可 |
 | lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
 | lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30)。-L N は作成が新しい N 件を、最終更新の新しい順に並べて出す(gh pr list と同じく作成順で絞る) | 可 |
-| lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
+| lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR。--comments でコメントのスレッドをコメント ID 付きで出す(端末でも TUI を開かずに出す) | ID 指定で可 |
 | lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
-| lazycc pr comment [id] | PR にコメントする。本文は -b、-F、端末ではエディタ。閉じた PR にもコメントできる | ID 指定で可 |
+| lazycc pr comment [id] | PR にコメントする。本文は -b、-F、端末ではエディタ。閉じた PR にもコメントできる。--path と --line で行にコメントする(既定は変更後の行、--before で変更前の行)。--reply-to で返信、--edit で編集(エディタは元の本文から始める)、--delete で削除する。削除は端末では確認し、--yes で確認を省く | ID 指定で可 |
+| lazycc pr drafts [id] | レビュー画面で保存したコメントの下書きを一覧する。--submit で S と同じく投稿する | ID 指定で可 |
 | lazycc pr approve [id] | 承認する。--revoke で取り消す | ID 指定で可 |
 | lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つで指定する。省略したときは設定の pr.mergeOption を使い、それもなければエラーにする。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
 | lazycc pr close [id] | マージせずに閉じる | ID 指定で可 |
 | lazycc branch | ブランチ×PR 対応表を開く | 可 |
+| lazycc branch delete <name> | CodeCommit 上のブランチを削除する(確認あり、--yes で省く)。ブランチ表の d と同じ条件で断る | 可 |
 | lazycc browse [repo] | clone なしでコードを読む | 可 |
 | lazycc clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
 | lazycc completion <shell> | bash、zsh、fish の補完スクリプトを出す | 可 |
@@ -84,6 +86,9 @@ git が知らないことだけを扱い、git でできることは git に任�
 - 終了コードは 0 が成功、1 が実行時エラー、2 が引数の誤り。
 - 読み手が途中でパイプを閉じたとき(lazycc pr list | head -1 など)は、何も出さずに終了コード 0 で終わる。
 - pr comment、approve、merge、close の ID 省略時は、pr view と同じく現在のブランチの PR を対象にする。approve、merge、close はマージ済みや閉じた PR には API を呼ばずに終了コード 1 で断る。
+- pr comment の --reply-to、--edit、--delete に渡すコメント ID は、対象の PR のコメントでなければ書き込まずに終了コード 1 で断る。別の PR の ID を貼り間違えても、その PR に書き込まないため。ID は pr view --comments で出す。
+- 確認を出す操作(pr comment --delete、branch delete)は、端末でなければ --yes がないと API を呼ばずに終了コード 2 で断る。
+- pr drafts --submit は、途中で拒否されて止まったときと、行がずれた下書きを残したときに終了コード 1 で終わる。残った下書きは TUI の下書き一覧(D)で直す。
 
 ### リポジトリの推定
 
@@ -193,6 +198,7 @@ clone 内ではリモート追跡ブランチの情報を使う。R で git fetc
 - 削除は DeleteBranch API で行い、ローカルブランチには触れない。
 - デフォルトブランチと、OPEN の PR があるブランチは削除できない。
 - 削除の直前にブランチ先端と OPEN の PR を読み直す。表を読んだ後に先端が動いていたり PR が開かれていたりしたら、削除せずに再読み込みを促す。見ていないコミットや PR のソースを消さないため。
+- lazycc branch delete <name> は同じ条件で断る。確認の文に先端のコミットを出し、答えた後に先端と OPEN の PR を読み直して、先端が動いていたり PR が開かれていたりしたら削除しない。
 - 非 TTY や --json 指定時は、同じ表をテキストか JSON で出す。
 
 ## ホーム(受信箱)
@@ -292,6 +298,7 @@ lazycc browse は、clone していないリポジトリのツリーとファイ
 - c / C / R の入力欄で Enter は即時投稿、Tab は下書きとして保存する。
 - 入力欄は 10240 文字（JS の文字列長、UTF-16 単位）まで。貼り付けが上限を超えたら入る分だけ残し、切ったことを表示する。CodeCommit が何で数えるかは realcheck の comment.limit で確かめる(#99)。
 - D で下書きの一覧を開く。Enter で該当行に移る、e で編集、d で破棄(確認あり)、S でまとめて投稿(確認あり)。
+- lazycc pr drafts は同じ下書きを一覧し、--submit で S と同じ手順で投稿する。--submit 自体が明示の指示なので確認は出さない。編集と破棄は TUI だけで行う。
 - 下書きごとに clientRequestToken を持ち、内容・コミット・位置・返信先が変わらない限り同じトークンで送る。再試行で二重に投稿しない。
 - 成功した下書きはその場で消す。最初の失敗で止め、残りは下書きのまま残す。応答が来ず届いたか不明な下書きは、再試行するまで編集できない。
 - 投稿の直前に PR を読み直す。先端が進んでいたら、インライン下書きのうち記録した行の文字列が同じ行にないものを「行がずれた」として投稿から外す。一般コメントと返信は新しい先端に投稿する。

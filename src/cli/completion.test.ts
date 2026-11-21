@@ -13,6 +13,9 @@ const commands = {
   },
   clone: { protocol: { type: "string" } },
   completion: { title: { type: "string" } },
+  // A command of its own that also takes a verb.
+  branch: { json: { type: "boolean" } },
+  "branch delete": { yes: { type: "boolean", short: "y" } },
 } as const;
 
 /** What bash offers for `line` (the cursor at its end), using the generated script. */
@@ -28,9 +31,24 @@ _lazycc; printf '%s\\n' "\${COMPREPLY[@]}"`;
 
 describe("bash completion", () => {
   it("offers nouns, then pr verbs", () => {
-    expect(bash("lazycc ")).toEqual(["pr", "status", "clone", "completion", "--help", "--version"]);
+    expect(bash("lazycc ")).toEqual([
+      "pr",
+      "status",
+      "clone",
+      "completion",
+      "branch",
+      "--help",
+      "--version",
+    ]);
     expect(bash("lazycc c")).toEqual(["clone", "completion"]);
     expect(bash("lazycc pr ")).toEqual(["list", "comment"]);
+  });
+
+  it("offers branch's verb, its own flags, and the verb's flags after it", () => {
+    expect(bash("lazycc branch ")).toEqual(["delete"]);
+    expect(bash("lazycc branch --")).toEqual(["--json"]);
+    expect(bash("lazycc branch delete --")).toEqual(["--yes"]);
+    expect(bash("lazycc branch delete old -")).toEqual(["--yes", "-y"]);
   });
 
   it("offers bare lazycc's flags, which are status's", () => {
@@ -66,7 +84,7 @@ describe("other shells", () => {
   it("describes every command, flag and value to fish", () => {
     const fish = completionScript("fish", commands);
     expect(fish).toContain(
-      "complete -c lazycc -n '__fish_use_subcommand' -a 'pr status clone completion'",
+      "complete -c lazycc -n '__fish_use_subcommand' -a 'pr status clone completion branch'",
     );
     for (const flag of ["-l help -s h", "-l version -s v", "-l repo -s R -x", "-l json"])
       expect(fish).toContain(`complete -c lazycc -n '__fish_use_subcommand' ${flag}\n`);
@@ -78,6 +96,15 @@ describe("other shells", () => {
     );
     expect(fish).toContain(
       "complete -c lazycc -n '__fish_seen_subcommand_from pr; and __fish_seen_subcommand_from comment' -l body-file -s F -r -F",
+    );
+    expect(fish).toContain(
+      "complete -c lazycc -n '__fish_seen_subcommand_from branch; and not __fish_seen_subcommand_from delete' -a 'delete'",
+    );
+    expect(fish).toContain(
+      "complete -c lazycc -n '__fish_seen_subcommand_from branch; and not __fish_seen_subcommand_from delete' -l json\n",
+    );
+    expect(fish).toContain(
+      "complete -c lazycc -n '__fish_seen_subcommand_from branch; and __fish_seen_subcommand_from delete' -l yes -s y\n",
     );
     expect(fish).toContain("complete -c lazycodecommit -w lazycc");
     expect(fish.split("\n")[0]).toBe("complete -c lazycc -f");
