@@ -231,7 +231,8 @@ opens on that picker.
 - **Home** (`lazycc`): `]`/`[` (or `Tab`) switch between "awaiting your
   approval" and "your PRs", `Enter` opens the review screen (and marks the PR
   read), `r` opens the repository picker, `/` filters, `u` shows the PR's
-  console URL. It shows the last result at once while it refreshes.
+  console URL, and `Esc` goes back from a repository picked with `Enter` to
+  the watched ones. It shows the last result at once while it refreshes.
 - **Repository picker**: `Enter` shows only that repository on the home
   screen, `w` adds it to or removes it from the watch list (saved in the
   config's `repos`), `p` opens its PR list.
