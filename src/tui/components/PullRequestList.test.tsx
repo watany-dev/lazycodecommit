@@ -536,4 +536,66 @@ describe("PullRequestList", () => {
     for (const row of rows) expect(stringWidth(row)).toBeLessThanOrEqual(80);
     expect(screen.lastFrame()).toMatch(/> #2 /);
   });
+  describe("from mutation testing", () => {
+    const third = {
+      pullRequestId: "44",
+      title: "docs: readme",
+      authorArn: "arn:aws:iam::123456789012:user/hanako",
+      creationDate: new Date("2026-02-11T10:00:00Z"),
+      status: "OPEN" as const,
+    };
+    const cursorOn = (frame: string | undefined) =>
+      frame
+        ?.split("\n")
+        .filter((l) => /^ *> #/.test(l))
+        .map((l) => /#(\d+)/.exec(l)?.[1]);
+
+    it("moves one row at a time with k and the arrows, and opens the row under the cursor", async () => {
+      const onSelect = vi.fn();
+      const screen = render(
+        <PullRequestList
+          {...defaultProps}
+          pullRequests={[...pullRequests, third]}
+          onSelect={onSelect}
+        />,
+      );
+      await press(screen.stdin, "k");
+      expect(cursorOn(screen.lastFrame())).toEqual(["42"]);
+      await press(screen.stdin, "j", "\u001B[B");
+      expect(cursorOn(screen.lastFrame())).toEqual(["44"]);
+      await press(screen.stdin, "k");
+      expect(cursorOn(screen.lastFrame())).toEqual(["43"]);
+      await press(screen.stdin, "\u001B[A");
+      expect(cursorOn(screen.lastFrame())).toEqual(["42"]);
+      await press(screen.stdin, "x");
+      expect(onSelect).not.toHaveBeenCalled();
+      await press(screen.stdin, ">", "\r");
+      expect(onSelect).toHaveBeenCalledWith("44");
+    });
+
+    it("pulls the cursor back when a search leaves fewer rows", async () => {
+      const props = { ...defaultProps, pullRequests: [...pullRequests, third] };
+      const screen = render(<PullRequestList {...props} />);
+      await press(screen.stdin, ">");
+      screen.rerender(<PullRequestList {...props} searchQuery="fix" />);
+      await vi.waitFor(() => expect(cursorOn(screen.lastFrame())).toEqual(["42"]));
+    });
+
+    it("shows prev and next on the page line only when there is such a page", () => {
+      const page = (hasPreviousPage: boolean, hasNextPage: boolean) =>
+        render(
+          <PullRequestList
+            {...defaultProps}
+            pagination={{ currentPage: 2, hasPreviousPage, hasNextPage }}
+          />,
+        )
+          .lastFrame()
+          ?.split("\n")
+          .find((l) => l.includes("Page 2"))
+          ?.trim();
+      expect(page(false, false)).toBe("Page 2");
+      expect(page(true, false)).toBe("Page 2  , prev");
+      expect(page(false, true)).toBe("Page 2  . next");
+    });
+  });
 });

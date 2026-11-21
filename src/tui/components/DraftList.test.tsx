@@ -122,3 +122,50 @@ describe("DraftList", () => {
     expect(t.lastFrame()).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 });
+
+describe("DraftList, from mutation testing", () => {
+  const third = newDraft("third one", { kind: "general" }, commits);
+  const cursorOn = (frame: string | undefined) =>
+    frame
+      ?.split("\n")
+      .filter((l) => /^ ?> /.test(l))
+      .map((l) => l.trim());
+
+  it("moves one draft at a time and stays inside the list", async () => {
+    const t = show([before, reply, third]);
+    expect(cursorOn(t.lastFrame())?.[0]).toContain("on the old side");
+    await press(t, "k");
+    expect(cursorOn(t.lastFrame())?.[0]).toContain("on the old side");
+    await press(t, "j", "\u001B[B", "j");
+    expect(cursorOn(t.lastFrame())).toHaveLength(1);
+    expect(cursorOn(t.lastFrame())?.[0]).toContain("third one");
+    await press(t, "k");
+    expect(cursorOn(t.lastFrame())?.[0]).toContain("long");
+    await press(t, "\u001B[A");
+    expect(cursorOn(t.lastFrame())?.[0]).toContain("on the old side");
+  });
+
+  it("keeps the cursor on the list when drafts go away", async () => {
+    const t = show([before, reply, third]);
+    await press(t, "j", "j");
+    t.rerender(<DraftList drafts={[before]} submit={IDLE} {...t} />);
+    await vi.waitFor(() => expect(cursorOn(t.lastFrame())?.[0]).toContain("on the old side"));
+  });
+
+  it("does not post anyway a draft that did not move, nor submit only moved drafts", async () => {
+    const moved = { ...before, problem: { kind: "moved" as const, message: "changed" } };
+    const t = show([reply, moved]);
+    await press(t, "p");
+    expect(t.onPostAnyway).not.toHaveBeenCalled();
+    const only = show([moved]);
+    await press(only, "S");
+    expect(only.lastFrame()).not.toContain("Post 0");
+    expect(only.onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("ignores keys while drafts post", async () => {
+    const t = show([before], { ...IDLE, isProcessing: true, progress: { done: 0, total: 1 } });
+    await press(t, "D");
+    expect(t.onClose).not.toHaveBeenCalled();
+  });
+});
