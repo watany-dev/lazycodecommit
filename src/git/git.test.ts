@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -282,6 +282,28 @@ describe("createGit", () => {
     ]);
     expect(await createGit(work).diffTree(head, head)).toEqual([]);
     await expect(createGit(work).diffTree("nope", head)).rejects.toBeInstanceOf(GitError);
+  });
+
+  it("writes a patch git apply takes, whatever the user's diff config says", async () => {
+    const base = sh(work, "rev-parse", "HEAD");
+    sh(work, "mv", "f.txt", "moved.txt");
+    sh(work, "commit", "-q", "-m", "move");
+    const head = sh(work, "rev-parse", "HEAD");
+    for (const [key, value] of [
+      ["color.ui", "always"],
+      ["diff.noprefix", "true"],
+      ["diff.renames", "true"],
+      ["diff.relative", "true"],
+    ] as const)
+      sh(work, "config", key, value);
+    await mkdir(join(work, "sub"));
+    const patch = await createGit(join(work, "sub")).diff(base, head);
+    expect(patch).not.toContain("\x1b");
+    expect(patch.split("\n").filter((l) => l.startsWith("diff --git"))).toEqual([
+      "diff --git a/f.txt b/f.txt",
+      "diff --git a/moved.txt b/moved.txt",
+    ]);
+    await expect(createGit(work).diff("nope", head)).rejects.toBeInstanceOf(GitError);
   });
 
   it("keeps blob ids that start or end with zeros", async () => {

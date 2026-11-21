@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { computeSimpleDiff } from "./formatDiff.js";
+import { computeSimpleDiff } from "./lineDiff.js";
 
 const lineArb = fc.array(fc.constantFrom("a", "b", "c", "d", ""), { maxLength: 12 });
 

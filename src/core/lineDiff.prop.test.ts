@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { computeSimpleDiff } from "./formatDiff.js";
+import { computeSimpleDiff } from "./lineDiff.js";
 
 // A small alphabet makes repeated and reordered lines common, which is where
 // a greedy diff can go wrong.

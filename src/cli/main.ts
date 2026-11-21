@@ -15,6 +15,7 @@ import {
   resolveAccountContext,
   resolveContext,
 } from "../core/context.js";
+import { pullRequestDiff } from "../core/diff.js";
 import { UsageError, UserError } from "../core/errors.js";
 import { type HomeActions, homeActions } from "../core/home.js";
 import {
@@ -98,6 +99,7 @@ Usage:
   lazycc pr create [-B base] [-H head] [-t title] [-b body | -F file] [--fill] [--push | --no-push] [--dry-run]
   lazycc pr list [--state open|closed] [-L limit]   the newest N created, most recently active first
   lazycc pr view [<id>]
+  lazycc pr diff [<id>]   the changes as a unified diff, from the merge base
   lazycc pr status
   lazycc pr checkout <id>
   lazycc pr comment [<id>] [-b body | -F file]
@@ -159,6 +161,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     options: { state: { type: "string", short: "s" }, limit: { type: "string", short: "L" } },
   },
   "pr view": { positionals: 1, options: {} },
+  "pr diff": { positionals: 1, options: {} },
   "pr status": { positionals: 0, options: {} },
   "pr checkout": { positionals: 1, options: {} },
   "pr comment": {
@@ -596,6 +599,13 @@ async function runCommand(
       const pr = await closePullRequest(positionals[0], prDeps);
       if (json) print(prJson(pr, region));
       else done(`Closed #${pr.id} ${printable(pr.title)}`, pr);
+      return 0;
+    }
+    case "pr diff": {
+      const pr = await resolvePullRequest(positionals[0], prDeps);
+      const diff = await pullRequestDiff(pr, { api, ...(ctx.clone ? { git } : {}) });
+      if (json) print({ pullRequest: prJson(pr, region), diff });
+      else if (diff) io.out(diff.replace(/\n$/, ""));
       return 0;
     }
     case "pr view": {

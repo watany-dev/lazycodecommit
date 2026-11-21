@@ -443,6 +443,82 @@ describe("pr view", () => {
   });
 });
 
+describe("pr diff", () => {
+  const changed = {
+    differences: async () => [{ path: "a.txt", before: { id: "b1", mode: "100644" } }],
+    blob: async () => new TextEncoder().encode("gone\x1b[31m\n"),
+  };
+
+  it("prints git's diff of the current branch's PR inside the clone", async () => {
+    const api = fakeApi([pullRequest({ id: "3", mergeBase: "mb", sourceCommit: "s3" })]);
+    const asked: string[] = [];
+    const r = await cli(["pr", "diff"], {
+      api,
+      git: {
+        diff: async (before, after) => {
+          asked.push(`${before}..${after}`);
+          return "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
+        },
+      },
+    });
+    expect(r.code).toBe(0);
+    expect(asked).toEqual(["mb..s3"]);
+    expect(r.out).toBe("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b");
+  });
+
+  it("builds the diff from the API outside a clone, with control characters made visible", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })], changed);
+    const r = await cli(["pr", "diff", "3", "-R", "demo"], {
+      api,
+      git: { topLevel: async () => null },
+    });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")).toEqual([
+      "diff --git a/a.txt b/a.txt",
+      "deleted file mode 100644",
+      "--- a/a.txt",
+      "+++ /dev/null",
+      "@@ -1 +0,0 @@",
+      "-gone^[[31m",
+    ]);
+  });
+
+  it("prints nothing for a PR without changes", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })], { differences: async () => [] });
+    const r = await cli(["pr", "diff", "3", "-R", "demo"], {
+      api,
+      git: { topLevel: async () => null },
+    });
+    expect(r).toMatchObject({ code: 0, out: "" });
+  });
+
+  it("prints the PR and the diff, exact, as JSON", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })], changed);
+    const r = await cli(["pr", "diff", "3", "-R", "demo", "--json"], {
+      api,
+      git: { topLevel: async () => null },
+    });
+    const value = json(r.out) as { pullRequest: { id: string }; diff: string };
+    expect(value.pullRequest.id).toBe("3");
+    expect(value.diff).toContain("-gone\x1b[31m\n");
+  });
+
+  it("prints on a terminal too instead of opening the review screen", async () => {
+    const api = fakeApi([pullRequest({ id: "3" })], changed);
+    const r = await cli(["pr", "diff", "3", "-R", "demo"], {
+      api,
+      interactive: true,
+      git: { topLevel: async () => null },
+    });
+    expect(r.reviews).toEqual([]);
+    expect(r.out).toContain("-gone");
+  });
+
+  it("exits 1 when there is no PR", async () => {
+    expect((await cli(["pr", "diff"])).code).toBe(1);
+  });
+});
+
 const build = (id: string, status: string, commit: string): CiRun => ({
   id,
   status,
