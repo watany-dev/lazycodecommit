@@ -26,6 +26,7 @@ permission.
 | `pr approve` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestApprovalState` |
 | `pr merge` | `GetPullRequest` (`ListPullRequests` without an id), one of `MergePullRequestByFastForward`, `MergePullRequestBySquash`, `MergePullRequestByThreeWay` |
 | `pr close` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestStatus` |
+| `pr edit` | `GetPullRequest` (`ListPullRequests` without an id), `UpdatePullRequestTitle`, `UpdatePullRequestDescription` |
 | `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `R` runs `git fetch`, which needs `GitPull` |
 | `browse` | `GetFolder`, `GetFile`, `ListBranches` (the `b` ref picker), `GetRepository` (without `--ref`) |
 | `clone` | `GetRepository`, `GitPull` |
@@ -71,7 +72,7 @@ table, browse, checkout and clone.
 
 ## Example: daily use
 
-Add these to the read-only actions to create PRs, comment, review and merge.
+Add these to the read-only actions to create and edit PRs, comment, review and merge.
 Leave out what you do not want lazycc to do.
 
 ```json
@@ -87,6 +88,8 @@ Leave out what you do not want lazycc to do.
     "codecommit:PutCommentReaction",
     "codecommit:UpdatePullRequestApprovalState",
     "codecommit:UpdatePullRequestStatus",
+    "codecommit:UpdatePullRequestTitle",
+    "codecommit:UpdatePullRequestDescription",
     "codecommit:MergePullRequestByFastForward",
     "codecommit:MergePullRequestBySquash",
     "codecommit:MergePullRequestByThreeWay",

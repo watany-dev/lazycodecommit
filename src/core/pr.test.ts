@@ -13,6 +13,8 @@ import {
   checkoutPullRequest,
   consoleUrl,
   createPullRequest,
+  type EditOptions,
+  editPullRequest,
   listPullRequests,
   type PrDeps,
   pullRequestStatus,
@@ -637,6 +639,129 @@ describe("checkoutPullRequest", () => {
     await expect(checkoutPullRequest("9", deps({ ctx: OUTSIDE }).d)).rejects.toHaveProperty(
       "message",
       "pr checkout works inside a clone of the repository",
+    );
+  });
+});
+
+describe("editPullRequest", () => {
+  const pr = pullRequest({ id: "6", title: "Old title", description: "Old body" });
+  const edit = (opts: EditOptions, over: Parameters<typeof deps>[0] = {}) => {
+    const api = over.api ?? fakeApi([pr]);
+    const made = deps({ ...over, api });
+    return {
+      api: api as ReturnType<typeof fakeApi>,
+      run: editPullRequest("6", opts, made.d),
+      ...made,
+    };
+  };
+
+  it("updates only the title when only --title is given", async () => {
+    const { api, run } = edit({ title: "New title" });
+    const result = await run;
+    expect(api.writes).toEqual(["title 6 New title"]);
+    expect(result.changed).toEqual(["title"]);
+    expect(result.pr.title).toBe("New title");
+  });
+
+  it("updates only the description from --body or --body-file", async () => {
+    const a = edit({ body: "New body" });
+    expect((await a.run).changed).toEqual(["description"]);
+    expect(a.api.writes).toEqual(["description 6 New body"]);
+    const b = edit({ bodyFile: "-" }, { stdin: "Piped.\n" });
+    await b.run;
+    expect(b.api.writes).toEqual(["description 6 Piped."]);
+  });
+
+  it("returns the PR as the last update left it", async () => {
+    const { run } = edit({ title: "T", body: "B" });
+    const result = await run;
+    expect(result.changed).toEqual(["title", "description"]);
+    expect(result.pr).toMatchObject({ title: "T", description: "B" });
+  });
+
+  it("opens the editor on the current title and body when no flag is given", async () => {
+    const { api, run, edits } = edit(
+      {},
+      { interactive: true, edited: "Old title\n\nFixed body\n" },
+    );
+    expect((await run).changed).toEqual(["description"]);
+    expect(edits).toEqual(["Old title\n\nOld body\n"]);
+    expect(api.writes).toEqual(["description 6 Fixed body"]);
+  });
+
+  it("writes nothing when nothing changed", async () => {
+    const { api, run } = edit({ title: "Old title", body: "Old body" });
+    expect((await run).changed).toEqual([]);
+    expect(api.writes).toEqual([]);
+  });
+
+  it("clears the description when the body is empty", async () => {
+    const { api, run } = edit({ body: "" });
+    await run;
+    expect(api.writes).toEqual(["description 6 "]);
+  });
+
+  it.each([
+    [{}, "Not a terminal: pass --title, --body or --body-file"],
+    [{ body: "a", bodyFile: "f" }, "--body and --body-file cannot be used together"],
+    [{ title: " " }, "--title cannot be empty"],
+  ] as [EditOptions, string][])("refuses %j as a usage error", async (opts, message) => {
+    const { api, run } = edit(opts);
+    await expect(run).rejects.toBeInstanceOf(UsageError);
+    await expect(edit(opts).run).rejects.toThrow(message);
+    expect(api.writes).toEqual([]);
+  });
+
+  it("gives up when the editor leaves the title empty", async () => {
+    const { api, run } = edit({}, { interactive: true, edited: "\n\nbody\n" });
+    await expect(run).rejects.toThrow("Aborted: the title is empty.");
+    expect(api.writes).toEqual([]);
+  });
+
+  it("refuses a title or body CodeCommit would reject, before any write", async () => {
+    const long = edit({ title: "x".repeat(151), body: "ok" });
+    await expect(long.run).rejects.toThrow("CodeCommit takes up to 150");
+    expect(long.api.writes).toEqual([]);
+    const big = edit({ title: "ok", body: "x".repeat(10_241) });
+    await expect(big.run).rejects.toThrow("CodeCommit takes up to 10240");
+    expect(big.api.writes).toEqual([]);
+  });
+
+  it("refuses a closed PR without calling AWS", async () => {
+    const api = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
+    const { run } = edit({ title: "x" }, { api });
+    await expect(run).rejects.toThrow("#6 is already merged.");
+    expect(api.writes).toEqual([]);
+  });
+
+  it("says the title was saved when the description then fails", async () => {
+    const api = fakeApi([pr], {
+      updateDescription: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { run, notes } = edit({ title: "T", body: "B" }, { api });
+    await expect(run).rejects.toThrow("boom");
+    expect(notes).toEqual(["Updated the title of #6; the description was not updated."]);
+  });
+
+  it("adds no note when only the description was tried", async () => {
+    const api = fakeApi([pr], {
+      updateDescription: async () => {
+        throw new Error("boom");
+      },
+    });
+    const { run, notes } = edit({ body: "B" }, { api });
+    await expect(run).rejects.toThrow("boom");
+    expect(notes).toEqual([]);
+  });
+
+  it("reads --body-file and says when it is missing", async () => {
+    const ok = edit({ bodyFile: "b.md" }, { files: { "b.md": "From file\n" } });
+    await ok.run;
+    expect(ok.api.writes).toEqual(["description 6 From file"]);
+    await expect(edit({ bodyFile: "nope.md" }).run).rejects.toThrow(
+      "--body-file: nope.md does not exist",
     );
   });
 });

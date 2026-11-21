@@ -877,6 +877,57 @@ describe("pr close", () => {
   });
 });
 
+const editApi = () => fakeApi([pullRequest({ id: "6", title: "Old", description: "Body" })]);
+
+describe("pr edit", () => {
+  it("updates the title and prints the PR", async () => {
+    const a = editApi();
+    const r = await cli(["pr", "edit", "6", "-t", "New \x1b[2Jtitle"], { api: a });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual(["title 6 New \x1b[2Jtitle"]);
+    expect(r.out.split("\n")[0]).toBe("Updated the title of #6 New ^[[2Jtitle");
+    expect(r.out).toContain("/pull-requests/6/details");
+  });
+
+  it("names both fields, and prints JSON", async () => {
+    const r = await cli(["pr", "edit", "6", "-t", "T", "-b", "B", "--json"], { api: editApi() });
+    expect(r.code).toBe(0);
+    expect(json(r.out)).toMatchObject({ id: "6", title: "T", description: "B" });
+    const t = await cli(["pr", "edit", "6", "-t", "T", "-b", "B"], { api: editApi() });
+    expect(t.out.split("\n")[0]).toBe("Updated the title and description of #6 T");
+  });
+
+  it("opens the editor on a terminal", async () => {
+    const a = editApi();
+    const r = await cli(["pr", "edit", "6"], {
+      api: a,
+      interactive: true,
+      edit: async (text) => text.replace("Body", "Better body"),
+    });
+    expect(r.code).toBe(0);
+    expect(a.writes).toEqual(["description 6 Better body"]);
+  });
+
+  it("says so and exits 0 when nothing changed", async () => {
+    const a = editApi();
+    const r = await cli(["pr", "edit", "6", "-t", "Old"], { api: a });
+    expect(r).toMatchObject({ code: 0, err: "No changes to #6 Old" });
+    expect(a.writes).toEqual([]);
+  });
+
+  it("exits 2 without a terminal or a flag", async () => {
+    const r = await cli(["pr", "edit", "6"], { api: editApi() });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("Not a terminal: pass --title, --body or --body-file");
+  });
+
+  it("refuses a closed PR", async () => {
+    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED" })]);
+    const r = await cli(["pr", "edit", "6", "-t", "x"], { api: a });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: #6 is already closed." });
+  });
+});
+
 describe("writes to a PR that is no longer open", () => {
   it.each([[["pr", "approve", "6"]], [["pr", "merge", "6", "--ff"]], [["pr", "close", "6"]]])(
     "%j refuses a merged PR without calling AWS",

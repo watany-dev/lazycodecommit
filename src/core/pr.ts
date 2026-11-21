@@ -434,3 +434,65 @@ export async function closePullRequest(
   requireOpen(pr);
   return deps.api.close(pr);
 }
+
+export interface EditOptions {
+  readonly title?: string;
+  readonly body?: string;
+  readonly bodyFile?: string;
+}
+
+export interface EditResult {
+  readonly pr: PullRequest;
+  /** What was sent to CodeCommit; empty when the PR already said this. */
+  readonly changed: readonly ("title" | "description")[];
+}
+
+/** Changes the title or description; the fields not given stay as they are. */
+export async function editPullRequest(
+  id: string | undefined,
+  opts: EditOptions,
+  deps: PrDeps,
+): Promise<EditResult> {
+  if (opts.body !== undefined && opts.bodyFile !== undefined) {
+    throw new UsageError("--body and --body-file cannot be used together");
+  }
+  const useEditor =
+    opts.title === undefined && opts.body === undefined && opts.bodyFile === undefined;
+  if (useEditor && !deps.interactive) {
+    throw new UsageError("Not a terminal: pass --title, --body or --body-file");
+  }
+  if (opts.title !== undefined && opts.title.trim() === "") {
+    throw new UsageError("--title cannot be empty");
+  }
+  let pr = await resolvePullRequest(id, deps);
+  // CodeCommit answers PullRequestAlreadyClosedException.
+  requireOpen(pr);
+  const current: Draft = { title: pr.title, body: pr.description };
+  let draft: Draft = {
+    title: opts.title ?? current.title,
+    body:
+      opts.bodyFile !== undefined
+        ? await readBodyFile(opts.bodyFile, deps)
+        : (opts.body ?? current.body),
+  };
+  if (useEditor) draft = fromEditorText(await deps.edit(toEditorText(current)));
+  if (draft.title === "") throw new UserError("Aborted: the title is empty.");
+  checkLengths(draft);
+
+  const changed: ("title" | "description")[] = [];
+  if (draft.title !== current.title) {
+    pr = await deps.api.updateTitle(pr, draft.title);
+    changed.push("title");
+  }
+  if (draft.body !== current.body) {
+    try {
+      pr = await deps.api.updateDescription(pr, draft.body);
+    } catch (error) {
+      if (changed.length > 0)
+        deps.note(`Updated the title of #${pr.id}; the description was not updated.`);
+      throw error;
+    }
+    changed.push("description");
+  }
+  return { pr, changed };
+}
