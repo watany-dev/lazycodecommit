@@ -80,7 +80,6 @@ export interface FolderEntry {
   readonly type: EntryType;
 }
 
-/** A blob on one side of a change. */
 interface ChangedBlob {
   readonly id: string;
   /** The git file mode, "100644" for a plain file. */
