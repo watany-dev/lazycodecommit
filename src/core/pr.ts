@@ -467,13 +467,15 @@ export async function editPullRequest(
   let pr = await resolvePullRequest(id, deps);
   // CodeCommit answers PullRequestAlreadyClosedException.
   requireOpen(pr);
-  const current: Draft = { title: pr.title, body: pr.description };
+  // Trimmed and LF, as the editor gives text back: a description written with
+  // CRLF must not count as changed when the user changed nothing.
+  const current = fromEditorText(toEditorText({ title: pr.title, body: pr.description }));
   let draft: Draft = {
-    title: opts.title ?? current.title,
+    title: opts.title?.trim() ?? current.title,
     body:
       opts.bodyFile !== undefined
         ? await readBodyFile(opts.bodyFile, deps)
-        : (opts.body ?? current.body),
+        : (opts.body?.trim() ?? current.body),
   };
   if (useEditor) draft = fromEditorText(await deps.edit(toEditorText(current)));
   if (draft.title === "") throw new UserError("Aborted: the title is empty.");

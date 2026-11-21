@@ -695,6 +695,22 @@ describe("editPullRequest", () => {
     expect(api.writes).toEqual([]);
   });
 
+  it("does not count CRLF or surrounding blank lines as a change", async () => {
+    const crlf = pullRequest({ id: "6", title: "Old title", description: "\nLine 1\r\nLine 2\n" });
+    const api = fakeApi([crlf]);
+    const saved = edit({}, { api, interactive: true });
+    expect((await saved.run).changed).toEqual([]);
+    const titled = edit({ title: "New" }, { api });
+    await titled.run;
+    expect(api.writes).toEqual(["title 6 New"]);
+  });
+
+  it("trims --title and --body as the editor and --body-file do", async () => {
+    const { api, run } = edit({ title: " Old title ", body: "New body\n" });
+    expect((await run).changed).toEqual(["description"]);
+    expect(api.writes).toEqual(["description 6 New body"]);
+  });
+
   it("clears the description when the body is empty", async () => {
     const { api, run } = edit({ body: "" });
     await run;
