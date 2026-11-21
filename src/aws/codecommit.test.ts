@@ -3,7 +3,9 @@ import {
   CreatePullRequestCommand,
   DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
+  GetBlobCommand,
   GetBranchCommand,
+  GetDifferencesCommand,
   GetFileCommand,
   GetFolderCommand,
   GetMergeConflictsCommand,
@@ -99,6 +101,11 @@ describe("toPullRequest", () => {
       lastActivityDate: new Date("2026-01-02T00:00:00Z"),
       approvalRules: [],
     });
+  });
+
+  it("keeps the merge base when CodeCommit gives one", () => {
+    const target = { ...sdkPr("7").pullRequestTargets[0], mergeBase: "mb" };
+    expect(toPullRequest(sdkPr("7", { pullRequestTargets: [target] })).mergeBase).toBe("mb");
   });
 
   it("keeps the approval rules' names and content", () => {
@@ -481,5 +488,50 @@ describe("createCodeCommitApi", () => {
     expect(await api.getFile("demo", "main", "a.txt")).toBeUndefined();
     cc.on(GetFileCommand).rejects(new Error("boom"));
     await expect(api.getFile("demo", "main", "a.txt")).rejects.toThrow("boom");
+  });
+
+  it("lists every page of differences with each side's blob and mode", async () => {
+    cc.on(GetDifferencesCommand)
+      .resolvesOnce({
+        differences: [
+          {
+            changeType: "M",
+            beforeBlob: { blobId: "b1", path: "a.txt", mode: "100644" },
+            afterBlob: { blobId: "b2", path: "a.txt", mode: "100755" },
+          },
+        ],
+        NextToken: "t",
+      })
+      .resolvesOnce({
+        differences: [
+          { changeType: "A", afterBlob: { blobId: "b3", path: "new.txt" } },
+          { changeType: "D", beforeBlob: { blobId: "b4", path: "old.txt", mode: "100644" } },
+        ],
+      });
+    expect(await api.differences("demo", "mb", "s1")).toEqual([
+      { path: "a.txt", before: { id: "b1", mode: "100644" }, after: { id: "b2", mode: "100755" } },
+      { path: "new.txt", after: { id: "b3", mode: "100644" } },
+      { path: "old.txt", before: { id: "b4", mode: "100644" } },
+    ]);
+    expect(cc.commandCalls(GetDifferencesCommand).map((c) => c.args[0].input)).toEqual([
+      { repositoryName: "demo", beforeCommitSpecifier: "mb", afterCommitSpecifier: "s1" },
+      {
+        repositoryName: "demo",
+        beforeCommitSpecifier: "mb",
+        afterCommitSpecifier: "s1",
+        NextToken: "t",
+      },
+    ]);
+  });
+
+  it("reads a blob's bytes", async () => {
+    cc.on(GetBlobCommand).resolves({ content: new Uint8Array([1, 2]) });
+    expect(await api.blob("demo", "b1")).toEqual(new Uint8Array([1, 2]));
+    expect(cc.commandCalls(GetBlobCommand)[0]?.args[0].input).toEqual({
+      repositoryName: "demo",
+      blobId: "b1",
+    });
+    cc.on(GetBlobCommand).resolves({});
+    expect(await api.blob("demo", "b1")).toEqual(new Uint8Array());
   });
 });

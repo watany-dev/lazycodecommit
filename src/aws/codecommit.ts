@@ -3,7 +3,9 @@ import {
   CreatePullRequestCommand,
   DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
+  GetBlobCommand,
   GetBranchCommand,
+  GetDifferencesCommand,
   GetFileCommand,
   GetFolderCommand,
   GetMergeConflictsCommand,
@@ -37,6 +39,8 @@ export interface PullRequest {
   readonly destinationBranch: string;
   readonly sourceCommit: string;
   readonly destinationCommit: string;
+  /** Where the source branched from the destination; CodeCommit may leave it out. */
+  readonly mergeBase?: string;
   readonly isMerged: boolean;
   readonly revisionId: string;
   readonly creationDate: Date;
@@ -76,6 +80,19 @@ export interface FolderEntry {
   readonly type: EntryType;
 }
 
+interface ChangedBlob {
+  readonly id: string;
+  /** The git file mode, "100644" for a plain file. */
+  readonly mode: string;
+}
+
+/** One changed file, like git diff-tree: `before` is absent for an add, `after` for a delete. */
+export interface FileChange {
+  readonly path: string;
+  readonly before?: ChangedBlob;
+  readonly after?: ChangedBlob;
+}
+
 export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
@@ -111,6 +128,9 @@ export interface CodeCommitApi {
   getFolder(repository: string, ref: string, path: string): Promise<FolderEntry[] | undefined>;
   /** A file's bytes at `ref`, or undefined when there is no such file. */
   getFile(repository: string, ref: string, path: string): Promise<Uint8Array | undefined>;
+  /** Every file that differs between two commits (GetDifferences, without rename detection). */
+  differences(repository: string, before: string, after: string): Promise<FileChange[]>;
+  blob(repository: string, id: string): Promise<Uint8Array>;
 }
 
 type SdkEntry = { absolutePath?: string | undefined; relativePath?: string | undefined };
@@ -163,6 +183,7 @@ export function toPullRequest(pr: SdkPullRequest | undefined): PullRequest {
     destinationBranch: branchName(target.destinationReference),
     sourceCommit: target.sourceCommit ?? "",
     destinationCommit: target.destinationCommit ?? "",
+    ...(target.mergeBase ? { mergeBase: target.mergeBase } : {}),
     isMerged: target.mergeMetadata?.isMerged ?? false,
     revisionId: pr.revisionId ?? "",
     creationDate: pr.creationDate ?? new Date(0),
@@ -443,6 +464,38 @@ export function createCodeCommitApi(options: {
         ),
       );
       return out && (out.fileContent ?? new Uint8Array());
+    },
+
+    async differences(repository, before, after) {
+      const changes: FileChange[] = [];
+      let nextToken: string | undefined;
+      do {
+        const out = await client.send(
+          new GetDifferencesCommand({
+            repositoryName: repository,
+            beforeCommitSpecifier: before,
+            afterCommitSpecifier: after,
+            ...(nextToken ? { NextToken: nextToken } : {}),
+          }),
+        );
+        for (const d of out.differences ?? []) {
+          const side = (b: typeof d.beforeBlob) =>
+            b?.blobId ? { id: b.blobId, mode: b.mode ?? "100644" } : undefined;
+          const [from, to] = [side(d.beforeBlob), side(d.afterBlob)];
+          changes.push({
+            path: d.afterBlob?.path ?? d.beforeBlob?.path ?? "",
+            ...(from ? { before: from } : {}),
+            ...(to ? { after: to } : {}),
+          });
+        }
+        nextToken = out.NextToken;
+      } while (nextToken);
+      return changes;
+    },
+
+    async blob(repository, id) {
+      const out = await client.send(new GetBlobCommand({ repositoryName: repository, blobId: id }));
+      return out.content ?? new Uint8Array();
     },
   };
 }

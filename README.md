@@ -140,6 +140,7 @@ is optional, the current branch's open PR is used.
 | `lazycc pr create` | Push the current branch if needed and open a PR (see below) |
 | `lazycc pr list` | List PRs. `--state open\|closed` (default `open`), `-L/--limit` (default 30): the N most recently created PRs, most recently active first, as `gh pr list`. On a terminal with no flags it opens the PR list screen |
 | `lazycc pr view [<id>]` | Show a PR. On a terminal it opens the review screen |
+| `lazycc pr diff [<id>]` | Print the PR's changes as a unified diff, from the merge base to the source commit, to pipe into `delta`, `git apply` or another tool. Inside a clone with the commits it is `git diff`'s own output; otherwise it is built from the API in the same format. `--json` gives the PR and the whole diff |
 | `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR. Needs a clone. With the config's `ci`, `pr view`, `pr status`, the review screen and the home screen add CodeBuild and CodePipeline results ([CI results](docs/configuration.md#ci-results)) |
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it, fast-forwarding an existing local branch. Needs a clone |
 | `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file` (`-F -` for stdin), or the editor on a terminal. Closed PRs can be commented on too |

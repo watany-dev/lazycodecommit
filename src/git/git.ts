@@ -82,6 +82,11 @@ export interface Git {
   mergeBase(a: string, b: string): Promise<string | null>;
   /** Changed files between two commits, like GetDifferences: no rename detection. */
   diffTree(before: string, after: string): Promise<TreeChange[]>;
+  /**
+   * `git diff before after` as a patch git apply takes, whatever the user's
+   * diff config says about colors, prefixes, renames or external tools.
+   */
+  diff(before: string, after: string): Promise<string>;
   /** Contents of a blob. */
   blob(id: string): Promise<Buffer>;
   /** Up to `max` commits in `base..head` along first parents, oldest first. */
@@ -232,6 +237,22 @@ export function createGit(cwd: string): Git {
       }
       return changes;
     },
+
+    diff: (before, after) =>
+      required([
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+        "--no-relative",
+        "--submodule=short",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        before,
+        after,
+        "--",
+      ]),
 
     blob(id) {
       const args = ["cat-file", "blob", id];

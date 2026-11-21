@@ -57,6 +57,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc pr create | 現在のブランチから PR を作る | --repo と --head の指定で可 |
 | lazycc pr list | PR 一覧を出す。--state open\|closed(既定 open)、-L, --limit(既定 30)。-L N は作成が新しい N 件を、最終更新の新しい順に並べて出す(gh pr list と同じく作成順で絞る) | 可 |
 | lazycc pr view [id] | PR を開く。ID 省略時は現在のブランチの PR | ID 指定で可 |
+| lazycc pr diff [id] | PR の変更を unified diff で出す。範囲はレビュー画面と同じくマージベースからソースコミットまで。clone 内でコミットが手元にあれば git diff の出力をそのまま、なければ GetDifferences と GetBlob から git と同じ形式で組み立てる。端末でも TUI を開かない。--json は PR と diff 全文を出す | ID 指定で可 |
 | lazycc pr status | 現在のブランチの PR の承認とコンフリクトの状況を出す。PR がなければその旨を出して終了コード 0 | 不可 |
 | lazycc pr checkout <id> | PR のソースブランチを fetch して切り替える | 不可 |
 | lazycc pr comment [id] | PR にコメントする。本文は -b、-F、端末ではエディタ。閉じた PR にもコメントできる | ID 指定で可 |
@@ -493,6 +494,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | PR 作成 | GetRepository、ListPullRequests、GetPullRequest、GetBranch(clone 外のみ)、CreatePullRequest、GitPush |
 | ブランチ表 | ListBranches、GetBranch、GetRepository、ListPullRequests、GetPullRequest、EvaluatePullRequestApprovalRules、DeleteBranch(削除時のみ) |
 | ブラウズ | GetFolder、GetFile、ListBranches、GetRepository(--ref 省略時) |
+| pr diff | GetPullRequest、ListPullRequests(ID 省略時)。clone 外かコミットが手元にないときは GetDifferences、GetBlob |
 | レビュー(閲覧)、pr view、pr status | GetPullRequest、ListPullRequests(ID 省略時)、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts、GetCommit、GetDifferences、GetBlob、GetCommentsForPullRequest、GetCommentReactions、DescribePullRequestEvents |
 | レビュー(書き込み) | PostCommentForPullRequest、PostCommentReply、UpdateComment、DeleteCommentContent、PutCommentReaction、UpdatePullRequestApprovalState、UpdatePullRequestStatus、MergePullRequestByFastForward、MergePullRequestBySquash、MergePullRequestByThreeWay |
 | checkout | GetPullRequest、GitPull |

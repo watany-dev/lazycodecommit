@@ -1,8 +1,9 @@
 import type { Difference } from "@aws-sdk/client-codecommit";
 import { type BlobTexts, blobKey } from "../../core/blobTexts.js";
+import { computeSimpleDiff } from "../../core/lineDiff.js";
 import type { CommentThread, ReactionSummary, ReactionsByComment } from "../../core/review.js";
 import { printable, shortArn } from "../../core/text.js";
-import { computeSimpleDiff, type DisplayLine } from "./formatDiff.js";
+import type { DisplayLine } from "./formatDiff.js";
 
 export const LARGE_DIFF_THRESHOLD = 1500;
 export const DIFF_CHUNK_SIZE = 300;

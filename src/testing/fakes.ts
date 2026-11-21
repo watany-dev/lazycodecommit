@@ -23,6 +23,7 @@ export function fakeGit(overrides: Partial<Git> = {}): Git {
     clone: async () => {},
     mergeBase: async () => "base0",
     diffTree: async () => [],
+    diff: async () => "",
     blob: async () => Buffer.from(""),
     firstParentLog: async () => [],
     remoteBranches: async () => [],
@@ -125,6 +126,8 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     },
     getFolder: async () => undefined,
     getFile: async () => undefined,
+    differences: async () => [],
+    blob: async () => new Uint8Array(),
     close: async (pr) => {
       writes.push(`close ${pr.id}`);
       return closed(pr, false);

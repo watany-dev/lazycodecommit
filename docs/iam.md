@@ -19,6 +19,7 @@ permission.
 | `lazycc`, `lazycc status` | `ListPullRequests`, `GetPullRequest`, `GetPullRequestApprovalStates`, `EvaluatePullRequestApprovalRules`, `GetMergeConflicts`; the repository picker adds `ListRepositories` |
 | `pr list` | `ListPullRequests`, `GetPullRequest` |
 | `pr view` and the review screen (reading) | `ListPullRequests` (without an id), `GetPullRequest`, `GetCommit`, `GetDifferences`, `GetBlob`, `GetCommentsForPullRequest`, `GetCommentReactions`, `DescribePullRequestEvents`, `GetPullRequestApprovalStates`, `EvaluatePullRequestApprovalRules`, `GetMergeConflicts`; inside a clone, `GitPull` to fetch the PR's branches |
+| `pr diff` | `GetPullRequest` (`ListPullRequests` without an id); `GetDifferences`, `GetBlob` outside a clone, or when the clone lacks the PR's commits |
 | `pr status` | `ListPullRequests`, `GetPullRequest`, `GetPullRequestApprovalStates`, `EvaluatePullRequestApprovalRules`, `GetMergeConflicts` |
 | `pr create` | `GetRepository` (without `--base`), `ListPullRequests`, `GetPullRequest`, `CreatePullRequest`; `GitPush` when it pushes; `GetBranch` outside a clone, or when the branch has no local copy |
 | `pr checkout` | `GetPullRequest`, `GitPull` |
