@@ -86,7 +86,6 @@ export interface FileChange {
 export interface NewCommit {
   readonly repository: string;
   readonly branch: string;
-  /** The tip the change was made against. */
   readonly parent: string;
   readonly message: string;
   readonly files: readonly FileChange[];

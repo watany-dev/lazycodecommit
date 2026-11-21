@@ -173,7 +173,6 @@ function viewLines(issue: Issue, comments: readonly IssueComment[]): string[] {
   return lines;
 }
 
-/** `lazycc issue <verb>` (ADR 0011). */
 export async function runIssue(
   command: string,
   values: Values,

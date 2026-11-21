@@ -85,7 +85,6 @@ function field(fields: FrontMatter["fields"], key: string): string | undefined {
   return fields.find(([k]) => k === key)?.[1];
 }
 
-/** Sets a field in place (appended when new); undefined removes it. */
 function withField(fields: FrontMatter["fields"], key: string, value: string | undefined) {
   if (value === undefined) return fields.filter(([k]) => k !== key);
   const entry = [key, value] as const;
@@ -125,7 +124,6 @@ const decoder = new TextDecoder();
 const issuePath = (n: number) => `${ISSUE_ROOT}/${n}/issue.md`;
 const commentsPath = (n: number) => `${ISSUE_ROOT}/${n}/comments`;
 
-/** The issue numbers on the branch at `commit`, newest first. */
 async function issueNumbers(deps: IssueDeps, commit: string): Promise<number[]> {
   const entries = (await deps.api.getFolder(deps.repository, commit, ISSUE_ROOT)) ?? [];
   return entries
@@ -344,7 +342,7 @@ export async function commentOnIssue(
   });
 }
 
-/** Closes or reopens. Already in that state: nothing is committed. */
+/** Already in that state: nothing is committed. */
 export function setIssueState(
   deps: IssueDeps,
   number: number,
