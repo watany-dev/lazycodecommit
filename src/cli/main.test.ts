@@ -920,24 +920,20 @@ describe("pr edit", () => {
     expect(r.code).toBe(2);
     expect(r.err).toContain("Not a terminal: pass --title, --body or --body-file");
   });
-
-  it("refuses a closed PR", async () => {
-    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED" })]);
-    const r = await cli(["pr", "edit", "6", "-t", "x"], { api: a });
-    expect(r).toMatchObject({ code: 1, err: "lazycc: #6 is already closed." });
-  });
 });
 
 describe("writes to a PR that is no longer open", () => {
-  it.each([[["pr", "approve", "6"]], [["pr", "merge", "6", "--ff"]], [["pr", "close", "6"]]])(
-    "%j refuses a merged PR without calling AWS",
-    async (args) => {
-      const a = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
-      const r = await cli(args, { api: a });
-      expect(r).toMatchObject({ code: 1, err: "lazycc: #6 is already merged." });
-      expect(a.writes).toEqual([]);
-    },
-  );
+  it.each([
+    [["pr", "approve", "6"]],
+    [["pr", "merge", "6", "--ff"]],
+    [["pr", "close", "6"]],
+    [["pr", "edit", "6", "-t", "x"]],
+  ])("%j refuses a merged PR without calling AWS", async (args) => {
+    const a = fakeApi([pullRequest({ id: "6", status: "CLOSED", isMerged: true })]);
+    const r = await cli(args, { api: a });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: #6 is already merged." });
+    expect(a.writes).toEqual([]);
+  });
 
   it("names a closed PR as closed", async () => {
     const a = fakeApi([pullRequest({ id: "6", status: "CLOSED" })]);
