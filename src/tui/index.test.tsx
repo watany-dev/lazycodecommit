@@ -64,7 +64,7 @@ interface Node {
   props: {
     onSwitch(s: object): void;
     onDone(repository?: string): void;
-    onRepository(repository: string): void;
+    onRepository(repository: string | undefined): void;
     onCreate(head: string | undefined): void;
     reviewService(repository: string): { markSeen?: unknown };
     start?: unknown;
@@ -187,6 +187,38 @@ describe("openTop", () => {
     const v = views();
     await openTop({ start: "home", views: v });
     expect(v.branches).toHaveBeenCalledWith("mine");
+  });
+
+  it("goes back to the earlier repository when the home undoes its pick", async () => {
+    script(
+      (n) => {
+        n.props.onRepository("mine");
+        n.props.onRepository("other");
+        n.props.onRepository(undefined);
+        n.props.onSwitch({ view: "branches" });
+      },
+      () => {},
+    );
+    const v = views();
+    await openTop({ start: "home", repository: "demo", views: v });
+    expect(v.branches).toHaveBeenCalledWith("demo");
+  });
+
+  it("has no repository again after undoing a pick when it started without one", async () => {
+    const rendered = script(
+      (n) => {
+        n.props.onRepository(undefined);
+        n.props.onRepository("mine");
+        n.props.onRepository(undefined);
+        n.props.onSwitch({ view: "branches" });
+      },
+      () => {},
+    );
+    const v = views();
+    await openTop({ start: "home", views: v });
+    // The branch table has no repository, so it asks for one.
+    expect(rendered().slice(0, 2)).toEqual([HomeApp, PickScreen]);
+    expect(v.branches).not.toHaveBeenCalled();
   });
 
   it("leaves for a create and comes back on the new PR or with the failure", async () => {

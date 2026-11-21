@@ -31,8 +31,8 @@ interface Props {
   note?: string | null;
   /** 2 / 3: leave for the branch table or browse. */
   onSwitch?: (s: TopSwitch) => void;
-  /** A repository picked with Enter, for the branch table and browse too. */
-  onRepository?: (repository: string) => void;
+  /** A repository picked with Enter, for the branch table and browse too; undefined when Esc undoes it. */
+  onRepository?: (repository: string | undefined) => void;
 }
 
 type View =
@@ -149,11 +149,11 @@ export function HomeApp({
     if (!beforePick) return undefined;
     const watched = actions.watched();
     const target =
-      watched.length > 0 && (beforePick.followsConfig || !beforePick.repos)
-        ? watched
-        : beforePick.followsConfig
-          ? undefined
-          : beforePick.repos;
+      beforePick.followsConfig || !beforePick.repos
+        ? watched.length > 0
+          ? watched
+          : undefined
+        : beforePick.repos;
     return target && !same(repos, target) ? target : undefined;
   }
   const backTo = back();
@@ -178,6 +178,7 @@ export function HomeApp({
         setFollowsConfig(same(target, actions.watched()));
         setBeforePick(null);
         setRepos(target);
+        onRepository?.(undefined);
       } else if (key.tab || input === "]" || input === "[") {
         setSection(section === "awaiting" ? "mine" : "awaiting");
         setCursor(0);

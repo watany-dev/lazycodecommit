@@ -354,7 +354,11 @@ describe("HomeApp", () => {
 
   it("goes back from a picked repository to the watched ones on Esc", async () => {
     const a = actions();
-    const { lastFrame, stdin } = await setup(a);
+    const onRepository = vi.fn();
+    const { lastFrame, stdin } = render(
+      <HomeApp actions={a} reviewService={() => service} onRepository={onRepository} />,
+    );
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add retry"));
     await press(stdin, "\u001B");
     expect(a.fetch).toHaveBeenCalledTimes(1);
     await press(stdin, "r");
@@ -363,9 +367,11 @@ describe("HomeApp", () => {
     await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["sandbox"]));
     expect(lastFrame()).toContain("sandbox only");
     expect(lastFrame()).toContain("Esc back to 2 repositories");
+    expect(onRepository).toHaveBeenLastCalledWith("sandbox");
     await press(stdin, "\u001B");
     await vi.waitFor(() => expect(a.fetch).toHaveBeenLastCalledWith(["demo", "infra"]));
     expect(lastFrame()).not.toContain("only");
+    expect(onRepository).toHaveBeenLastCalledWith(undefined);
     await press(stdin, "\u001B");
     expect(a.fetch).toHaveBeenCalledTimes(3);
   });
