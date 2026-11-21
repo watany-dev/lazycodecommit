@@ -693,6 +693,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("New Comment:");
     });
 
+    // Mock reload after post
     vi.mocked(getPullRequestDetail).mockResolvedValue({
       pullRequest: {
         pullRequestId: "42",
@@ -1287,11 +1288,13 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Press 'a' to start approve
     stdin.write("a");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Approve this pull request?");
     });
 
+    // Mock reload after approve
     vi.mocked(getApprovalStates).mockResolvedValue([
       { userArn: "arn:aws:iam::123456789012:user/watany", approvalState: "APPROVE" },
     ]);
@@ -1473,6 +1476,7 @@ describe("App", () => {
 
     stdin.write("\r");
     await vi.waitFor(() => {
+      // Should still load PR detail without Rules line
       expect(lastFrame()).toContain("PR #42");
       expect(lastFrame()).not.toContain("Rules:");
     });
@@ -1872,6 +1876,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Access denied. Check your IAM policy.");
     });
 
+    // Press any key to clear error and return to normal mode
     stdin.write("x");
     await vi.waitFor(() => {
       expect(lastFrame()).not.toContain("Access denied");
@@ -2086,6 +2091,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Move cursor to a diff line, wait for render, then press C
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2097,6 +2103,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Mock reload after post
     vi.mocked(getComments).mockResolvedValue([
       {
         location: {
@@ -2201,6 +2208,7 @@ describe("App", () => {
       expect(lastFrame()).toMatch(/> .*taro: Please fix/);
     });
 
+    // Open reply mode
     stdin.write("R");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Replying to taro:");
@@ -2266,6 +2274,7 @@ describe("App", () => {
       inReplyTo: "c1",
     });
 
+    // Mock reload after post
     vi.mocked(getComments).mockResolvedValue([
       {
         location: null,
@@ -2295,6 +2304,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Navigate to comment line
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -4047,6 +4057,7 @@ describe("App", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("PR #42");
     });
+    // Navigate to comment line
     for (let i = 0; i < 10; i++) {
       stdin.write("j");
     }
@@ -4806,6 +4817,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("fix: login");
     });
 
+    // Go to page 2
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -4823,6 +4835,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("Page 2");
     });
 
+    // Go back to page 1
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -4860,6 +4873,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("fix: login");
     });
 
+    // Go to page 2
     vi.mocked(listPullRequests).mockResolvedValueOnce({
       pullRequests: [
         {
@@ -4985,6 +4999,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("👍×1");
     });
 
+    // Verify getReactionsForComments was called
     expect(vi.mocked(getReactionsForComments)).toHaveBeenCalledWith(["comment-1"]);
   });
 
@@ -5044,6 +5059,7 @@ describe("App", () => {
       expect(lastFrame()).toContain("React to comment:");
     });
 
+    // Mock successful reaction and reload
     vi.mocked(putReaction).mockResolvedValueOnce(undefined);
     vi.mocked(getReactionsForComments).mockResolvedValueOnce(
       new Map([["c1", [{ emoji: "👍", shortCode: ":thumbsup:", count: 1, userArns: [] }]]]),
@@ -5213,12 +5229,14 @@ describe("App", () => {
       expect(lastFrame()).toContain("PR #42");
     });
 
+    // Navigate to comment line
     for (let i = 0; i < 5; i++) stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain(">  taro: OK");
     });
 
+    // Open reaction picker
     stdin.write("g");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("React to comment:");

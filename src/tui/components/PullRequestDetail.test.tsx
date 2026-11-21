@@ -716,6 +716,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("New Comment:");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -738,6 +739,7 @@ describe("PullRequestDetail", () => {
     );
     expect(lastFrame()).toContain("Posting comment...");
 
+    // Simulate posting failed
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1136,6 +1138,7 @@ describe("PullRequestDetail", () => {
     // Enter approve mode
     stdin.write("a");
 
+    // Simulate approving
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1160,6 +1163,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Simulate approve failure
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1246,6 +1250,7 @@ describe("PullRequestDetail", () => {
     );
     expect(lastFrame()).toContain("Some error");
 
+    // Press any key to clear error
     stdin.write("x");
     await vi.waitFor(() => {
       expect(onClearApprovalError).toHaveBeenCalled();
@@ -1310,6 +1315,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("New Comment:");
     });
     stdin.write("a");
+    // Should not show approval prompt
     expect(lastFrame()).not.toContain("Approve this pull request?");
   });
 
@@ -1494,6 +1500,7 @@ describe("PullRequestDetail", () => {
     stdin.write("j");
     stdin.write("j");
     stdin.write("j");
+    // Verify no crash, cursor still within bounds
     expect(lastFrame()).toContain("> ");
   });
 
@@ -1520,6 +1527,7 @@ describe("PullRequestDetail", () => {
     );
     stdin.write("k");
     stdin.write("k");
+    // First line should still have cursor
     expect(lastFrame()).toContain("> ");
   });
 
@@ -1648,6 +1656,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Navigate to the truncation area at the bottom
     stdin.write("G");
     stdin.write("k");
     stdin.write("k");
@@ -1677,6 +1686,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to a diff line
     stdin.write("j");
     stdin.write("j");
     const before = lastFrame();
@@ -1849,6 +1859,7 @@ describe("PullRequestDetail", () => {
     );
     // Cursor is on header line (index 0) — no filePath/lineNumber
     stdin.write("C");
+    // Should not show inline comment input
     expect(lastFrame()).not.toContain("Inline comment on");
   });
 
@@ -2025,6 +2036,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to diff line and open inline comment
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2112,6 +2124,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2136,6 +2149,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate post error
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2156,6 +2170,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Should stay open with error shown
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Inline comment on");
       expect(lastFrame()).toContain("Access denied");
@@ -2250,6 +2265,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to diff line and wait for render before pressing C
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2260,6 +2276,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2286,6 +2303,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate posting complete
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2368,6 +2386,7 @@ describe("PullRequestDetail", () => {
       />,
     );
     const output = lastFrame();
+    // Should handle missing userArn gracefully
     expect(output).toContain("Approvals:");
   });
 
@@ -2438,6 +2457,7 @@ describe("PullRequestDetail", () => {
       />,
     );
     const output = lastFrame();
+    // Should render without error, showing "unknown" for missing author
     expect(output).toContain("unknown");
   });
 
@@ -2893,6 +2913,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toMatch(/> .*a: root/);
     });
 
+    // Press o to unfold
     stdin.write("o");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("└ b: reply1");
@@ -2950,6 +2971,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Navigate to comment line
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2962,6 +2984,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("└ b: reply1");
     });
 
+    // Press o again to refold
     stdin.write("o");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("[+3 replies]");
@@ -3373,6 +3396,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -3397,6 +3421,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
 
+    // Simulate posting complete
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -3465,6 +3490,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
 
+    // Simulate posting start then failure
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -3560,6 +3586,7 @@ describe("PullRequestDetail", () => {
     );
     // Cursor is on header line (no threadIndex)
     stdin.write("o");
+    // Should not crash, no visible change
     expect(lastFrame()).toContain("src/auth.ts");
   });
 
@@ -4666,6 +4693,7 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Some error");
     });
+    // Press enter or key to clear the error
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(onClearClosePRError).toHaveBeenCalled();
@@ -5128,6 +5156,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Go to commit 2
       stdin.write("\t");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("[Commit 1/3]");
@@ -5166,6 +5195,7 @@ describe("PullRequestDetail", () => {
         />,
       );
       stdin.write("\t");
+      // Wait a tick for async processing
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(lastFrame()).not.toContain("[Commit");
       expect(onLoadCommitDiff).not.toHaveBeenCalled();
@@ -5509,6 +5539,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Move cursor down
       stdin.write("j");
       stdin.write("j");
       // Switch to commit view - cursor should reset
@@ -6192,6 +6223,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Delete this comment?");
       });
+      // Simulate error
       rerender(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -6924,6 +6956,7 @@ describe("PullRequestDetail", () => {
       stdin.write("\x04");
       stdin.write("\x04");
       await vi.waitFor(() => {
+        // Should not crash, cursor still exists
         expect(lastFrame()).toContain("> ");
       });
     });
@@ -6949,6 +6982,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // First move down with Ctrl+d
       stdin.write("\x04");
       await vi.waitFor(() => {
         const frame = lastFrame() ?? "";
@@ -6956,6 +6990,7 @@ describe("PullRequestDetail", () => {
         const cursorLine = lines.find((l) => l.includes("> "));
         expect(cursorLine).not.toContain("src/auth.ts");
       });
+      // Then move back up with Ctrl+u
       stdin.write("\x15");
       await vi.waitFor(() => {
         const frame = lastFrame() ?? "";
@@ -7054,6 +7089,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Open comment modal
       stdin.write("c");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Comment:");
@@ -7085,6 +7121,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Open comment modal
       stdin.write("c");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Comment:");
@@ -7213,6 +7250,7 @@ describe("PullRequestDetail", () => {
       // Cursor starts at first line (src/alpha.ts header)
       expect(lastFrame()).toMatch(/> .*src\/alpha\.ts/);
 
+      // Press n to jump to next file header
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
@@ -7276,6 +7314,7 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Move to second file first
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
@@ -7498,11 +7537,13 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Open file list
       stdin.write("f");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Files");
       });
 
+      // Move cursor down to second file
       stdin.write("j");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);

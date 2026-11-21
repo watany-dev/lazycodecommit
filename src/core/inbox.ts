@@ -286,6 +286,8 @@ export function loadAllDetails(
   });
 }
 
+// ---- Cache (cache.json, section "home") ----
+
 /** The inbox is only reused for the same account, region and repositories. */
 function cacheKey(me: string, region: string, repositories: readonly string[]): string {
   return JSON.stringify([me, region, [...new Set(repositories)].toSorted()]);
