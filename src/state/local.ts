@@ -113,7 +113,6 @@ export interface LocalState {
   readonly drafts: DraftStore;
   readonly seen: SeenStore;
   readonly cache: CacheStore;
-  /** Resolves when every save started so far has landed. */
   flush(): Promise<void>;
 }
 

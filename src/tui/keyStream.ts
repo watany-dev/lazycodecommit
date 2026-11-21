@@ -6,7 +6,6 @@ import { StringDecoder } from "node:string_decoder";
 // oxlint-disable-next-line no-control-regex -- terminal input is control characters
 const KEY = /\u001b\[[0-?]*[ -/]*[@-~]|\u001bO.|\u001b[\s\S]|[\s\S]/gu;
 
-/** The keys in one chunk of terminal input, each as the terminal sent it. */
 export function splitKeys(chunk: string): string[] {
   return chunk.match(KEY) ?? [];
 }

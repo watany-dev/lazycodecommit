@@ -144,7 +144,6 @@ export const CHECK_MARK: Record<CheckState, string> = {
   error: "!",
 };
 
-/** Terminal colors for the TUI. */
 export const CHECK_COLOR: Record<CheckState, string> = {
   pass: "green",
   fail: "red",

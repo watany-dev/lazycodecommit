@@ -146,7 +146,7 @@ describe("ActivityTimeline", () => {
     ];
     const { lastFrame, stdin } = render(<ActivityTimeline {...defaultProps} events={events} />);
 
-    stdin.write("j"); // move to index 1
+    stdin.write("j");
     await vi.waitFor(() => {
       const output = lastFrame()!;
       const lines = output.split("\n");
@@ -154,7 +154,7 @@ describe("ActivityTimeline", () => {
       expect(cursorLine).toContain("approved this PR");
     });
 
-    stdin.write("k"); // move back to index 0
+    stdin.write("k");
 
     await vi.waitFor(() => {
       const output = lastFrame()!;
@@ -188,7 +188,7 @@ describe("ActivityTimeline", () => {
     ];
     const { lastFrame, stdin } = render(<ActivityTimeline {...defaultProps} events={events} />);
 
-    stdin.write("j"); // move to index 1
+    stdin.write("j");
     await vi.waitFor(() => {
       const output = lastFrame()!;
       const lines = output.split("\n");

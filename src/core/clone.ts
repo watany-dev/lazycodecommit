@@ -12,7 +12,6 @@ export interface CloneOptions {
   readonly args: readonly string[];
 }
 
-/** Resolves the repository's URL and runs `git clone`. Returns the URL. */
 export async function cloneRepository(
   opts: CloneOptions,
   deps: { readonly git: Git; readonly api: CodeCommitApi },

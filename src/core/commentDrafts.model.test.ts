@@ -12,17 +12,16 @@ import {
   submitDrafts,
 } from "./commentDrafts.js";
 
-/**
- * A model of CodeCommit's clientRequestToken: the same token with the same
- * parameters returns the first comment; with other parameters it is refused.
- * Each call can be refused, lost before it lands, or lost after it lands.
- */
-/** An answer from CodeCommit with this HTTP status. */
 const status = (code: number) =>
   Object.assign(new Error(`HTTP ${code}`), { $metadata: { httpStatusCode: code } });
 
 type Fault = "ok" | "refuse" | "lostBefore" | "lostAfter" | "crashAfter";
 
+/**
+ * A model of CodeCommit's clientRequestToken: the same token with the same
+ * parameters returns the first comment; with other parameters it is refused.
+ * Each call can be refused, lost before it lands, or lost after it lands.
+ */
 class FakeCodeCommit {
   readonly byToken = new Map<string, string>();
   /** Comments created, by the draft they came from. */
