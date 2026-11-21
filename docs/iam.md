@@ -29,6 +29,8 @@ permission.
 | `branch` | `GetRepository`, `ListBranches`, `GetBranch`, `ListPullRequests`, `GetPullRequest`, `EvaluatePullRequestApprovalRules`; `DeleteBranch` to delete; `R` runs `git fetch`, which needs `GitPull` |
 | `browse` | `GetFolder`, `GetFile`, `ListBranches` (the `b` ref picker), `GetRepository` (without `--ref`) |
 | `clone` | `GetRepository`, `GitPull` |
+| `issue list`, `issue view` | `GetBranch`, `GetFolder`, `GetFile` |
+| `issue create`, `issue comment`, `issue close`, `issue reopen` | `GetBranch`, `GetFolder`, `GetFile`, `CreateCommit`; `GetRepository` and `CreateBranch` when the issue branch does not exist yet. `issue create` and `issue comment` also call `sts:GetCallerIdentity` for the author |
 | CI results in `pr view`, `pr status`, the review screen and the home screen, only for repositories listed under `ci` in the config | `codebuild:ListBuildsForProject`, `codebuild:BatchGetBuilds`, `codepipeline:ListPipelineExecutions`. The result is informational; see [CI results](configuration.md#ci-results) for who can influence it |
 | Review screen (writing) | `PostCommentForPullRequest`, `PostCommentReply`, `UpdateComment`, `DeleteCommentContent`, `PutCommentReaction`, `UpdatePullRequestApprovalState`, `UpdatePullRequestStatus`, `MergePullRequestByFastForward`, `MergePullRequestBySquash`, `MergePullRequestByThreeWay` |
 

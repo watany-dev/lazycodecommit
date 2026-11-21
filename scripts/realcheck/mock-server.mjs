@@ -274,6 +274,72 @@ export function startMockServer(gitRoot) {
         throw new ApiError("BranchDoesNotExistException", `${branchName} does not exist`);
       return { branch: { branchName, commitId } };
     },
+    CreateBranch({ repositoryName, branchName, commitId }, c) {
+      repoOf(repositoryName, c.region);
+      if (tip(repositoryName, branchName))
+        throw new ApiError("BranchNameExistsException", `${branchName} already exists`);
+      git(repositoryName, [
+        "update-ref",
+        `refs/heads/${branchName}`,
+        commitOf(repositoryName, commitId),
+      ]);
+      return {};
+    },
+    // putFiles only, as lazycc's issues write them (ADR 0011).
+    CreateCommit({ repositoryName, branchName, parentCommitId, commitMessage, putFiles }, c) {
+      repoOf(repositoryName, c.region);
+      const head = tip(repositoryName, branchName);
+      if (!parentCommitId && (head || branches(repositoryName).length > 0))
+        throw new ApiError("ParentCommitIdRequiredException", "A parent commit ID is required");
+      if (parentCommitId && !head)
+        throw new ApiError("BranchDoesNotExistException", `${branchName} does not exist`);
+      if (parentCommitId && parentCommitId !== head)
+        throw new ApiError(
+          "ParentCommitIdOutdatedException",
+          "The parent commit ID is not the tip",
+        );
+      const index = join(gitRoot, `${repositoryName}.index-${randomUUID()}`);
+      const env = { ...process.env, GIT_INDEX_FILE: index };
+      const plumb = (args, input) =>
+        execFileSync("git", ["-C", join(gitRoot, repositoryName), ...args], {
+          encoding: "utf8",
+          env,
+          input,
+        }).trim();
+      try {
+        if (head) plumb(["read-tree", head]);
+        for (const f of putFiles ?? []) {
+          const blob = plumb(
+            ["hash-object", "-w", "--stdin"],
+            Buffer.from(f.fileContent, "base64"),
+          );
+          plumb(["update-index", "--add", "--cacheinfo", `100644,${blob},${f.filePath}`]);
+        }
+        const tree = plumb(["write-tree"]);
+        if (head && tree === plumb(["rev-parse", `${head}^{tree}`]))
+          throw new ApiError("NoChangeException", "The commit makes no changes");
+        const commitId = plumb([
+          "-c",
+          `user.name=${c.caller.arn.split("/").pop()}`,
+          "-c",
+          "user.email=mock@example.com",
+          "commit-tree",
+          tree,
+          ...(head ? ["-p", head] : []),
+          "-m",
+          commitMessage ?? "",
+        ]);
+        git(repositoryName, [
+          "update-ref",
+          `refs/heads/${branchName}`,
+          commitId,
+          ...(head ? [head] : []),
+        ]);
+        return { commitId, treeId: tree };
+      } finally {
+        rmSync(index, { force: true });
+      }
+    },
     DeleteBranch({ repositoryName, branchName }) {
       const commitId = tip(repositoryName, branchName);
       if (!commitId)
