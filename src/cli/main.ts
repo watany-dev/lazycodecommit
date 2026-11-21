@@ -57,6 +57,7 @@ import {
   statusLines,
   viewLines,
 } from "./format.js";
+import { ISSUE_COMMANDS, ISSUE_USAGE, runIssue } from "./issue.js";
 
 export interface Io {
   out(line: string): void;
@@ -104,6 +105,7 @@ Usage:
   lazycc pr approve [<id>] [--revoke]
   lazycc pr merge [<id>] [--ff | --squash | --three-way]
   lazycc pr close [<id>]
+${ISSUE_USAGE}
   lazycc branch
   lazycc browse [<repo>] [--ref branch|commit] [--path path]
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
@@ -185,6 +187,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     options: { ref: { type: "string" }, path: { type: "string" } },
   },
   home: { positionals: 0, options: {} },
+  ...ISSUE_COMMANDS,
 };
 
 const MERGE_FLAGS: Record<string, MergeStrategy> = {
@@ -218,7 +221,7 @@ for (const spec of Object.values(COMMANDS)) Object.assign(spec.options, REPO);
 COMMANDS["clone"] = { positionals: 2, options: { protocol: { type: "string" } } };
 COMMANDS["completion"] = { positionals: 1, options: {} };
 
-type Values = Record<string, string | boolean | undefined>;
+type Values = Record<string, string | boolean | string[] | undefined>;
 
 function parse(
   command: string,
@@ -270,12 +273,12 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
       commandArgs = args;
     } else if (noun === "home") {
       throw new UsageError("Unknown command: home");
-    } else if (noun === "pr") {
+    } else if (noun === "pr" || noun === "issue") {
       if (verb === undefined || verb === "--help" || verb === "-h") {
         io.out(USAGE);
         return verb === undefined ? 2 : 0;
       }
-      command = `pr ${verb}`;
+      command = `${noun} ${verb}`;
       commandArgs = rest;
     } else {
       command = noun;
@@ -413,6 +416,17 @@ async function runCommand(
       ...optional("profile", ctx.profile),
       ...(ctx.clone ? { git } : {}),
     });
+
+  if (command.startsWith("issue ")) {
+    return runIssue(command, values, positionals, {
+      io,
+      api,
+      repository: ctx.repository,
+      config,
+      json,
+      print,
+    });
+  }
 
   switch (command) {
     case "branch": {

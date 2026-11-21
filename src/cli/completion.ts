@@ -42,10 +42,14 @@ function nouns(commands: Record<string, Options>): string[] {
   return [...new Set(Object.keys(commands).map((c) => c.split(" ")[0] as string))];
 }
 
-function verbs(commands: Record<string, Options>): string[] {
-  return Object.keys(commands)
-    .filter((c) => c.startsWith("pr "))
-    .map((c) => c.slice(3));
+/** Each noun that takes a verb (pr, issue), with its verbs. */
+function groups(commands: Record<string, Options>): [string, string[]][] {
+  const byNoun = new Map<string, string[]>();
+  for (const c of Object.keys(commands)) {
+    const [noun = "", verb] = c.split(" ");
+    if (verb) byNoun.set(noun, [...(byNoun.get(noun) ?? []), verb]);
+  }
+  return [...byNoun];
 }
 
 /** Words never contain a quote: they are our own command and flag names. */
@@ -84,12 +88,16 @@ function bash(commands: Record<string, Options>): string {
   if [[ $COMP_CWORD -eq 1 || $cmd == -* ]]; then
     cmd=""
     flags="${words(bareFlags(commands).flatMap(spellings))}"
-  elif [[ $cmd == pr ]]; then
+${groups(commands)
+  .map(
+    ([noun, verbs]) => `  elif [[ $cmd == ${noun} ]]; then
     if [[ $COMP_CWORD -eq 2 ]]; then
-      COMPREPLY=($(compgen -W "${words(verbs(commands))}" -- "$cur"))
+      COMPREPLY=($(compgen -W "${words(verbs)}" -- "$cur"))
       return
     fi
-    cmd="pr \${COMP_WORDS[2]}"
+    cmd="${noun} \${COMP_WORDS[2]}"`,
+  )
+  .join("\n")}
   fi
   case "$prev" in
 ${valueCases.join("\n")}
@@ -123,14 +131,15 @@ function fishFlag(f: Flag): string {
 const c = (condition: string, rest: string) => `complete -c lazycc -n '${condition}' ${rest}`;
 
 function fish(commands: Record<string, Options>): string {
-  const verbList = words(verbs(commands));
   const lines = [
     "complete -c lazycc -f",
     c("__fish_use_subcommand", `-a '${words(nouns(commands))}'`),
     ...bareFlags(commands).map((f) => c("__fish_use_subcommand", fishFlag(f))),
-    c(
-      `__fish_seen_subcommand_from pr; and not __fish_seen_subcommand_from ${verbList}`,
-      `-a '${verbList}'`,
+    ...groups(commands).map(([noun, verbs]) =>
+      c(
+        `__fish_seen_subcommand_from ${noun}; and not __fish_seen_subcommand_from ${words(verbs)}`,
+        `-a '${words(verbs)}'`,
+      ),
     ),
   ];
   for (const [command, options] of Object.entries(commands)) {

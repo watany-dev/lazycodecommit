@@ -56,7 +56,7 @@ export function listLines(prs: readonly PullRequest[]): string[] {
 }
 
 /** Columns padded to their widest cell; the last column is not padded. */
-function align(rows: readonly (readonly string[])[]): string[] {
+export function align(rows: readonly (readonly string[])[]): string[] {
   if (rows.length === 0) return [];
   const widths = rows[0]?.map((_, i) => Math.max(...rows.map((r) => cells(r[i] as string)))) ?? [];
   return rows.map((r) =>

@@ -1,5 +1,7 @@
 import {
   CodeCommitClient,
+  CreateBranchCommand,
+  CreateCommitCommand,
   CreatePullRequestCommand,
   DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
@@ -481,5 +483,45 @@ describe("createCodeCommitApi", () => {
     expect(await api.getFile("demo", "main", "a.txt")).toBeUndefined();
     cc.on(GetFileCommand).rejects(new Error("boom"));
     await expect(api.getFile("demo", "main", "a.txt")).rejects.toThrow("boom");
+  });
+
+  it("creates a branch at a commit", async () => {
+    cc.on(CreateBranchCommand).resolves({});
+    await api.createBranch("demo", "issues", "c0");
+    expect(cc.commandCalls(CreateBranchCommand)[0]?.args[0].input).toEqual({
+      repositoryName: "demo",
+      branchName: "issues",
+      commitId: "c0",
+    });
+  });
+
+  it("commits files as UTF-8 on top of a parent", async () => {
+    cc.on(CreateCommitCommand).resolves({ commitId: "c1" });
+    expect(
+      await api.createCommit({
+        repository: "demo",
+        branch: "issues",
+        parent: "c0",
+        message: "issue #1: create",
+        files: [{ path: "issue/1/issue.md", content: "é" }],
+      }),
+    ).toBe("c1");
+    expect(cc.commandCalls(CreateCommitCommand)[0]?.args[0].input).toEqual({
+      repositoryName: "demo",
+      branchName: "issues",
+      parentCommitId: "c0",
+      commitMessage: "issue #1: create",
+      putFiles: [{ filePath: "issue/1/issue.md", fileContent: new Uint8Array([0xc3, 0xa9]) }],
+    });
+    cc.on(CreateCommitCommand).resolves({});
+    await expect(
+      api.createCommit({
+        repository: "demo",
+        branch: "issues",
+        parent: "c0",
+        message: "m",
+        files: [],
+      }),
+    ).rejects.toThrow("CodeCommit returned no commit id");
   });
 });

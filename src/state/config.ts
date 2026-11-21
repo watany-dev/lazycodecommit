@@ -13,6 +13,8 @@ export interface Config {
   };
   readonly branch?: { readonly closedPrLookback?: number };
   readonly concurrency?: number;
+  /** The branch whose issue/ holds the issues (ADR 0011). */
+  readonly issues?: { readonly branch?: string };
   /** Per repository, the CodeBuild projects and pipelines whose runs are a PR's CI results (ADR 0010). */
   readonly ci?: Readonly<
     Record<
@@ -109,6 +111,8 @@ function validate(path: string, raw: unknown): Config {
   }
   const branch = section("branch");
   if (branch) posInt(branch, "closedPrLookback", "branch.closedPrLookback");
+  const issues = section("issues");
+  if (issues) str(issues, "branch", "issues.branch");
   const ci = section("ci");
   for (const [repo, entry] of Object.entries(ci ?? {})) {
     if (!isObject(entry)) fail(`ci.${repo}`, "an object");

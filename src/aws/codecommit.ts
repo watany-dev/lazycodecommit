@@ -1,5 +1,7 @@
 import {
   CodeCommitClient,
+  CreateBranchCommand,
+  CreateCommitCommand,
   CreatePullRequestCommand,
   DeleteBranchCommand,
   EvaluatePullRequestApprovalRulesCommand,
@@ -76,6 +78,19 @@ export interface FolderEntry {
   readonly type: EntryType;
 }
 
+export interface FileChange {
+  readonly path: string;
+  readonly content: string;
+}
+
+export interface NewCommit {
+  readonly repository: string;
+  readonly branch: string;
+  readonly parent: string;
+  readonly message: string;
+  readonly files: readonly FileChange[];
+}
+
 export interface CodeCommitApi {
   /** The region the client calls, after the SDK's own resolution (~/.aws/config). */
   region(): Promise<string>;
@@ -111,6 +126,9 @@ export interface CodeCommitApi {
   getFolder(repository: string, ref: string, path: string): Promise<FolderEntry[] | undefined>;
   /** A file's bytes at `ref`, or undefined when there is no such file. */
   getFile(repository: string, ref: string, path: string): Promise<Uint8Array | undefined>;
+  createBranch(repository: string, branch: string, commitId: string): Promise<void>;
+  /** Refuses (ParentCommitIdOutdatedException) when the branch has moved past `parent`. */
+  createCommit(input: NewCommit): Promise<string>;
 }
 
 type SdkEntry = { absolutePath?: string | undefined; relativePath?: string | undefined };
@@ -443,6 +461,30 @@ export function createCodeCommitApi(options: {
         ),
       );
       return out && (out.fileContent ?? new Uint8Array());
+    },
+
+    async createBranch(repository, branch, commitId) {
+      await client.send(
+        new CreateBranchCommand({ repositoryName: repository, branchName: branch, commitId }),
+      );
+    },
+
+    async createCommit(input) {
+      const encoder = new TextEncoder();
+      const out = await client.send(
+        new CreateCommitCommand({
+          repositoryName: input.repository,
+          branchName: input.branch,
+          parentCommitId: input.parent,
+          commitMessage: input.message,
+          putFiles: input.files.map((f) => ({
+            filePath: f.path,
+            fileContent: encoder.encode(f.content),
+          })),
+        }),
+      );
+      if (!out.commitId) throw new Error("CodeCommit returned no commit id");
+      return out.commitId;
     },
   };
 }

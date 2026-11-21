@@ -146,6 +146,11 @@ is optional, the current branch's open PR is used.
 | `lazycc pr approve [<id>]` | Approve; `--revoke` takes the approval back |
 | `lazycc pr merge [<id>]` | Merge with one of `--ff`, `--squash`, `--three-way`, or without a flag by the config's `pr.mergeOption`. Refuses if the source branch moved since the PR was read |
 | `lazycc pr close [<id>]` | Close without merging |
+| `lazycc issue list` | Issues kept as files in the repository ([below](#issues)). `--state open\|closed\|all` (default `open`), `-L/--limit` (default 30), newest first |
+| `lazycc issue view <n>` | Show an issue and its comments |
+| `lazycc issue create` | Create an issue with `-t title`, `-b text` or `-F file`, and `-l label` (repeatable). On a terminal without `-t`, the editor's first line is the title |
+| `lazycc issue comment <n>` | Comment with `-b text`, `-F file`, or the editor on a terminal |
+| `lazycc issue close <n>`, `lazycc issue reopen <n>` | Close or reopen an issue |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
 | `lazycc browse [<repo>]` | Read a repository's tree and files through the API, no clone needed. `--ref` picks a branch or a full 40-character commit ID (default: the default branch), `--path` where to start. On a terminal it opens the browse screen; otherwise it prints the folder listing or the file |
 | `lazycc clone <repo> [<dir>]` | Clone by name. `--protocol https\|ssh\|grc` (default `https`; `grc` is [git-remote-codecommit](https://github.com/aws/git-remote-codecommit)). Flags after `--` go to `git clone` |
@@ -180,6 +185,22 @@ lazycc pr create -R my-repo -H feature -B main --fill   # outside a clone
   a terminal, give `--push`.
 - If the branch already has an open PR to the same base, that PR is shown and
   nothing is created.
+
+### Issues
+
+CodeCommit has no issues, so lazycc keeps them as Markdown files in the
+repository: `issue/<n>/issue.md` (front matter with the title, state, author
+and labels, then the body) and one file per comment under
+`issue/<n>/comments/`, on a branch of their own, `issues` by default
+(`issues.branch` in the config). Writing there instead of the default branch
+keeps issue updates from starting pipelines or meeting rules that guard the
+default branch. lazycc reads and writes them through the API, no clone needed;
+the first `issue create` makes the branch from the default branch's tip (an
+empty repository is refused, since its first branch would become the default). Each write is
+a commit on top of the tip lazycc read, so two people writing at once never
+overwrite each other: the later one reads again and retries. The files are
+plain Markdown, so you can also edit them in a clone. See
+[ADR 0011](docs/adr/0011-issues-in-repository.md).
 
 ### Shell completion
 

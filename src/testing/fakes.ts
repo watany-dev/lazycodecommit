@@ -125,6 +125,12 @@ export function fakeApi(prs: PullRequest[] = [], overrides: Partial<CodeCommitAp
     },
     getFolder: async () => undefined,
     getFile: async () => undefined,
+    createBranch: async (repo, branch, commitId) =>
+      void writes.push(`branch ${repo} ${branch} ${commitId}`),
+    createCommit: async (input) => {
+      writes.push(`commit ${input.branch} ${input.message}`);
+      return "n3wc0mm1t";
+    },
     close: async (pr) => {
       writes.push(`close ${pr.id}`);
       return closed(pr, false);

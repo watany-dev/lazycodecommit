@@ -56,6 +56,41 @@ describe("bash completion", () => {
   });
 });
 
+describe("several nouns with verbs", () => {
+  const table = {
+    "pr list": {},
+    "issue list": {},
+    "issue close": { json: { type: "boolean" } },
+  } as const;
+
+  it("offers each noun's own verbs in bash", () => {
+    const script = completionScript("bash", table);
+    const offer = (line: string) => {
+      const words = line.split(" ");
+      const r = spawnSync(
+        "bash",
+        [
+          "--norc",
+          "-c",
+          `${script}\nCOMP_WORDS=(${words.map((w) => `'${w}'`).join(" ")}); COMP_CWORD=${words.length - 1}\n_lazycc; printf '%s\\n' "\${COMPREPLY[@]}"`,
+        ],
+        { encoding: "utf8" },
+      );
+      return r.stdout.split("\n").filter(Boolean);
+    };
+    expect(offer("lazycc ")).toEqual(["pr", "issue", "--help", "--version"]);
+    expect(offer("lazycc issue ")).toEqual(["list", "close"]);
+    expect(offer("lazycc pr ")).toEqual(["list"]);
+    expect(offer("lazycc issue close --")).toEqual(["--json"]);
+  });
+
+  it("offers each noun's own verbs in fish", () => {
+    expect(completionScript("fish", table)).toContain(
+      "complete -c lazycc -n '__fish_seen_subcommand_from issue; and not __fish_seen_subcommand_from list close' -a 'list close'",
+    );
+  });
+});
+
 describe("other shells", () => {
   it("lets zsh reuse the bash function through bashcompinit", () => {
     const zsh = completionScript("zsh", commands);

@@ -26,7 +26,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 
 ## スコープ
 
-対象は PR 作成、ブランチ確認、コード閲覧、横断の受信箱、レビューの5機能に絞る。
+対象は PR 作成、ブランチ確認、コード閲覧、横断の受信箱、レビューの5機能に絞る。後から、リポジトリ内のファイルで持つ issue を足した(ADR 0011)。
 
 ### やること
 | 機能 | 内容 | git との分担 |
@@ -37,6 +37,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | clone なしブラウズ | リモートのツリーとファイルを読む | clone 内ではエディタに任せる |
 | レビュー | 現行機能を引き継ぐ | clone 内の diff は git |
 | checkout と clone の補助 | PR ID やリポジトリ名から git を呼ぶ | 実処理はすべて git |
+| issue | 専用ブランチの issue/ にファイルで issue とコメントを持つ | git は使わない(API で読み書き) |
 
 ### やらないこと
 | 項目 | 代わりの手段 |
@@ -44,7 +45,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | ステージング、コミット、rebase | git、lazygit |
 | コミットログ、タグ、任意 ref の比較 | git log、git diff |
 | blame、全文検索、ファイル履歴 | clone して git とエディタ |
-| Issue、Release | CodeCommit に存在しない |
+| Release | CodeCommit に存在しない |
 | 承認ルールテンプレート、トリガーなどのリポジトリ設定 | コンソール、IaC |
 
 ## コマンド体系
@@ -63,6 +64,11 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc pr approve [id] | 承認する。--revoke で取り消す | ID 指定で可 |
 | lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つで指定する。省略したときは設定の pr.mergeOption を使い、それもなければエラーにする。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
 | lazycc pr close [id] | マージせずに閉じる | ID 指定で可 |
+| lazycc issue list | issue 一覧を出す。--state open\|closed\|all(既定 open)、-L(既定 30)。番号の新しい順 | 可 |
+| lazycc issue view <n> | issue とコメントを出す | 可 |
+| lazycc issue create | issue を作る。-t、-b / -F、-l(複数可)。端末で -t がなければエディタの1行目をタイトルにする | 可 |
+| lazycc issue comment <n> | issue にコメントする。-b、-F、端末ではエディタ | 可 |
+| lazycc issue close <n> / reopen <n> | 閉じる、開き直す。既にその状態なら何もしない | 可 |
 | lazycc branch | ブランチ×PR 対応表を開く | 可 |
 | lazycc browse [repo] | clone なしでコードを読む | 可 |
 | lazycc clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
@@ -316,6 +322,20 @@ PR のソースコミットに対する CodeBuild と CodePipeline の結果を�
 - 承認状態と同じく遅延取得し、取得に失敗しても PR の表示は止めない。失敗は error として理由を出す。
 - --json の形は ADR 0010 のとおり。設定がないリポジトリでは "checks": null にする。
 
+## issue
+
+CodeCommit に issue はないので、リポジトリの専用ブランチ(既定 issues、設定 issues.branch)の issue/ にファイルで持つ。clone せず API(GetFolder、GetFile、CreateCommit)だけで読み書きする。詳細と根拠は [ADR 0011](../adr/0011-issues-in-repository.md)。
+
+### 形式
+- 1 issue 1 フォルダ。issue/<番号>/issue.md に front matter(title、state、author、created、closed、labels)と本文、コメントは issue/<番号>/comments/<UTC 時刻>-<6 桁の 16 進>.md に 1 件 1 ファイル。
+- front matter は key: value の行だけを読む。値は 1 行で、知らないキーは書き直しても残す。
+- 読めない issue.md(front matter や title がない)は一覧から落とさず、パスと理由を出す。
+
+### 書き込み
+- 番号は issue/ の下の数字のフォルダの最大値 + 1。
+- 読んだ先端を親に CreateCommit し、先に誰かが書いていたら(ParentCommitIdOutdatedException)読み直して 3 回まで試す。同時に作っても番号はぶつからず、同時の書き込みを上書きしない。SDK の送り直しで自分のコミットが既にあれば、書かずに終える。
+- ブランチがなければ、issue create のときだけ既定ブランチの先端から作る。ないあいだ、読む操作は issue なし、番号を指す操作は「その issue はない」として扱う。空のリポジトリでは書かない(issue のブランチが既定ブランチになるため)。
+
 ## 画面遷移とキーバインド
 
 トップレベルはホーム、ブランチ表、ブラウズの3ビューで、レビュー画面はホームとブランチ表から降りる先にある。
@@ -393,12 +413,14 @@ D で下書きの一覧を開き、その中の S でまとめて投稿する(�
   },
   "branch": { "closedPrLookback": 100 },
   "concurrency": 8,
+  "issues": { "branch": "issues" },
   "ci": {
     "my-service": { "codebuild": ["my-service-pr-check"], "codepipeline": ["my-service-release"] }
   }
 }
 ```
 
+- issues.branch は issue を置くブランチ(既定 issues)。
 - ci はリポジトリ名をキーに、CI 結果を読む CodeBuild プロジェクト(codebuild)と CodePipeline のパイプライン(codepipeline)を並べる。
 - pr.mergeOption("ff"、"squash"、"three-way")は、pr merge でフラグを省略したときの方式と、レビュー画面のマージで最初に選ばれている方式になる。
 - concurrency は、ひとつのプロファイルとリージョンについて同時に飛ばす CodeCommit API 呼び出しの上限。画面やコマンドが並列に読むもの(ブランチ表のブランチの先頭・open PR・closed PR・承認ルール、ホームの PR・承認ルール・コンフリクト)を合わせて数え、SDK の再試行とその待ちの間も枠を占める。レビュー画面の読み込みと CI の参照(CodeBuild、CodePipeline)は数えない。
@@ -498,6 +520,8 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | checkout | GetPullRequest、GitPull |
 | clone | GetRepository、GitPull |
 | fetch(clone 内の diff) | GitPull |
+| issue(閲覧) | GetBranch、GetFolder、GetFile |
+| issue(書き込み) | GetBranch、GetFolder、GetFile、CreateCommit。ブランチを作るときだけ GetRepository、CreateBranch |
 | CI 結果(設定の ci にあるリポジトリのみ) | codebuild:ListBuildsForProject、codebuild:BatchGetBuilds、codepipeline:ListPipelineExecutions |
 
 - sts:GetCallerIdentity は権限の付与なしで呼べる。
@@ -529,3 +553,4 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 | CI 結果の表示 | フェーズ5で、設定に書いたプロジェクトとパイプラインの実行をソースコミットで PR に結び付ける | [0010](../adr/0010-ci-results.md)(0007 を置き換え) |
 | コメントの下書き一括投稿 | フェーズ1〜4に入れず、その後に下書きを保存して 1 件ずつ投稿する形で入れる | [0007](../adr/0007-out-of-phase-features.md)、[0009](../adr/0009-comment-drafts.md) |
 | マージ方式の既定値 | フラグがなければ設定の `pr.mergeOption` を使う | [0008](../adr/0008-merge-option-default.md) |
+| Issue | 専用ブランチ `issues` の `issue/` にファイルで持ち、API だけで読み書きする | [0011](../adr/0011-issues-in-repository.md) |
