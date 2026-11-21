@@ -1,6 +1,8 @@
 import type { PullRequest, RuleEvaluation } from "../aws/codecommit.js";
+import type { CommentThread } from "../aws/review.js";
 import { type BranchTable, rulesSummary, STATE_LABEL } from "../core/branch.js";
 import { CHECK_MARK, type Checks, noRun } from "../core/checks.js";
+import type { CommentDraft } from "../core/commentDrafts.js";
 import type { Inbox, InboxItem } from "../core/inbox.js";
 import type { PrStatus } from "../core/pr.js";
 import { consoleUrl } from "../core/pr.js";
@@ -116,6 +118,89 @@ export function viewLines(pr: PullRequest, region: string, checks: Checks | null
     "",
     consoleUrl(region, pr.repository, pr.id),
   ];
+}
+
+type Place = NonNullable<CommentThread["location"]>;
+
+/** A comment's place as pr comment and pr view print it: "a.ts:12 (before)". */
+export function where(l: Place): string {
+  return `${l.filePath}:${l.filePosition}${l.relativeFileVersion === "BEFORE" ? " (before)" : ""}`;
+}
+
+export function placeJson(l: Place) {
+  return { path: l.filePath, line: l.filePosition, side: l.relativeFileVersion.toLowerCase() };
+}
+
+/** pr view --comments: each thread under its place, replies indented, with the ids pr comment takes. */
+export function commentLines(threads: readonly CommentThread[]): string[] {
+  const lines = ["", threads.length === 0 ? "No comments." : "Comments:"];
+  for (const t of threads) {
+    lines.push(
+      "",
+      t.location ? `${where(t.location)}${t.outdated ? " (outdated)" : ""}` : "General",
+    );
+    t.comments.forEach((c, i) => {
+      const indent = i === 0 ? "  " : "    ";
+      const when = c.creationDate ? `  ${date(c.creationDate)}` : "";
+      lines.push(`${indent}${shortArn(c.authorArn ?? "")}${when}  ${c.commentId ?? ""}`);
+      const body = c.deleted ? "(deleted)" : printable((c.content ?? "").trim(), true);
+      for (const l of body.split("\n")) lines.push(`${indent}  ${l}`);
+    });
+  }
+  return lines;
+}
+
+/** pr view --comments --json: one entry per comment, threads by inReplyTo. */
+export function commentsJson(threads: readonly CommentThread[]) {
+  return threads.flatMap((t) =>
+    t.comments.map((c) => ({
+      id: c.commentId ?? "",
+      author: c.authorArn ?? "",
+      content: c.deleted ? null : (c.content ?? ""),
+      deleted: c.deleted === true,
+      inReplyTo: c.inReplyTo ?? null,
+      location: t.location ? placeJson(t.location) : null,
+      outdated: t.outdated === true,
+      createdAt: c.creationDate ? date(c.creationDate) : null,
+      updatedAt: c.lastModifiedDate ? date(c.lastModifiedDate) : null,
+    })),
+  );
+}
+
+function draftWhere(d: CommentDraft): string {
+  const t = d.target;
+  if (t.kind === "inline") return where(t.location);
+  if (t.kind === "reply") return `reply to ${printable(t.replyTo.author)}`;
+  return "general";
+}
+
+/** pr drafts: one line per draft, in posting order, with what stops it. */
+export function draftLines(drafts: readonly CommentDraft[]): string[] {
+  return align(
+    drafts.map((d) => {
+      const first = printable(d.content.trim().split("\n")[0] ?? "");
+      return [
+        d.id.slice(0, 8),
+        draftWhere(d),
+        d.problem ? `${first}  [${d.problem.kind}: ${printable(d.problem.message)}]` : first,
+      ];
+    }),
+  );
+}
+
+export function draftsJson(drafts: readonly CommentDraft[]) {
+  return drafts.map((d) => {
+    const t = d.target;
+    return {
+      id: d.id,
+      kind: t.kind,
+      content: d.content,
+      createdAt: d.createdAt,
+      location: t.kind === "inline" ? placeJson(t.location) : null,
+      inReplyTo: t.kind === "reply" ? t.inReplyTo : null,
+      problem: d.problem ?? null,
+    };
+  });
 }
 
 /** ADR 0010: `checks` in pr view and pr status JSON; null when the config's ci lists nothing for the repository. */

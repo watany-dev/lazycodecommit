@@ -24,6 +24,8 @@ const PULL_REQUEST_ERRORS = new Map(
     ConcurrentReferenceUpdateException: "The branch was updated at the same moment. Retry.",
     CommentContentSizeLimitExceededException:
       "The comment is over CodeCommit's 10,240 character limit.",
+    CommentNotCreatedByCallerException: "You can only edit your own comments.",
+    CommentDeletedException: "Comment has already been deleted.",
   }),
 );
 

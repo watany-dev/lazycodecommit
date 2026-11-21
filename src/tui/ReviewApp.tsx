@@ -5,17 +5,15 @@ import { type BlobTexts, blobKey, fetchBlobTexts, streamBlobTexts } from "../cor
 import type { Checks } from "../core/checks.js";
 import {
   type CommentDraft,
-  type Commits,
   type DraftLocation,
   type DraftTarget,
   draftKey,
   editDraft,
-  lineReader,
   newDraft,
   postAnyway,
-  reanchor,
+  postPullRequestDrafts,
   type StoredDrafts,
-  submitDrafts,
+  tipOf,
 } from "../core/commentDrafts.js";
 import {
   type CommentThread,
@@ -45,11 +43,6 @@ type Screen = "prs" | "detail" | "activity";
 
 type InlineLocation = Omit<DraftLocation, "lineText">;
 
-/** Where an inline draft is posted: its location without the line text kept to notice moves. */
-function inlineLocation({ lineText: _lineText, ...location }: DraftLocation): InlineLocation {
-  return location;
-}
-
 interface PaginationState {
   currentCursor: PaginationCursor;
   nextCursor: PaginationCursor;
@@ -73,14 +66,6 @@ function createInitialPagination(): PaginationState {
     previousCursors: [],
     hasNextPage: false,
   };
-}
-
-/** The commits a comment is posted against, or undefined when the PR has none. */
-function tipOf(pr: PullRequest | null): Commits | undefined {
-  const t = pr?.pullRequestTargets?.[0];
-  return t?.destinationCommit && t.sourceCommit
-    ? { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit }
-    : undefined;
 }
 
 /** Where the review screen starts: the PR list (`pr list`) or one PR (`pr view`). */
@@ -221,44 +206,17 @@ export function App({ service, repository, start, onExit }: AppProps) {
     setDraftError(null);
     let moved = false;
     try {
-      // CodeCommit posts against the current tip only, so read it first.
-      const detail = await service.getPullRequestDetail(pullRequestId, selectedRepo);
-      const tip = tipOf(detail.pullRequest);
-      if (!tip) throw new Error("The pull request has no commits to comment on.");
-      const old = tipOf(prDetail);
-      moved =
-        old?.afterCommitId !== tip.afterCommitId || old?.beforeCommitId !== tip.beforeCommitId;
-      const lineAt = await lineReader(
-        draftsRef.current,
-        tip,
-        detail.differences,
-        async (blobId) => {
-          const blob = await service.getBlobContent(selectedRepo, blobId);
-          return "text" in blob ? blob.text : undefined;
-        },
-      );
-      const anchored = await storeDrafts(key, reanchor(draftsRef.current, tip, lineAt));
-      const result = await submitDrafts(anchored, {
+      const result = await postPullRequestDrafts({
+        service,
+        repository: selectedRepo,
+        pullRequestId,
+        current: () => draftsRef.current,
         save: (list) => storeDrafts(key, list),
         progress: (done, total) => setDraftProgress({ done, total }),
-        post: async (draft, on, token) => {
-          const { target, content } = draft;
-          if (target.kind === "reply") {
-            await service.postCommentReply({
-              inReplyTo: target.inReplyTo,
-              content,
-              clientRequestToken: token,
-            });
-            return;
-          }
-          await service.postComment({
-            pullRequestId,
-            repositoryName: selectedRepo,
-            ...on,
-            content,
-            clientRequestToken: token,
-            ...(target.kind === "inline" ? { location: inlineLocation(target.location) } : {}),
-          });
+        onTip: (tip) => {
+          const old = tipOf(prDetail);
+          moved =
+            old?.afterCommitId !== tip.afterCommitId || old?.beforeCommitId !== tip.beforeCommitId;
         },
       });
       const movedLeft = result.remaining.filter((d) => d.problem?.kind === "moved").length;
@@ -621,7 +579,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: approvals
       const revisionId = detail.pullRequest.revisionId;
       if (revisionId) void reloadApprovals(pullRequestId, revisionId, loadId);
 
@@ -636,7 +593,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: reactions
       void reloadReactions(detail.commentThreads, loadId);
     });
   }

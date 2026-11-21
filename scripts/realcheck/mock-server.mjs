@@ -362,6 +362,24 @@ export function startMockServer(gitRoot) {
     },
     PostCommentForPullRequest: (input, c) => idempotent(input, () => postComment(input, c)),
     PostCommentReply: (input, c) => idempotent(input, () => postReply(input, c)),
+    // Only the author may edit (CommentNotCreatedByCallerException); anyone
+    // allowed DeleteCommentContent may delete, which keeps the comment, emptied.
+    UpdateComment({ commentId, content }, c) {
+      const x = comments.find((y) => y.comment.commentId === commentId);
+      if (!x) throw new ApiError("CommentDoesNotExistException", "no such comment");
+      if (x.comment.deleted) throw new ApiError("CommentDeletedException", "comment is deleted");
+      if (x.comment.authorArn !== c.caller.arn)
+        throw new ApiError("CommentNotCreatedByCallerException", "not your comment");
+      checkSize(content);
+      Object.assign(x.comment, { content, lastModifiedDate: now() });
+      return { comment: x.comment };
+    },
+    DeleteCommentContent({ commentId }) {
+      const x = comments.find((y) => y.comment.commentId === commentId);
+      if (!x) throw new ApiError("CommentDoesNotExistException", "no such comment");
+      Object.assign(x.comment, { content: "", deleted: true, lastModifiedDate: now() });
+      return { comment: x.comment };
+    },
     // One reaction per user and comment, as CodeCommit keeps them; counted on
     // the comment by short code (whether CodeCommit keys them so is a realcheck item).
     PutCommentReaction({ commentId, reactionValue }, c) {

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import type { PullRequest } from "@aws-sdk/client-codecommit";
 import { explainAwsError, isCredentialError, wasNotSent } from "../aws/errors.js";
 import { accountOf, type DraftsRead, type LocalState } from "../state/local.js";
+import type { ReviewService } from "./review.js";
 
 /** The commits a comment is posted against: the PR's destination and source tips. */
 export interface Commits {
@@ -243,6 +245,80 @@ export async function submitDrafts(
   }
   deps.progress?.(posted, queue.length);
   return { remaining, posted };
+}
+
+/** The commits a comment is posted against, or undefined when the PR has none. */
+export function tipOf(pr: PullRequest | null | undefined): Commits | undefined {
+  const t = pr?.pullRequestTargets?.[0];
+  return t?.destinationCommit && t.sourceCommit
+    ? { beforeCommitId: t.destinationCommit, afterCommitId: t.sourceCommit }
+    : undefined;
+}
+
+/** Where an inline draft is posted: its location without the line text kept to notice moves. */
+function inlineLocation({
+  lineText: _lineText,
+  ...location
+}: DraftLocation): Omit<DraftLocation, "lineText"> {
+  return location;
+}
+
+type DraftService = Pick<
+  ReviewService,
+  "getPullRequestDetail" | "getBlobContent" | "postComment" | "postCommentReply"
+>;
+
+/**
+ * Posts a PR's drafts, from the review screen's S or `lazycc pr drafts --submit`.
+ * CodeCommit posts against the current tip only, so the PR is read first and
+ * drafts written on an older tip are moved onto it (reanchor). `current` is
+ * read after the PR, so drafts added while it loads are posted too.
+ */
+export async function postPullRequestDrafts(input: {
+  readonly service: DraftService;
+  readonly repository: string;
+  readonly pullRequestId: string;
+  readonly current: () => readonly CommentDraft[];
+  readonly save: SubmitDeps["save"];
+  readonly progress?: SubmitDeps["progress"];
+  /** Called with the tip the drafts are posted on, before any is. */
+  readonly onTip?: (tip: Commits) => void;
+}): Promise<SubmitResult> {
+  const { service, repository, pullRequestId } = input;
+  const detail = await service.getPullRequestDetail(pullRequestId, repository);
+  const tip = tipOf(detail.pullRequest);
+  if (!tip) throw new Error("The pull request has no commits to comment on.");
+  input.onTip?.(tip);
+  const lineAt = await lineReader(input.current(), tip, detail.differences, async (blobId) => {
+    const blob = await service.getBlobContent(repository, blobId);
+    return "text" in blob ? blob.text : undefined;
+  });
+  // Read again, not reused: saving a list without a draft added while the
+  // blobs loaded would discard that draft.
+  const anchored = reanchor(input.current(), tip, lineAt);
+  return submitDrafts((await input.save(anchored)) ?? anchored, {
+    save: input.save,
+    ...(input.progress ? { progress: input.progress } : {}),
+    post: async (draft, on, token) => {
+      const { target, content } = draft;
+      if (target.kind === "reply") {
+        await service.postCommentReply({
+          inReplyTo: target.inReplyTo,
+          content,
+          clientRequestToken: token,
+        });
+        return;
+      }
+      await service.postComment({
+        pullRequestId,
+        repositoryName: repository,
+        ...on,
+        content,
+        clientRequestToken: token,
+        ...(target.kind === "inline" ? { location: inlineLocation(target.location) } : {}),
+      });
+    },
+  });
 }
 
 function replace(list: readonly CommentDraft[], draft: CommentDraft): CommentDraft[] {

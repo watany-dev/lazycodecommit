@@ -378,31 +378,22 @@ function requireOpen(pr: PullRequest): void {
     throw new UserError(`#${pr.id} is already ${pr.isMerged ? "merged" : "closed"}.`);
 }
 
-export interface CommentResult {
-  readonly pr: PullRequest;
-  readonly commentId: string;
-}
-
-/** Comments on the whole PR. A closed PR still takes comments, as in the console. */
-export async function commentOnPullRequest(
-  id: string | undefined,
+/**
+ * A comment's text from -b, -F or the editor (with `initial` in it), trimmed.
+ * The caller has checked that a terminal is there when neither flag is given.
+ */
+export async function commentBody(
   opts: { readonly body?: string; readonly bodyFile?: string },
+  initial: string,
   deps: PrDeps,
-): Promise<CommentResult> {
-  if (opts.body !== undefined && opts.bodyFile !== undefined) {
-    throw new UsageError("--body and --body-file cannot be used together");
-  }
-  if (opts.body === undefined && opts.bodyFile === undefined && !deps.interactive) {
-    throw new UsageError("Not a terminal: pass --body or --body-file");
-  }
-  const pr = await resolvePullRequest(id, deps);
+): Promise<string> {
   const body = (
     opts.bodyFile !== undefined
       ? await readBodyFile(opts.bodyFile, deps)
-      : (opts.body ?? (await deps.edit("")))
+      : (opts.body ?? (await deps.edit(initial)))
   ).trim();
   if (body === "") throw new UserError("Aborted: the comment is empty.");
-  return { pr, commentId: await deps.api.postComment(pr, body) };
+  return body;
 }
 
 export async function approvePullRequest(

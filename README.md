@@ -139,14 +139,16 @@ is optional, the current branch's open PR is used.
 | `lazycc status` | The inbox as text: open PRs awaiting your approval, and your own open PRs with their approval rules and conflicts. ● marks activity since you last opened the PR |
 | `lazycc pr create` | Push the current branch if needed and open a PR (see below) |
 | `lazycc pr list` | List PRs. `--state open\|closed` (default `open`), `-L/--limit` (default 30): the N most recently created PRs, most recently active first, as `gh pr list`. On a terminal with no flags it opens the PR list screen |
-| `lazycc pr view [<id>]` | Show a PR. On a terminal it opens the review screen |
+| `lazycc pr view [<id>]` | Show a PR. On a terminal it opens the review screen. `--comments` adds every comment thread with its comment IDs, and prints on a terminal too |
 | `lazycc pr status` | Approvals, approval rules and conflicts of the current branch's PR. Needs a clone. With the config's `ci`, `pr view`, `pr status`, the review screen and the home screen add CodeBuild and CodePipeline results ([CI results](docs/configuration.md#ci-results)) |
 | `lazycc pr checkout <id>` | Fetch the PR's source branch and switch to it, fast-forwarding an existing local branch. Needs a clone |
-| `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file` (`-F -` for stdin), or the editor on a terminal. Closed PRs can be commented on too |
+| `lazycc pr comment [<id>]` | Comment with `-b text`, `-F file` (`-F -` for stdin), or the editor on a terminal. Closed PRs can be commented on too. `--path file --line n` comments on a line of the new version (`--before`: of the old one), `--reply-to <comment-id>` replies, `--edit <comment-id>` edits your comment (the editor starts from its text), `--delete <comment-id>` deletes it after asking (`--yes` skips the question; required without a terminal). Comment IDs come from `pr view --comments` |
+| `lazycc pr drafts [<id>]` | List the comments saved as drafts on the review screen (`Tab`). `--submit` posts them as `S` does: in order, stopping at the first refusal, holding back an inline draft whose line changed in new commits (exit code 1 for either) |
 | `lazycc pr approve [<id>]` | Approve; `--revoke` takes the approval back |
 | `lazycc pr merge [<id>]` | Merge with one of `--ff`, `--squash`, `--three-way`, or without a flag by the config's `pr.mergeOption`. Refuses if the source branch moved since the PR was read |
 | `lazycc pr close [<id>]` | Close without merging |
 | `lazycc branch` | Branches with their PR state, ahead/behind counts against the default branch, last commit and approval rules. On a terminal it opens the branch screen |
+| `lazycc branch delete <name>` | Delete a branch on CodeCommit (not the local one) after asking; `--yes` skips the question, and is required without a terminal. Refuses the default branch and a branch with an open PR, and a branch that moved while the question was open |
 | `lazycc browse [<repo>]` | Read a repository's tree and files through the API, no clone needed. `--ref` picks a branch or a full 40-character commit ID (default: the default branch), `--path` where to start. On a terminal it opens the browse screen; otherwise it prints the folder listing or the file |
 | `lazycc clone <repo> [<dir>]` | Clone by name. `--protocol https\|ssh\|grc` (default `https`; `grc` is [git-remote-codecommit](https://github.com/aws/git-remote-codecommit)). Flags after `--` go to `git clone` |
 | `lazycc completion bash\|zsh\|fish` | Print a completion script |

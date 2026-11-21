@@ -42,10 +42,15 @@ function nouns(commands: Record<string, Options>): string[] {
   return [...new Set(Object.keys(commands).map((c) => c.split(" ")[0] as string))];
 }
 
-function verbs(commands: Record<string, Options>): string[] {
+function verbs(commands: Record<string, Options>, noun: string): string[] {
   return Object.keys(commands)
-    .filter((c) => c.startsWith("pr "))
-    .map((c) => c.slice(3));
+    .filter((c) => c.startsWith(`${noun} `))
+    .map((c) => c.slice(noun.length + 1));
+}
+
+/** Nouns that are a command on their own and also take verbs (branch, branch delete). */
+function verbNouns(commands: Record<string, Options>): string[] {
+  return nouns(commands).filter((n) => n in commands && verbs(commands, n).length > 0);
 }
 
 /** Words never contain a quote: they are our own command and flag names. */
@@ -86,11 +91,21 @@ function bash(commands: Record<string, Options>): string {
     flags="${words(bareFlags(commands).flatMap(spellings))}"
   elif [[ $cmd == pr ]]; then
     if [[ $COMP_CWORD -eq 2 ]]; then
-      COMPREPLY=($(compgen -W "${words(verbs(commands))}" -- "$cur"))
+      COMPREPLY=($(compgen -W "${words(verbs(commands, "pr"))}" -- "$cur"))
       return
     fi
     cmd="pr \${COMP_WORDS[2]}"
-  fi
+${verbNouns(commands)
+  .map(
+    (noun) => `  elif [[ $cmd == ${noun} ]]; then
+    if [[ $COMP_CWORD -eq 2 && $cur != -* ]]; then
+      COMPREPLY=($(compgen -W "${words(verbs(commands, noun))}" -- "$cur"))
+      return
+    fi
+    case "\${COMP_WORDS[2]}" in ${verbs(commands, noun).join("|")}) cmd="${noun} \${COMP_WORDS[2]}" ;; esac
+`,
+  )
+  .join("")}  fi
   case "$prev" in
 ${valueCases.join("\n")}
   esac
@@ -123,7 +138,7 @@ function fishFlag(f: Flag): string {
 const c = (condition: string, rest: string) => `complete -c lazycc -n '${condition}' ${rest}`;
 
 function fish(commands: Record<string, Options>): string {
-  const verbList = words(verbs(commands));
+  const verbList = words(verbs(commands, "pr"));
   const lines = [
     "complete -c lazycc -f",
     c("__fish_use_subcommand", `-a '${words(nouns(commands))}'`),
@@ -133,11 +148,23 @@ function fish(commands: Record<string, Options>): string {
       `-a '${verbList}'`,
     ),
   ];
+  for (const noun of verbNouns(commands)) {
+    const list = words(verbs(commands, noun));
+    lines.push(
+      c(
+        `__fish_seen_subcommand_from ${noun}; and not __fish_seen_subcommand_from ${list}`,
+        `-a '${list}'`,
+      ),
+    );
+  }
   for (const [command, options] of Object.entries(commands)) {
-    const [noun, verb] = command.split(" ");
+    const [noun = "", verb] = command.split(" ");
+    const own = verbs(commands, noun);
     const condition = verb
       ? `__fish_seen_subcommand_from ${noun}; and __fish_seen_subcommand_from ${verb}`
-      : `__fish_seen_subcommand_from ${noun}`;
+      : own.length > 0
+        ? `__fish_seen_subcommand_from ${noun}; and not __fish_seen_subcommand_from ${words(own)}`
+        : `__fish_seen_subcommand_from ${noun}`;
     const positional = POSITIONAL_VALUES[command];
     if (positional) lines.push(c(condition, `-a '${words(positional)}'`));
     for (const f of flags(options)) lines.push(c(condition, fishFlag(f)));
