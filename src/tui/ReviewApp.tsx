@@ -346,6 +346,18 @@ export function App({ service, repository, start, onExit }: AppProps) {
     (err) => formatErrorMessage(err, "close"),
   );
 
+  /** A reopen added a PR the list has not read: read it again on the way back. */
+  const listStaleRef = useRef(false);
+  const reopenAction = useAsyncAction(
+    async () => {
+      if (!prDetail?.pullRequestId || !service.reopenPullRequest) return;
+      const id = await service.reopenPullRequest(prDetail.pullRequestId, selectedRepo);
+      listStaleRef.current = true;
+      await loadPullRequestDetail(id);
+    },
+    (err) => formatErrorMessage(err),
+  );
+
   const updateCommentAction = useAsyncAction(
     async (commentId: string, content: string) => {
       if (!prDetail?.pullRequestId) return;
@@ -451,10 +463,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
     });
   }
 
-  /**
-   * Wrapper for async operations with automatic loading/error state management.
-   * Eliminates repetitive try-catch-finally patterns.
-   */
   async function withLoadingState<T>(
     operation: () => Promise<T>,
     onError?: (err: unknown) => void,
@@ -572,7 +580,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
       setCommitDiffTexts(new Map());
       commitsPromiseRef.current = Promise.resolve([]);
 
-      // Background: blob texts (batched so each arrival does not rebuild all lines)
+      // Batched so each arrival does not rebuild all lines.
       type BlobUpdate =
         | { key: string; status: "loaded"; texts: BlobTexts }
         | { key: string; status: "error" };
@@ -606,7 +614,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
         },
       }).then(() => blobBatcher.flush());
 
-      // Background: commits (parent-chain walk cannot be parallelized)
+      // The parent-chain walk cannot be parallelized.
       const sourceCommit = detail.pullRequest.pullRequestTargets?.[0]?.sourceCommit;
       const mergeBase = detail.pullRequest.pullRequestTargets?.[0]?.mergeBase;
       if (sourceCommit && mergeBase) {
@@ -621,12 +629,11 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: approvals
       const revisionId = detail.pullRequest.revisionId;
       if (revisionId) void reloadApprovals(pullRequestId, revisionId, loadId);
 
-      // Background: CI. Each lookup's failure is inside the result; a failure
-      // to load the CI clients at all leaves the line out.
+      // Each lookup's failure is inside the result; a failure to load the CI
+      // clients at all leaves the line out.
       if (service.checks && sourceCommit) {
         service.checks({ repository: selectedRepo, sourceCommit }).then(
           (loaded) => {
@@ -636,7 +643,6 @@ export function App({ service, repository, start, onExit }: AppProps) {
         );
       }
 
-      // Background: reactions
       void reloadReactions(detail.commentThreads, loadId);
     });
   }
@@ -771,8 +777,14 @@ export function App({ service, repository, start, onExit }: AppProps) {
 
   /** Esc. At the top (lazycc pr view or pr list on its own) it stays, as in lazygit: q quits. */
   function handleBack() {
-    if (screen === "detail" && hasList) setScreen("prs");
-    else onExit?.();
+    if (screen === "detail" && hasList) {
+      setScreen("prs");
+      if (listStaleRef.current) {
+        listStaleRef.current = false;
+        setPagination(createInitialPagination());
+        void loadPullRequests(repository, statusFilter);
+      }
+    } else onExit?.();
   }
 
   /**
@@ -840,6 +852,8 @@ export function App({ service, repository, start, onExit }: AppProps) {
       if (!prDetail) return null;
       return (
         <PullRequestDetail
+          // A reopen shows the new PR here: its screen starts afresh.
+          key={prDetail.pullRequestId}
           pullRequest={prDetail}
           differences={prDifferences}
           commentThreads={commentThreads}
@@ -858,6 +872,7 @@ export function App({ service, repository, start, onExit }: AppProps) {
             preferred: service.mergeStrategy,
           }}
           close={closePRAction}
+          reopen={service.reopenPullRequest ? reopenAction : undefined}
           commitView={{
             commits,
             differences: commitDifferences,

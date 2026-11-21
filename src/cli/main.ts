@@ -27,6 +27,7 @@ import {
   watchedRepositories,
 } from "../core/inbox.js";
 import {
+  alreadyOpen,
   approvePullRequest,
   checkoutPullRequest,
   closePullRequest,
@@ -38,6 +39,7 @@ import {
   mergePullRequest,
   type PrDeps,
   pullRequestStatus,
+  reopenPullRequest,
   resolvePullRequest,
 } from "../core/pr.js";
 import { printable } from "../core/text.js";
@@ -104,6 +106,7 @@ Usage:
   lazycc pr approve [<id>] [--revoke]
   lazycc pr merge [<id>] [--ff | --squash | --three-way]
   lazycc pr close [<id>]
+  lazycc pr reopen <id>   a new PR from a closed one's branches: CodeCommit cannot reopen
   lazycc branch
   lazycc browse [<repo>] [--ref branch|commit] [--path path]
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
@@ -178,6 +181,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     },
   },
   "pr close": { positionals: 1, options: {} },
+  "pr reopen": { positionals: 1, options: {} },
   branch: { positionals: 0, options: {} },
   status: { positionals: 0, options: {} },
   browse: {
@@ -320,8 +324,8 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     }
     // An empty name (-R "$UNSET") would otherwise fall back to the clone's remote.
     if (values["repo"] === "") throw new UsageError("--repo needs a repository name");
-    if (command === "pr checkout" && positionals[0] === undefined) {
-      throw new UsageError("pr checkout needs a pull request id");
+    if ((command === "pr checkout" || command === "pr reopen") && positionals[0] === undefined) {
+      throw new UsageError(`${command} needs a pull request id`);
     }
     return await runCommand(command, values, positionals, deps, (ctx) => {
       profile = ctx.profile;
@@ -519,9 +523,7 @@ async function runCommand(
       if (result.kind === "exists") {
         // The shape of pr view --json (spec: PR 作成), CI results included.
         if (json) print({ existing: true, ...(await viewJson(result.pr)) });
-        io.err(
-          `A pull request from ${result.pr.sourceBranch} into ${result.pr.destinationBranch} is already open: #${result.pr.id} ${printable(result.pr.title)}`,
-        );
+        io.err(alreadyOpen(result.pr));
         if (!json) io.err(url);
         return 1;
       }
@@ -596,6 +598,23 @@ async function runCommand(
       const pr = await closePullRequest(positionals[0], prDeps);
       if (json) print(prJson(pr, region));
       else done(`Closed #${pr.id} ${printable(pr.title)}`, pr);
+      return 0;
+    }
+    case "pr reopen": {
+      const from = positionals[0] as string;
+      const { kind, pr } = await reopenPullRequest(from, prDeps);
+      if (kind === "exists") {
+        if (json) print({ existing: true, ...(await viewJson(pr)) });
+        io.err(alreadyOpen(pr));
+        if (!json) io.err(consoleUrl(region, pr.repository, pr.id));
+        return 1;
+      }
+      if (json) print({ reopenedFrom: from, ...(await viewJson(pr)) });
+      else
+        done(
+          `Opened #${pr.id} ${printable(pr.title)} from the branches of #${from} (CodeCommit cannot reopen a closed pull request)`,
+          pr,
+        );
       return 0;
     }
     case "pr view": {

@@ -63,6 +63,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc pr approve [id] | 承認する。--revoke で取り消す | ID 指定で可 |
 | lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つで指定する。省略したときは設定の pr.mergeOption を使い、それもなければエラーにする。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
 | lazycc pr close [id] | マージせずに閉じる | ID 指定で可 |
+| lazycc pr reopen <id> | 閉じた PR のブランチ、タイトル、説明で新しい PR を作る(PR の再オープンの節) | 可 |
 | lazycc branch | ブランチ×PR 対応表を開く | 可 |
 | lazycc browse [repo] | clone なしでコードを読む | 可 |
 | lazycc clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
@@ -154,6 +155,21 @@ TUI のブランチ表から作成した場合は、作成後にそのままレ�
 - clientRequestToken は実行ごとに新しく作る。再実行での二重作成は既存 PR の確認で防ぐ。内容から作ると、その後に閉じた PR が返ってきてしまう。
 - clone 内では、ベースとの差分を origin/<base> から取る。なければローカルの <base>、どちらもなければ git fetch を案内する。
 - コンソール URL は https://<region>.console.aws.amazon.com/codesuite/codecommit/repositories/<repo>/pull-requests/<id>/details?region=<region> の形式で組み立てる。GovCloud（us-gov-*）は地域ごとのホストがないため https://console.amazonaws-us-gov.com/… とし、リージョンは ?region= で指定する。
+
+## PR の再オープン
+
+CodeCommit は閉じた PR を OPEN に戻せない(UpdatePullRequestStatus は CLOSED から OPEN への変更を InvalidPullRequestStatusUpdateException で拒み、コンソールにも操作がない)。そこで lazycc pr reopen <id> とレビュー画面の x は、閉じた PR と同じソースブランチ、宛先ブランチ、タイトル、説明で新しい PR を作る。説明の末尾には「Reopened from #<id>.」を足す。足すと 10,240 文字を超えるときは元の説明のままにする。コメント、承認、PR に直接足した承認ルールは引き継がない(承認ルールテンプレートは新しい PR にも CodeCommit が付ける)。
+
+| 状況 | 挙動 |
+|---|---|
+| PR が開いている | 「already open」で終了コード 1 |
+| PR がマージ済み | 再オープンできない旨を出して終了コード 1 |
+| 同じソースと宛先の OPEN な PR がある | 作らずに既存 PR の ID と URL を出し、終了コード 1(pr create と同じ) |
+| ソースか宛先のブランチがもうない | ブランチ名を出し、push し直すよう促して終了コード 1 |
+
+- ID は省略できない。現在のブランチから探すのは OPEN な PR だけで、閉じた PR を推定すると別の PR を作り直しかねないため。
+- 出力は新しい PR の ID と URL。--json は pr view --json の形に reopenedFrom(元の ID)を足す。
+- レビュー画面では、閉じた PR の上の x が確認のあとで新しい PR を作り、その PR を開く。マージ済みの PR では x は何もしない。キーの行も x reopen、x close、なしを切り替える。
 
 ## ブランチ×PR 対応表
 
@@ -368,7 +384,7 @@ PR のソースコミットに対する CodeBuild と CodePipeline の結果を�
 
 ### レビュー画面
 
-現行のキーをそのまま使い、lazygit のキーも受ける。主なものは c コメント、C インラインコメント、R 返信、a 承認、r 承認取り消し、m / M マージ、x クローズ、]c / [c 変更箇所への移動、f / Ctrl+g ファイル一覧。
+現行のキーをそのまま使い、lazygit のキーも受ける。主なものは c コメント、C インラインコメント、R 返信、a 承認、r 承認取り消し、m / M マージ、x クローズ(閉じた PR では再オープン)、]c / [c 変更箇所への移動、f / Ctrl+g ファイル一覧。
 
 D で下書きの一覧を開き、その中の S でまとめて投稿する(コメントの下書きの節)。
 

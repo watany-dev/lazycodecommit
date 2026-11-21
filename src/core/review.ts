@@ -3,13 +3,20 @@ import {
   type Difference,
   type PullRequestTarget,
 } from "@aws-sdk/client-codecommit";
-import { clientConfig, type MergeStrategy } from "../aws/codecommit.js";
+import {
+  type CodeCommitApi,
+  clientConfig,
+  createCodeCommitApi,
+  type MergeStrategy,
+} from "../aws/codecommit.js";
 import * as aws from "../aws/review.js";
 import type { Git, TreeChange } from "../git/git.js";
 import type { SeenPr } from "../state/local.js";
 import { isBinary } from "./browse.js";
 import type { Checks } from "./checks.js";
 import type { DraftStorage } from "./commentDrafts.js";
+import { UserError } from "./errors.js";
+import { alreadyOpen, concurrency, reopenPullRequest } from "./pr.js";
 import { printable } from "./text.js";
 
 export type { SeenPr };
@@ -59,6 +66,11 @@ export type ReviewService = Omit<aws.ReviewApi, "getBlobContent"> & {
   readonly drafts?: DraftStorage;
   /** CI on the PR's source commit; null when the config's ci lists nothing for the repository (ADR 0010). */
   readonly checks?: (pr: { repository: string; sourceCommit: string }) => Promise<Checks | null>;
+  /**
+   * spec: PR の再オープン. Opens a new PR from a closed one's branches and
+   * answers its id; rejects when one from the same branches is already open.
+   */
+  readonly reopenPullRequest?: (pullRequestId: string, repositoryName: string) => Promise<string>;
 };
 
 /** The service for the TUI, with its own client: the review screen needs more calls than CodeCommitApi has. */
@@ -66,7 +78,21 @@ export function openReviewService(
   options: { readonly region?: string; readonly profile?: string },
   git?: Git,
 ): ReviewService {
-  return createReviewService(aws.createReviewApi(new CodeCommitClient(clientConfig(options))), git);
+  return {
+    ...createReviewService(aws.createReviewApi(new CodeCommitClient(clientConfig(options))), git),
+    reopenPullRequest: (id, repository) =>
+      reopenById(id, repository, createCodeCommitApi({ ...options, concurrency: concurrency({}) })),
+  };
+}
+
+export async function reopenById(
+  id: string,
+  repository: string,
+  api: CodeCommitApi,
+): Promise<string> {
+  const { kind, pr } = await reopenPullRequest(id, { api, ctx: { repository }, config: {} });
+  if (kind === "exists") throw new UserError(alreadyOpen(pr));
+  return pr.id;
 }
 
 /**
