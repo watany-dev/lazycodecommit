@@ -193,11 +193,16 @@ export function startMockServer(gitRoot) {
     return pr;
   };
 
-  const mergeCheck = (input) => {
-    const pr = prOf(input.pullRequestId);
-    const t = pr.pullRequestTargets[0];
+  const openPr = (id) => {
+    const pr = prOf(id);
     if (pr.pullRequestStatus !== "OPEN")
       throw new ApiError("PullRequestAlreadyClosedException", "closed");
+    return pr;
+  };
+
+  const mergeCheck = (input) => {
+    const pr = openPr(input.pullRequestId);
+    const t = pr.pullRequestTargets[0];
     if (input.sourceCommitId && input.sourceCommitId !== t.sourceCommit)
       throw new ApiError(
         "TipOfSourceReferenceIsDifferentException",
@@ -415,13 +420,13 @@ export function startMockServer(gitRoot) {
       pullRequestEvents: prOf(pullRequestId).events,
     }),
     UpdatePullRequestTitle({ pullRequestId, title }, c) {
-      const pr = prOf(pullRequestId);
+      const pr = openPr(pullRequestId);
       pr.title = title;
       touch(pr, "PULL_REQUEST_TITLE_UPDATED", c.caller.arn);
       return { pullRequest: view(pr) };
     },
     UpdatePullRequestDescription({ pullRequestId, description }, c) {
-      const pr = prOf(pullRequestId);
+      const pr = openPr(pullRequestId);
       pr.description = description;
       touch(pr, "PULL_REQUEST_DESCRIPTION_UPDATED", c.caller.arn);
       return { pullRequest: view(pr) };

@@ -18,7 +18,9 @@ import {
   MergePullRequestByThreeWayCommand,
   PostCommentForPullRequestCommand,
   UpdatePullRequestApprovalStateCommand,
+  UpdatePullRequestDescriptionCommand,
   UpdatePullRequestStatusCommand,
+  UpdatePullRequestTitleCommand,
 } from "@aws-sdk/client-codecommit";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { mockClient } from "aws-sdk-client-mock";
@@ -426,6 +428,23 @@ describe("createCodeCommitApi", () => {
     expect(cc.commandCalls(UpdatePullRequestStatusCommand)[0]?.args[0].input).toEqual({
       pullRequestId: "7",
       pullRequestStatus: "CLOSED",
+    });
+  });
+
+  it("updates a PR's title and description", async () => {
+    cc.on(UpdatePullRequestTitleCommand).resolves({ pullRequest: sdkPr("7", { title: "New" }) });
+    cc.on(UpdatePullRequestDescriptionCommand).resolves({
+      pullRequest: sdkPr("7", { description: "Why" }),
+    });
+    expect((await api.updateTitle(pr, "New")).title).toBe("New");
+    expect((await api.updateDescription(pr, "Why")).description).toBe("Why");
+    expect(cc.commandCalls(UpdatePullRequestTitleCommand)[0]?.args[0].input).toEqual({
+      pullRequestId: "7",
+      title: "New",
+    });
+    expect(cc.commandCalls(UpdatePullRequestDescriptionCommand)[0]?.args[0].input).toEqual({
+      pullRequestId: "7",
+      description: "Why",
     });
   });
 

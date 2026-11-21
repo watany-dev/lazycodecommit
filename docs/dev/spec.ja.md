@@ -63,6 +63,7 @@ git が知らないことだけを扱い、git でできることは git に任�
 | lazycc pr approve [id] | 承認する。--revoke で取り消す | ID 指定で可 |
 | lazycc pr merge [id] | マージする。方式は --ff、--squash、--three-way のどれか1つで指定する。省略したときは設定の pr.mergeOption を使い、それもなければエラーにする。読んだ後にソースブランチが進んでいたら拒否する | ID 指定で可 |
 | lazycc pr close [id] | マージせずに閉じる | ID 指定で可 |
+| lazycc pr edit [id] | タイトルと説明を変える。-t でタイトル、-b か -F で説明を指定し、指定しなかった方はそのまま。どれもなければ端末ではエディタで両方を開く(1行目がタイトル、空行の後が説明)。変わった項目だけ UpdatePullRequestTitle、UpdatePullRequestDescription を呼ぶ。何も変わらなければ API を呼ばずにその旨を出して終了コード 0。空の説明は説明を消す | ID 指定で可 |
 | lazycc branch | ブランチ×PR 対応表を開く | 可 |
 | lazycc browse [repo] | clone なしでコードを読む | 可 |
 | lazycc clone <repo> | リポジトリ名から URL を解決して git clone する | 可 |
@@ -83,7 +84,8 @@ git が知らないことだけを扱い、git でできることは git に任�
 - lazycc <コマンド> --help はそのコマンドの使い方と共通フラグを出す。
 - 終了コードは 0 が成功、1 が実行時エラー、2 が引数の誤り。
 - 読み手が途中でパイプを閉じたとき(lazycc pr list | head -1 など)は、何も出さずに終了コード 0 で終わる。
-- pr comment、approve、merge、close の ID 省略時は、pr view と同じく現在のブランチの PR を対象にする。approve、merge、close はマージ済みや閉じた PR には API を呼ばずに終了コード 1 で断る。
+- pr comment、approve、merge、close、edit の ID 省略時は、pr view と同じく現在のブランチの PR を対象にする。approve、merge、close、edit はマージ済みや閉じた PR には API を呼ばずに終了コード 1 で断る。
+- pr edit は、空のタイトル(-t "" は引数の誤り、エディタでは中止)と、pr create と同じ上限(タイトル 150 文字、説明 10240 文字)を超えるものを API を呼ぶ前に断る。非 TTY で -t、-b、-F のどれもなければ引数の誤り(終了コード 2)。変わったかどうかは、前後の空白を除き改行を LF にそろえた上で比べる(CRLF で書かれた説明をエディタで開いて閉じただけで更新しないため)。タイトルの更新が通って説明の更新が失敗したときは、タイトルだけ変わったことを標準エラーに出してから失敗を返す。
 
 ### リポジトリの推定
 
@@ -491,6 +493,7 @@ TypeScript と Ink を継続し、CLI と TUI が同じコア層を共有する�
 |---|---|
 | ホーム、PR 一覧 | ListRepositories、ListPullRequests、GetPullRequest、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts |
 | PR 作成 | GetRepository、ListPullRequests、GetPullRequest、GetBranch(clone 外のみ)、CreatePullRequest、GitPush |
+| PR 編集(pr edit) | GetPullRequest、ListPullRequests(ID 省略時)、UpdatePullRequestTitle、UpdatePullRequestDescription |
 | ブランチ表 | ListBranches、GetBranch、GetRepository、ListPullRequests、GetPullRequest、EvaluatePullRequestApprovalRules、DeleteBranch(削除時のみ) |
 | ブラウズ | GetFolder、GetFile、ListBranches、GetRepository(--ref 省略時) |
 | レビュー(閲覧)、pr view、pr status | GetPullRequest、ListPullRequests(ID 省略時)、GetPullRequestApprovalStates、EvaluatePullRequestApprovalRules、GetMergeConflicts、GetCommit、GetDifferences、GetBlob、GetCommentsForPullRequest、GetCommentReactions、DescribePullRequestEvents |

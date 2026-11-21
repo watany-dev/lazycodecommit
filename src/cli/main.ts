@@ -34,6 +34,7 @@ import {
   concurrency,
   consoleUrl,
   createPullRequest,
+  editPullRequest,
   listPullRequests,
   mergePullRequest,
   type PrDeps,
@@ -104,6 +105,7 @@ Usage:
   lazycc pr approve [<id>] [--revoke]
   lazycc pr merge [<id>] [--ff | --squash | --three-way]
   lazycc pr close [<id>]
+  lazycc pr edit [<id>] [-t title] [-b body | -F file]
   lazycc branch
   lazycc browse [<repo>] [--ref branch|commit] [--path path]
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
@@ -178,6 +180,14 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     },
   },
   "pr close": { positionals: 1, options: {} },
+  "pr edit": {
+    positionals: 1,
+    options: {
+      title: { type: "string", short: "t" },
+      body: { type: "string", short: "b" },
+      "body-file": { type: "string", short: "F" },
+    },
+  },
   branch: { positionals: 0, options: {} },
   status: { positionals: 0, options: {} },
   browse: {
@@ -596,6 +606,21 @@ async function runCommand(
       const pr = await closePullRequest(positionals[0], prDeps);
       if (json) print(prJson(pr, region));
       else done(`Closed #${pr.id} ${printable(pr.title)}`, pr);
+      return 0;
+    }
+    case "pr edit": {
+      const { pr, changed } = await editPullRequest(
+        positionals[0],
+        {
+          ...optional("title", str(values, "title")),
+          ...optional("body", str(values, "body")),
+          ...optional("bodyFile", str(values, "body-file")),
+        },
+        prDeps,
+      );
+      if (json) print(prJson(pr, region));
+      else if (changed.length === 0) io.err(`No changes to #${pr.id} ${printable(pr.title)}`);
+      else done(`Updated the ${changed.join(" and ")} of #${pr.id} ${printable(pr.title)}`, pr);
       return 0;
     }
     case "pr view": {

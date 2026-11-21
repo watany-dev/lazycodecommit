@@ -19,7 +19,9 @@ import {
   PostCommentForPullRequestCommand,
   type PullRequest as SdkPullRequest,
   UpdatePullRequestApprovalStateCommand,
+  UpdatePullRequestDescriptionCommand,
   UpdatePullRequestStatusCommand,
+  UpdatePullRequestTitleCommand,
 } from "@aws-sdk/client-codecommit";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 import { limiter, mapLimit } from "./mapLimit.js";
@@ -107,6 +109,8 @@ export interface CodeCommitApi {
   /** Refuses when the source branch has moved past `pr.sourceCommit`. */
   merge(pr: PullRequest, strategy: MergeStrategy): Promise<PullRequest>;
   close(pr: PullRequest): Promise<PullRequest>;
+  updateTitle(pr: PullRequest, title: string): Promise<PullRequest>;
+  updateDescription(pr: PullRequest, description: string): Promise<PullRequest>;
   /** One level of a folder at `ref` ("" is the root), or undefined when there is no such folder. */
   getFolder(repository: string, ref: string, path: string): Promise<FolderEntry[] | undefined>;
   /** A file's bytes at `ref`, or undefined when there is no such file. */
@@ -410,6 +414,20 @@ export function createCodeCommitApi(options: {
     async close(pr) {
       const out = await client.send(
         new UpdatePullRequestStatusCommand({ pullRequestId: pr.id, pullRequestStatus: "CLOSED" }),
+      );
+      return toPullRequest(out.pullRequest);
+    },
+
+    async updateTitle(pr, title) {
+      const out = await client.send(
+        new UpdatePullRequestTitleCommand({ pullRequestId: pr.id, title }),
+      );
+      return toPullRequest(out.pullRequest);
+    },
+
+    async updateDescription(pr, description) {
+      const out = await client.send(
+        new UpdatePullRequestDescriptionCommand({ pullRequestId: pr.id, description }),
       );
       return toPullRequest(out.pullRequest);
     },

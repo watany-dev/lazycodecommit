@@ -96,8 +96,6 @@ const work = mkdtempSync(join(tmpdir(), "lazycc-realcheck-"));
 const reportPath = resolve(opt.out ?? `lazycc-realcheck-${stamp}.md`);
 const cli = resolve(opt.lazycc ?? join(ROOT, "dist/cli.mjs"));
 
-// ---------------------------------------------------------------- recording
-
 const results = [];
 const runs = [];
 const captures = {};
@@ -125,8 +123,6 @@ const block = (lang, s) => `\`\`\`${lang}\n${s.replaceAll("```", "ˋˋˋ")}\n\`\
 const ESCAPES = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Z]/g;
 const has = (obj, path) =>
   path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj) !== undefined;
-
-// ---------------------------------------------------------------- environment
 
 // Keep git config the caller passed the same way (scripts/emulator/env.sh does).
 const gitConfig = Array.from({ length: Number(process.env.GIT_CONFIG_COUNT ?? 0) }, (_, i) => [
@@ -250,8 +246,6 @@ function expectRun(id, title, r, { exit = 0, needle } = {}) {
     record(id, title, "FAIL", `output lacks ${needle}: ${trim(text.trim(), 300)}`);
   else record(id, title, "PASS", `exit ${r.exit}, ${r.ms} ms`);
 }
-
-// ---------------------------------------------------------------- steps
 
 const state = {};
 
@@ -1636,9 +1630,37 @@ async function ciResults() {
   );
 }
 
+async function edit() {
+  const title = "realcheck: edited by lazycc";
+  const r = lazy("pr edit", ["pr", "edit", state.pr1, "-t", title, "-b", "", "--json"], {
+    cwd: state.seed,
+  });
+  // An empty body clears the description: whether CodeCommit takes "" is the question.
+  const after = await getPr(state.pr1);
+  record(
+    "pr.edit",
+    "lazycc pr edit changes the title and clears the description",
+    r.exit === 0 && after?.title === title && (after?.description ?? "") === "" ? "PASS" : "FAIL",
+    r.exit === 0
+      ? `title ${JSON.stringify(after?.title)}, description ${JSON.stringify(after?.description)}`
+      : `exit ${r.exit}: ${trim((r.stdout + r.stderr).trim(), 300)}`,
+  );
+}
+
 async function close() {
   const r = lazy("pr close", ["pr", "close", state.pr1, "--json"], { cwd: state.seed });
   expectRun("pr.close", "lazycc pr close", r);
+  // pr edit refuses a closed PR before calling AWS, on the strength of this answer.
+  expectError(
+    "pr.edit.closed",
+    "UpdatePullRequestTitle on a closed PR",
+    await api(
+      "UpdatePullRequestTitle (closed)",
+      new cc.UpdatePullRequestTitleCommand({ pullRequestId: state.pr1, title: "closed" }),
+    ),
+    "PullRequestAlreadyClosedException",
+    "core/pr.ts editPullRequest",
+  );
   expectRun(
     "pr.list.closed",
     "lazycc pr list --state closed",
@@ -1673,8 +1695,6 @@ async function cleanup() {
     r.ok ? repoName : `${r.name}: ${r.message} — delete ${repoName} by hand`,
   );
 }
-
-// ---------------------------------------------------------------- report
 
 function report() {
   const counts = {};
@@ -1788,8 +1808,6 @@ function replaceName(text, name, tag) {
   return out + text.slice(from);
 }
 
-// ---------------------------------------------------------------- main
-
 let failed = false;
 if (!existsSync(cli)) {
   console.error(`realcheck: ${cli} not found; run \`bun run build\` first or pass --lazycc`);
@@ -1835,6 +1853,7 @@ try {
   await failures();
   await ciResults();
   await commentLimits();
+  await edit();
   await close();
   await renames();
 } catch (error) {
