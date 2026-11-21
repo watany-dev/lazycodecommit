@@ -1,10 +1,11 @@
 ---
 name: cleanup-comments
 description: >
-  Manual-only. Sweep every code comment, delete what restates the code,
+  Sweep every code comment, delete what restates the code,
   keep only "why" that cannot be reconstructed from the code, and turn
-  TODO-like comments into GitHub issues. Fire only when the user invokes
-  /cleanup-comments or says "cleanup-comments".
+  TODO-like comments into GitHub issues. Fire when the user invokes
+  /cleanup-comments or says "cleanup-comments", and as step 5 of /wrapup.
+  Never fire on its own otherwise.
 ---
 
 # cleanup-comments
