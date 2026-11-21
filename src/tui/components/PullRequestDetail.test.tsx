@@ -260,8 +260,11 @@ describe("PullRequestDetail", () => {
       />,
     );
     const output = lastFrame()!;
+    // Diff lines should contain the │ gutter separator
     expect(output).toContain("│");
+    // Context line "line1" should have both before and after line numbers
     expect(output).toMatch(/1\s+1\s*│.*line1/);
+    // Header line should NOT contain gutter
     const headerLine = output.split("\n").find((l) => l.includes("src/auth.ts"));
     expect(headerLine).not.toContain("│");
   });
@@ -609,6 +612,7 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("New Comment:");
     });
+    // j/k/q should not trigger normal keybinds
     stdin.write("j");
     stdin.write("q");
     expect(onBack).not.toHaveBeenCalled();
@@ -659,6 +663,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Simulate posting complete (isPostingComment: true -> false, no error)
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -679,6 +684,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Comment mode should be closed
     expect(lastFrame()).not.toContain("New Comment:");
     expect(lastFrame()).not.toContain("Posting comment...");
   });
@@ -704,11 +710,13 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Enter comment mode
     stdin.write("c");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("New Comment:");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -731,6 +739,7 @@ describe("PullRequestDetail", () => {
     );
     expect(lastFrame()).toContain("Posting comment...");
 
+    // Simulate posting failed
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -751,9 +760,11 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Error should be shown, comment mode still open
     expect(lastFrame()).toContain("Failed to post comment:");
   });
 
+  // v0.3: Approval display tests
   it("shows approvals with approver names when approvals exist", () => {
     const { lastFrame } = render(
       <PullRequestDetail
@@ -905,6 +916,7 @@ describe("PullRequestDetail", () => {
     expect(lastFrame()).not.toContain("Rules:");
   });
 
+  // v0.3: ConfirmPrompt integration tests
   it("shows approve confirm prompt on a key", async () => {
     const { stdin, lastFrame } = render(
       <PullRequestDetail
@@ -1035,11 +1047,13 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Enter approve mode
     stdin.write("a");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Approve this pull request?");
     });
 
+    // Simulate approving (isApproving: true)
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1067,6 +1081,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Approving...");
     });
 
+    // Simulate approve success (isApproving: true -> false, no error)
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1092,6 +1107,7 @@ describe("PullRequestDetail", () => {
         close={defaultCloseProps}
       />,
     );
+    // Prompt should be closed, approval state updated
     await vi.waitFor(() => {
       expect(lastFrame()).not.toContain("Approve this pull request?");
       expect(lastFrame()).not.toContain("Approving...");
@@ -1119,8 +1135,10 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Enter approve mode
     stdin.write("a");
 
+    // Simulate approving
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1145,6 +1163,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Simulate approve failure
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1168,6 +1187,7 @@ describe("PullRequestDetail", () => {
         close={defaultCloseProps}
       />,
     );
+    // Error should be displayed in prompt
     expect(lastFrame()).toContain("Access denied. Check your IAM policy.");
     expect(lastFrame()).toContain("Press any key to return");
   });
@@ -1197,11 +1217,13 @@ describe("PullRequestDetail", () => {
         close={defaultCloseProps}
       />,
     );
+    // Enter approve mode
     stdin.write("a");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Approve this pull request?");
     });
 
+    // Show error state
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -1228,6 +1250,7 @@ describe("PullRequestDetail", () => {
     );
     expect(lastFrame()).toContain("Some error");
 
+    // Press any key to clear error
     stdin.write("x");
     await vi.waitFor(() => {
       expect(onClearApprovalError).toHaveBeenCalled();
@@ -1292,9 +1315,11 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("New Comment:");
     });
     stdin.write("a");
+    // Should not show approval prompt
     expect(lastFrame()).not.toContain("Approve this pull request?");
   });
 
+  // v0.4: Inline comment display tests
   it("displays inline comments under matching diff lines", () => {
     const inlineThreads = [
       {
@@ -1426,6 +1451,7 @@ describe("PullRequestDetail", () => {
     expect(output).toContain("Comments (1):");
   });
 
+  // v0.4: Cursor navigation tests
   it("shows cursor marker on first line initially", () => {
     const { lastFrame } = render(
       <PullRequestDetail
@@ -1474,6 +1500,7 @@ describe("PullRequestDetail", () => {
     stdin.write("j");
     stdin.write("j");
     stdin.write("j");
+    // Verify no crash, cursor still within bounds
     expect(lastFrame()).toContain("> ");
   });
 
@@ -1500,9 +1527,11 @@ describe("PullRequestDetail", () => {
     );
     stdin.write("k");
     stdin.write("k");
+    // First line should still have cursor
     expect(lastFrame()).toContain("> ");
   });
 
+  // v0.4: Inline comment posting tests
   it("shows inline comment input on C key when cursor is on diff line", async () => {
     const { stdin, lastFrame } = render(
       <PullRequestDetail
@@ -1524,6 +1553,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move cursor to a diff line (skip header and separator), wait for render
     stdin.write("j");
     await vi.waitFor(() => {
       const frame = lastFrame() ?? "";
@@ -1531,6 +1561,7 @@ describe("PullRequestDetail", () => {
     });
     stdin.write("j");
     await vi.waitFor(() => {
+      // Cursor should be on context line " line1"
       const frame = lastFrame() ?? "";
       expect(frame).toMatch(/> .*line1/);
     });
@@ -1589,6 +1620,7 @@ describe("PullRequestDetail", () => {
     stdin.write("G");
     for (let i = 0; i < 6; i++) stdin.write("k");
     stdin.write("t");
+    // Wait for re-render after expansion (before 300 only visible after expansion)
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("-before 300");
     });
@@ -1624,6 +1656,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Navigate to the truncation area at the bottom
     stdin.write("G");
     stdin.write("k");
     stdin.write("k");
@@ -1653,6 +1686,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to a diff line
     stdin.write("j");
     stdin.write("j");
     const before = lastFrame();
@@ -1709,6 +1743,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Stay on header line (no diffKey)
     const before = lastFrame();
     stdin.write("t");
     expect(lastFrame()).toBe(before);
@@ -1822,7 +1857,9 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Cursor is on header line (index 0) — no filePath/lineNumber
     stdin.write("C");
+    // Should not show inline comment input
     expect(lastFrame()).not.toContain("Inline comment on");
   });
 
@@ -1942,6 +1979,7 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Inline comment on");
     });
+    // Cancel with Esc
     stdin.write("\x1B");
     await vi.waitFor(() => {
       expect(lastFrame()).not.toContain("Inline comment on");
@@ -1970,6 +2008,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to separator line (index 1)
     stdin.write("j");
     stdin.write("C");
     expect(lastFrame()).not.toContain("Inline comment on");
@@ -1997,6 +2036,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to diff line and open inline comment
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2006,8 +2046,10 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Inline comment on");
     });
+    // Try to move cursor — should be blocked
     stdin.write("j");
     expect(lastFrame()).toContain("Inline comment on");
+    // q should not trigger back
     stdin.write("q");
     expect(onBack).not.toHaveBeenCalled();
   });
@@ -2082,6 +2124,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2106,6 +2149,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate post error
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2126,6 +2170,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Should stay open with error shown
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Inline comment on");
       expect(lastFrame()).toContain("Access denied");
@@ -2159,6 +2204,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Jump to bottom where comment header is rendered
     stdin.write("G");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Comments (1):");
@@ -2219,6 +2265,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Move to diff line and wait for render before pressing C
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
@@ -2229,6 +2276,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2250,10 +2298,12 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Wait for effect to run (wasPostingInline = true)
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Inline comment on");
     });
 
+    // Simulate posting complete
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -2274,6 +2324,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Inline comment mode should be closed
     await vi.waitFor(() => {
       expect(lastFrame()).not.toContain("Inline comment on");
     });
@@ -2335,6 +2386,7 @@ describe("PullRequestDetail", () => {
       />,
     );
     const output = lastFrame();
+    // Should handle missing userArn gracefully
     expect(output).toContain("Approvals:");
   });
 
@@ -2405,9 +2457,11 @@ describe("PullRequestDetail", () => {
       />,
     );
     const output = lastFrame();
+    // Should render without error, showing "unknown" for missing author
     expect(output).toContain("unknown");
   });
 
+  // v0.5: Reply display tests
   it("displays inline reply with indent under root comment", () => {
     const threadWithReply = [
       {
@@ -2697,6 +2751,7 @@ describe("PullRequestDetail", () => {
     expect(output).toContain("└ watany: orphan2");
   });
 
+  // v0.5: Thread folding tests
   it("auto-folds threads with 4+ comments on initial render", () => {
     const longThread = [
       {
@@ -2845,6 +2900,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Initially folded
     expect(lastFrame()).toContain("[+3 replies]");
 
     // Navigate to the comment line (sep=0, comment-header=1, comment=2)
@@ -2857,6 +2913,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toMatch(/> .*a: root/);
     });
 
+    // Press o to unfold
     stdin.write("o");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("└ b: reply1");
@@ -2914,17 +2971,20 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Navigate to comment line
     stdin.write("j");
     stdin.write("j");
     await vi.waitFor(() => {
       expect(lastFrame()).toMatch(/> .*a: root/);
     });
 
+    // Unfold
     stdin.write("o");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("└ b: reply1");
     });
 
+    // Press o again to refold
     stdin.write("o");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("[+3 replies]");
@@ -3123,6 +3183,7 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  // v0.5: Reply posting tests
   it("shows reply input on R key when cursor is on comment line", async () => {
     const threadWithComment = [
       {
@@ -3189,6 +3250,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Cursor is on header line
     stdin.write("R");
     expect(lastFrame()).not.toContain("Replying to");
   });
@@ -3236,6 +3298,7 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
+    // j/k/q should not work
     stdin.write("j");
     stdin.write("q");
     expect(onBack).not.toHaveBeenCalled();
@@ -3333,6 +3396,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
 
+    // Simulate posting start
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -3357,6 +3421,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
 
+    // Simulate posting complete
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -3425,6 +3490,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Replying to taro:");
     });
 
+    // Simulate posting start then failure
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -3518,7 +3584,9 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Cursor is on header line (no threadIndex)
     stdin.write("o");
+    // Should not crash, no visible change
     expect(lastFrame()).toContain("src/auth.ts");
   });
 
@@ -3664,6 +3732,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Before blob fetch: no diff content lines
     expect(lastFrame()).not.toContain("+new line");
 
     rerender(
@@ -3687,6 +3756,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // After blob fetch: diff content appears
     expect(lastFrame()).toContain("+new line");
   });
 
@@ -3747,6 +3817,7 @@ describe("PullRequestDetail", () => {
     expect(lastFrame()).toContain("src/utils.ts");
   });
 
+  // v0.6: Merge integration tests
   it("shows merge strategy selector on m key", async () => {
     const { lastFrame, stdin } = render(
       <PullRequestDetail
@@ -4000,6 +4071,7 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Checking for conflicts...");
     });
+    // Resolve to complete
     resolveConflictCheck!({ mergeable: true, conflictCount: 0, conflictFiles: [] });
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("(Enter/y, Esc/n)");
@@ -4135,6 +4207,7 @@ describe("PullRequestDetail", () => {
     expect(onMerge).toHaveBeenCalledWith("three-way");
   });
 
+  // v0.6: Close PR tests
   it("shows close confirmation on x key", async () => {
     const { lastFrame, stdin } = render(
       <PullRequestDetail
@@ -4361,6 +4434,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Simulate merge complete (isProcessing: true -> false, no error)
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -4406,6 +4480,7 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Simulate close complete (isProcessing: true -> false, no error)
     rerender(
       <PullRequestDetail
         pullRequest={pullRequest as any}
@@ -4482,14 +4557,18 @@ describe("PullRequestDetail", () => {
         reaction={defaultReactionProps}
       />,
     );
+    // Enter comment mode
     stdin.write("c");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("New Comment:");
     });
+    // m and x should be ignored in comment mode (typing them)
+    // They will just be input text in the comment input, not trigger merge/close
     expect(lastFrame()).not.toContain("Select merge strategy:");
     expect(lastFrame()).not.toContain("Close this pull request");
   });
 
+  // Coverage: exercise inline comment cancel callback
   it("cancels inline comment on Esc", async () => {
     const onClearInlineCommentError = vi.fn();
     const { lastFrame, stdin } = render(
@@ -4529,6 +4608,7 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  // Coverage: exercise reply cancel callback
   it("cancels reply on Esc", async () => {
     const onClearReplyError = vi.fn();
     const threads = [
@@ -4567,6 +4647,7 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("taro: LGTM");
     });
+    // Press j 10 times to reach the comment line at index 10
     for (let i = 0; i < 10; i++) {
       stdin.write("j");
     }
@@ -4585,6 +4666,7 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  // Coverage: exercise close PR error clear callback
   it("clears close error on dismiss", async () => {
     const onClearClosePRError = vi.fn();
     const { lastFrame, stdin } = render(
@@ -4611,12 +4693,14 @@ describe("PullRequestDetail", () => {
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("Some error");
     });
+    // Press enter or key to clear the error
     stdin.write("\r");
     await vi.waitFor(() => {
       expect(onClearClosePRError).toHaveBeenCalled();
     });
   });
 
+  // Coverage: exercise approval error clear callback
   it("clears approval error on dismiss", async () => {
     const onClearApprovalError = vi.fn();
     const { lastFrame, stdin } = render(
@@ -4653,6 +4737,7 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  // Coverage: exercise handleStrategySelect catch block
   it("returns to normal when conflict check throws", async () => {
     const onCheckConflicts = vi.fn().mockRejectedValue(new Error("network error"));
     const { lastFrame, stdin } = render(
@@ -4680,6 +4765,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("Select merge strategy:");
     });
     stdin.write("\r");
+    // After the error, merge should be cancelled and we're back to normal
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("m merge");
       expect(lastFrame()).not.toContain("Select merge strategy:");
@@ -4722,6 +4808,7 @@ describe("PullRequestDetail", () => {
     expect(screen.lastFrame()).not.toContain("Access denied");
   });
 
+  // Coverage: exercise merge cancel callback (onCancel at confirm stage)
   it("cancels merge at confirm stage on n key", async () => {
     const onClearMergeError = vi.fn();
     const onCheckConflicts = vi.fn().mockResolvedValue({
@@ -4769,6 +4856,7 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  // Coverage: exercise merge error clear callback
   it("clears merge error on dismiss", async () => {
     const onClearMergeError = vi.fn();
     const onCheckConflicts = vi.fn().mockResolvedValue({
@@ -5068,6 +5156,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Go to commit 2
       stdin.write("\t");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("[Commit 1/3]");
@@ -5076,6 +5165,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("[Commit 2/3]");
       });
+      // Shift+Tab back to commit 1
       stdin.write("\u001b[Z");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("[Commit 1/3]");
@@ -5105,6 +5195,7 @@ describe("PullRequestDetail", () => {
         />,
       );
       stdin.write("\t");
+      // Wait a tick for async processing
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(lastFrame()).not.toContain("[Commit");
       expect(onLoadCommitDiff).not.toHaveBeenCalled();
@@ -5448,8 +5539,10 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Move cursor down
       stdin.write("j");
       stdin.write("j");
+      // Switch to commit view - cursor should reset
       stdin.write("\t");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("[Commit 1/3]");
@@ -5528,6 +5621,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("taro");
       });
+      // Jump to the comment section and select the comment line
       stdin.write("G");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain(">  taro: LGTM");
@@ -6129,6 +6223,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Delete this comment?");
       });
+      // Simulate error
       rerender(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -6154,6 +6249,7 @@ describe("PullRequestDetail", () => {
         />,
       );
       expect(lastFrame()).toContain("Some error");
+      // Dismiss the error
       stdin.write("\r");
       await vi.waitFor(() => {
         expect(onClearDeleteCommentError).toHaveBeenCalled();
@@ -6440,10 +6536,12 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Jump to the comment section and select the comment line
       stdin.write("G");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Comments (2):");
       });
+      // G lands on hanako (last line), confirm cursor is there
       await vi.waitFor(() => {
         expect(lastFrame()).toContain(">    └ hanako: Agreed");
       });
@@ -6478,6 +6576,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Stay on the first line (a header/diff line)
       stdin.write("g");
       const output = lastFrame() ?? "";
       expect(output).not.toContain("React to comment:");
@@ -6602,6 +6701,7 @@ describe("PullRequestDetail", () => {
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("React to comment:");
       });
+      // Simulate isReacting=true (reaction in progress)
       rerender(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -6622,6 +6722,7 @@ describe("PullRequestDetail", () => {
           reaction={{ ...defaultReactionProps, isProcessing: true }}
         />,
       );
+      // Simulate isReacting=false (reaction completed successfully, no error)
       rerender(
         <PullRequestDetail
           pullRequest={pullRequest as any}
@@ -6788,7 +6889,9 @@ describe("PullRequestDetail", () => {
     });
   });
 
+  // Page scroll keybindings
   describe("page scroll keybindings", () => {
+    // 50-line diff for testing half-page scroll
     const manyLines = Array.from({ length: 50 }, (_, i) => `line${i + 1}`).join("\n");
     const manyLinesDiffTexts = new Map([
       ["b1:b2", { before: manyLines, after: manyLines.replace("line25", "modified25") }],
@@ -6815,12 +6918,15 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Initial cursor at line 0 (file header)
+      // Ctrl+d moves halfPage (15) lines down
       stdin.write("\x04");
       await vi.waitFor(() => {
         const frame = lastFrame() ?? "";
         const lines = frame.split("\n");
         const cursorLine = lines.find((l) => l.includes("> "));
         expect(cursorLine).toBeDefined();
+        // Cursor should not be on file header anymore (moved down)
         expect(cursorLine).not.toContain("src/auth.ts");
       });
     });
@@ -6850,6 +6956,7 @@ describe("PullRequestDetail", () => {
       stdin.write("\x04");
       stdin.write("\x04");
       await vi.waitFor(() => {
+        // Should not crash, cursor still exists
         expect(lastFrame()).toContain("> ");
       });
     });
@@ -6875,6 +6982,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // First move down with Ctrl+d
       stdin.write("\x04");
       await vi.waitFor(() => {
         const frame = lastFrame() ?? "";
@@ -6882,12 +6990,14 @@ describe("PullRequestDetail", () => {
         const cursorLine = lines.find((l) => l.includes("> "));
         expect(cursorLine).not.toContain("src/auth.ts");
       });
+      // Then move back up with Ctrl+u
       stdin.write("\x15");
       await vi.waitFor(() => {
         const frame = lastFrame() ?? "";
         const lines = frame.split("\n");
         const cursorLine = lines.find((l) => l.includes("> "));
         expect(cursorLine).toBeDefined();
+        // Cursor should be back at file header
         expect(cursorLine).toContain("src/auth.ts");
       });
     });
@@ -6913,6 +7023,7 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // At top, Ctrl+u should keep cursor at 0
       stdin.write("\x15");
       stdin.write("\x15");
       await vi.waitFor(() => {
@@ -6920,6 +7031,7 @@ describe("PullRequestDetail", () => {
         const lines = frame.split("\n");
         const cursorLine = lines.find((l) => l.includes("> "));
         expect(cursorLine).toBeDefined();
+        // Cursor stays on file header
         expect(cursorLine).toContain("src/auth.ts");
       });
     });
@@ -6945,10 +7057,13 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // G jumps to last line (with 50+ display lines, bottom area is visible)
       stdin.write("G");
       await vi.waitFor(() => {
         const frame = lastFrame() ?? "";
+        // After G, viewport scrolls to show the end of the diff
         expect(frame).toContain("line50");
+        // File header should no longer be visible (scrolled past)
         expect(frame).not.toContain("src/auth.ts");
       });
     });
@@ -6974,11 +7089,14 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Open comment modal
       stdin.write("c");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Comment:");
       });
+      // Ctrl+d should be ignored during modal
       stdin.write("\x04");
+      // Modal should still be open
       expect(lastFrame()).toContain("Comment:");
     });
 
@@ -7003,11 +7121,14 @@ describe("PullRequestDetail", () => {
           reaction={defaultReactionProps}
         />,
       );
+      // Open comment modal
       stdin.write("c");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Comment:");
       });
+      // G should be ignored during modal
       stdin.write("G");
+      // Modal should still be open
       expect(lastFrame()).toContain("Comment:");
     });
   });
@@ -7025,6 +7146,7 @@ describe("PullRequestDetail", () => {
     ];
 
     it("renders correctly when diffTexts load incrementally", () => {
+      // Start with only file1 loaded
       const diffTexts1 = new Map([["a1:a2", { before: "old1", after: "new1" }]]);
 
       const { lastFrame, rerender } = render(
@@ -7052,6 +7174,7 @@ describe("PullRequestDetail", () => {
       expect(lastFrame()).toContain("new1");
       expect(lastFrame()).toContain("Loading file content...");
 
+      // Now file2 also loads
       const diffTexts2 = new Map([
         ["a1:a2", { before: "old1", after: "new1" }],
         ["b1:b2", { before: "old2", after: "new2" }],
@@ -7078,6 +7201,7 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Both files should now be rendered
       expect(lastFrame()).toContain("new1");
       expect(lastFrame()).toContain("new2");
       expect(lastFrame()).not.toContain("Loading file content...");
@@ -7123,8 +7247,10 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Cursor starts at first line (src/alpha.ts header)
       expect(lastFrame()).toMatch(/> .*src\/alpha\.ts/);
 
+      // Press n to jump to next file header
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
@@ -7153,11 +7279,13 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Jump to second file
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
       });
 
+      // Jump again should wrap to first file
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/alpha\.ts/);
@@ -7186,11 +7314,13 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Move to second file first
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
       });
 
+      // N goes back to first file
       stdin.write("N");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/alpha\.ts/);
@@ -7219,6 +7349,7 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Cursor starts at first header, N should wrap to last file
       stdin.write("N");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
@@ -7290,6 +7421,7 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Jump to second file
       stdin.write("n");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("File 2/2");
@@ -7405,16 +7537,19 @@ describe("PullRequestDetail", () => {
         />,
       );
 
+      // Open file list
       stdin.write("f");
       await vi.waitFor(() => {
         expect(lastFrame()).toContain("Files");
       });
 
+      // Move cursor down to second file
       stdin.write("j");
       await vi.waitFor(() => {
         expect(lastFrame()).toMatch(/> .*src\/beta\.ts/);
       });
 
+      // Select with Enter - should jump to that file and close the list
       stdin.write("\r");
       await vi.waitFor(() => {
         expect(lastFrame()).not.toContain("j/k move");
@@ -7559,6 +7694,7 @@ describe("PullRequestDetail", () => {
         expect(lastFrame()).toContain("Files");
       });
 
+      // q should close file list, not trigger onBack
       stdin.write("q");
       await vi.waitFor(() => {
         expect(onBack).not.toHaveBeenCalled();
@@ -7784,6 +7920,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Cursor starts at index 0 (header). Press ]c to jump to first change line.
     stdin.write("]");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("]_");
@@ -7791,6 +7928,7 @@ describe("PullRequestDetail", () => {
     stdin.write("c");
     await vi.waitFor(() => {
       const output = lastFrame()!;
+      // Should land on a delete or add line (contains - or +)
       expect(output).toMatch(/>.*│.*[-+]/);
     });
   });
@@ -7817,11 +7955,13 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Jump to end first, then [c to find previous change
     stdin.write("G");
     await vi.waitFor(() => {
       expect(lastFrame()).toBeTruthy();
     });
     stdin.write("[");
+    // Wait for pendingBracket to be processed and shown in footer
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("[_");
     });
@@ -7833,6 +7973,7 @@ describe("PullRequestDetail", () => {
   });
 
   it("]c does nothing when no change lines ahead", async () => {
+    // Use diffTexts with no changes (identical before/after)
     const noDiffTexts = new Map([["b1:b2", { before: "line1\nline2", after: "line1\nline2" }]]);
     const { stdin, lastFrame } = render(
       <PullRequestDetail
@@ -7861,8 +8002,10 @@ describe("PullRequestDetail", () => {
     });
     stdin.write("c");
     await vi.waitFor(() => {
+      // After ]c with no changes, footer returns to normal (no pending bracket)
       expect(lastFrame()).not.toContain("]_");
     });
+    // Cursor position should be unchanged (still on header line)
     expect(lastFrame()).toContain("> ");
     expect(lastFrame()).toContain("src/auth.ts");
   });
@@ -7889,6 +8032,7 @@ describe("PullRequestDetail", () => {
       />,
     );
 
+    // Press [ (sets pendingBracket), then j (resets and does normal cursor down)
     stdin.write("[");
     await vi.waitFor(() => {
       expect(lastFrame()).toContain("[_");
@@ -7896,8 +8040,10 @@ describe("PullRequestDetail", () => {
     stdin.write("j");
     await vi.waitFor(() => {
       const output = lastFrame()!;
+      // Cursor should have moved down one line (to separator, the second line)
       const lines = output.split("\n");
       const cursorLine = lines.find((l) => l.startsWith(">") || l.includes("> "));
+      // The cursor should be on a line that is NOT the header (first line)
       expect(cursorLine).toBeTruthy();
       expect(cursorLine).not.toContain("src/auth.ts");
     });

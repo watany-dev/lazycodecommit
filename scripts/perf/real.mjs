@@ -68,6 +68,7 @@ log(
   `Repository: (redacted), ${repos.length} repositories in region, ${open.length} open / ${closed.length}+ closed PRs\n`,
 );
 
+// 1. Latency per call, one at a time.
 log(
   "## 1. Latency per call (serial)\n\n| Call | n | p50 | p90 | max | errors |\n| --- | --- | --- | --- | --- | --- |",
 );
@@ -95,6 +96,7 @@ if (ids.length)
     (i) => new GetPullRequestCommand({ pullRequestId: ids[i % ids.length] }),
   );
 
+// 2. Throttling: the same GetPullRequest burst at rising concurrency.
 log(
   "\n## 2. GetPullRequest burst at rising concurrency\n\n| in flight | calls | wall | per call | throttled |\n| --- | --- | --- | --- | --- |",
 );
@@ -118,6 +120,7 @@ for (const c of ids.length ? [1, 4, 8, 16, 32] : []) {
   log(`| ${c} | ${n} | ${ms(wall)} | ${ms(wall / n)} | ${throttled} |`);
 }
 
+// 3. Comments and reactionCounts on the PR with the most comments among the first 10 (#101).
 log("\n## 3. Comments and reactions (#101)\n");
 let best;
 for (const id of opt.pr ? [opt.pr] : ids.slice(0, 10)) {
@@ -157,6 +160,7 @@ if (best?.comments.length) {
   if (reacted[0]) log(`Example reactionCounts: \`${JSON.stringify(reacted[0].reactionCounts)}\``);
 } else log("No comments found on the first 10 PRs; pass --pr <id> of a PR with comments.");
 
+// 4. The built lazycc, wall time per command (median of 3).
 log("\n## 4. lazycc commands (median of 3)\n\n| Command | wall | exit |\n| --- | --- | --- |");
 const lazy = (args) => {
   const t = performance.now();

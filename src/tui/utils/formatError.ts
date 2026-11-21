@@ -73,6 +73,7 @@ export function formatErrorMessage(
 
   const name = err.name;
 
+  // Special case: approval action depends on approve/revoke
   if (context === "approval" && name === "PullRequestCannotBeApprovedByAuthorException") {
     return approvalAction === "revoke"
       ? "Cannot revoke approval on your own pull request."

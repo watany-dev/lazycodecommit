@@ -57,10 +57,12 @@ export function computeSimpleDiff(beforeLines: string[], afterLines: string[]): 
   let bi = 0; // Index for beforeLines
   let ai = 0; // Index for afterLines
 
+  // Process both arrays until all lines are consumed
   while (bi < blen || ai < alen) {
     const beforeLine = beforeLines[bi];
     const afterLine = afterLines[ai];
 
+    // Case 1: Lines match at current position - add as context
     if (bi < blen && ai < alen && beforeLine === afterLine) {
       result.push({
         type: "context",
@@ -71,9 +73,11 @@ export function computeSimpleDiff(beforeLines: string[], afterLines: string[]): 
       bi++;
       ai++;
     } else {
+      // Case 2: Lines differ - process deletions first, then additions
       const startBi = bi;
       const startAi = ai;
 
+      // Process deletions: consume lines from 'before' that don't match current 'after'
       // oxlint-disable-next-line no-unmodified-loop-condition -- ai stays put while deletions are consumed
       while (bi < blen && (ai >= alen || beforeLines[bi] !== afterLines[ai])) {
         const bl = beforeLines[bi]!;
@@ -87,6 +91,7 @@ export function computeSimpleDiff(beforeLines: string[], afterLines: string[]): 
         bi++;
       }
 
+      // Process additions: consume lines from 'after' that don't match current 'before'
       // oxlint-disable-next-line no-unmodified-loop-condition -- bi stays put while additions are consumed
       while (ai < alen && (bi >= blen || afterLines[ai] !== beforeLines[bi])) {
         const al = afterLines[ai]!;
