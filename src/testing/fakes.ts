@@ -142,7 +142,6 @@ export interface FakeState extends LocalState {
   readonly draftLists: Map<string, unknown>;
 }
 
-/** LocalState in memory. */
 export function fakeState(): FakeState {
   const identities = new Map<string, string>();
   const seenAt = new Map<string, Date>();

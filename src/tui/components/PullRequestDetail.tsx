@@ -416,7 +416,6 @@ export function PullRequestDetail({
           setCursorIndex(0);
           return;
         }
-        // Lazy load: trigger first commit load
         setViewIndex(0);
         setCursorIndex(0);
         onLoadCommitDiff(0);
@@ -480,21 +479,18 @@ export function PullRequestDetail({
       });
       return;
     }
-    // Ctrl+d, J, PgDn: half page down
     if (isPageDown(input, key)) {
       if (lines.length === 0) return;
       const halfPage = Math.floor(visibleLineCount / 2);
       setCursorIndex((prev) => Math.min(prev + halfPage, lines.length - 1));
       return;
     }
-    // Ctrl+u, K, PgUp: half page up
     if (isPageUp(input, key)) {
       if (lines.length === 0) return;
       const halfPage = Math.floor(visibleLineCount / 2);
       setCursorIndex((prev) => Math.max(prev - halfPage, 0));
       return;
     }
-    // G, >, End: jump to last line
     if (input === "G" || isBottom(input, key)) {
       if (lines.length === 0) return;
       setCursorIndex(lines.length - 1);
@@ -505,13 +501,11 @@ export function PullRequestDetail({
       setCursorIndex(0);
       return;
     }
-    // n: next file header
     if (input === "n") {
       const idx = findNextHeaderIndex(headerIndices, cursorIndex);
       if (idx !== -1) setCursorIndex(idx);
       return;
     }
-    // N: previous file header
     if (input === "N") {
       const idx = findPrevHeaderIndex(headerIndices, cursorIndex);
       if (idx !== -1) setCursorIndex(idx);
@@ -1040,7 +1034,6 @@ function getReplyTargetFromLine(line: DisplayLine): {
 } {
   const commentId = line.commentId as string;
 
-  // Extract author from line text
   const text = line.text;
   let author = "unknown";
   let content = text;
@@ -1050,7 +1043,6 @@ function getReplyTargetFromLine(line: DisplayLine): {
   if (colonIdx !== -1) {
     const prefix = text.slice(0, colonIdx);
     content = text.slice(colonIdx + 2);
-    // Remove prefix symbols
     author = prefix.replace(/^[💬└\s]+/u, "").trim();
   }
 

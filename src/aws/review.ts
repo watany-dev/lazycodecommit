@@ -167,7 +167,6 @@ export interface ReactionSummary {
   userArns: string[];
 }
 
-/** commentId → ReactionSummary[] mapping */
 export type ReactionsByComment = Map<string, ReactionSummary[]>;
 
 /** PR アクティビティイベントの表示用データ */
