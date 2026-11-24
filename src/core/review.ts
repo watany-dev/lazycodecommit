@@ -66,7 +66,15 @@ export function openReviewService(
   options: { readonly region?: string; readonly profile?: string },
   git?: Git,
 ): ReviewService {
-  return createReviewService(aws.createReviewApi(new CodeCommitClient(clientConfig(options))), git);
+  return createReviewService(openReviewApi(options), git);
+}
+
+/** The review screen's calls, as CodeCommit answers them: for the CLI's comment and draft commands. */
+export function openReviewApi(options: {
+  readonly region?: string;
+  readonly profile?: string;
+}): aws.ReviewApi {
+  return aws.createReviewApi(new CodeCommitClient(clientConfig(options)));
 }
 
 /**

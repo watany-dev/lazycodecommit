@@ -3,11 +3,24 @@ import { version } from "../../package.json" with { type: "json" };
 import type { CiApi } from "../aws/ci.js";
 import type { CodeCommitApi, MergeStrategy, PullRequest } from "../aws/codecommit.js";
 import { explainAwsError } from "../aws/errors.js";
-import { branchActions, loadBranchTable } from "../core/branch.js";
+import type { ReviewApi } from "../aws/review.js";
+import { branchActions, deleteBranchByName, loadBranchTable } from "../core/branch.js";
 import { type BrowseNode, browseActions, ENTRY_MARK } from "../core/browse.js";
 import { lazyCiClient, pullRequestChecks, repositoryRuns } from "../core/checks.js";
 import { cloneRepository } from "../core/clone.js";
-import { type DraftStorage, draftStorage } from "../core/commentDrafts.js";
+import {
+  type DraftStorage,
+  draftKey,
+  draftStorage,
+  postPullRequestDrafts,
+  type StoredDrafts,
+} from "../core/commentDrafts.js";
+import {
+  type CommentAction,
+  commentAction,
+  commentOnPullRequest,
+  loadComments,
+} from "../core/comments.js";
 import {
   type AccountContext,
   type ContextInput,
@@ -30,7 +43,6 @@ import {
   approvePullRequest,
   checkoutPullRequest,
   closePullRequest,
-  commentOnPullRequest,
   concurrency,
   consoleUrl,
   createPullRequest,
@@ -50,12 +62,18 @@ import {
   branchJson,
   branchLines,
   checksJson,
+  commentLines,
+  commentsJson,
+  draftLines,
+  draftsJson,
   inboxJson,
   inboxLines,
   listLines,
+  placeJson,
   prJson,
   statusLines,
   viewLines,
+  where,
 } from "./format.js";
 
 export interface Io {
@@ -80,6 +98,8 @@ export interface Deps {
     profile?: string;
     concurrency: number;
   }): Promise<CodeCommitApi>;
+  /** The review screen's calls, for the comment and draft commands CodeCommitApi does not cover. */
+  createReviewApi(options: { region?: string; profile?: string }): Promise<ReviewApi>;
   /** CodeBuild and CodePipeline; loaded only for a repository the config's ci lists (ADR 0010). */
   createCiApi(options: { region?: string; profile?: string }): Promise<CiApi>;
   loadConfig(env: Readonly<Record<string, string | undefined>>): Promise<Config>;
@@ -97,14 +117,18 @@ Usage:
   lazycc status
   lazycc pr create [-B base] [-H head] [-t title] [-b body | -F file] [--fill] [--push | --no-push] [--dry-run]
   lazycc pr list [--state open|closed] [-L limit]   the newest N created, most recently active first
-  lazycc pr view [<id>]
+  lazycc pr view [<id>] [--comments]
   lazycc pr status
   lazycc pr checkout <id>
-  lazycc pr comment [<id>] [-b body | -F file]
+  lazycc pr comment [<id>] [-b body | -F file] [--path file --line n [--before]]
+  lazycc pr comment [<id>] --reply-to <comment-id> | --edit <comment-id> [-b body | -F file]
+  lazycc pr comment [<id>] --delete <comment-id> [--yes]
+  lazycc pr drafts [<id>] [--submit]   the review screen's unposted comments
   lazycc pr approve [<id>] [--revoke]
   lazycc pr merge [<id>] [--ff | --squash | --three-way]
   lazycc pr close [<id>]
   lazycc branch
+  lazycc branch delete <name> [--yes]   on CodeCommit; local branches are left alone
   lazycc browse [<repo>] [--ref branch|commit] [--path path]
   lazycc clone <repo> [<dir>] [--protocol https|ssh|grc] [-- <git clone flags>]
   lazycc completion bash|zsh|fish
@@ -158,7 +182,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     positionals: 0,
     options: { state: { type: "string", short: "s" }, limit: { type: "string", short: "L" } },
   },
-  "pr view": { positionals: 1, options: {} },
+  "pr view": { positionals: 1, options: { comments: { type: "boolean" } } },
   "pr status": { positionals: 0, options: {} },
   "pr checkout": { positionals: 1, options: {} },
   "pr comment": {
@@ -166,8 +190,16 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
     options: {
       body: { type: "string", short: "b" },
       "body-file": { type: "string", short: "F" },
+      path: { type: "string" },
+      line: { type: "string" },
+      before: { type: "boolean" },
+      "reply-to": { type: "string" },
+      edit: { type: "string" },
+      delete: { type: "string" },
+      yes: { type: "boolean", short: "y" },
     },
   },
+  "pr drafts": { positionals: 1, options: { submit: { type: "boolean" } } },
   "pr approve": { positionals: 1, options: { revoke: { type: "boolean" } } },
   "pr merge": {
     positionals: 1,
@@ -179,6 +211,7 @@ const COMMANDS: Record<string, { options: Options; positionals: number }> = {
   },
   "pr close": { positionals: 1, options: {} },
   branch: { positionals: 0, options: {} },
+  "branch delete": { positionals: 1, options: { yes: { type: "boolean", short: "y" } } },
   status: { positionals: 0, options: {} },
   browse: {
     positionals: 1,
@@ -277,6 +310,9 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
       }
       command = `pr ${verb}`;
       commandArgs = rest;
+    } else if (noun === "branch" && verb === "delete") {
+      command = "branch delete";
+      commandArgs = rest;
     } else {
       command = noun;
       commandArgs = args.slice(1);
@@ -323,6 +359,12 @@ export async function run(args: readonly string[], rawDeps: Deps): Promise<numbe
     if (command === "pr checkout" && positionals[0] === undefined) {
       throw new UsageError("pr checkout needs a pull request id");
     }
+    if (command === "branch delete") {
+      if (!positionals[0]) throw new UsageError("branch delete needs a branch name");
+      if (values["yes"] !== true && !io.interactive) {
+        throw new UsageError("Not a terminal: pass --yes to delete without confirming");
+      }
+    }
     return await runCommand(command, values, positionals, deps, (ctx) => {
       profile = ctx.profile;
     });
@@ -343,6 +385,23 @@ async function runCommand(
   const config = await deps.loadConfig(io.env);
   // Checked before any AWS call, so a typo cannot cost a round trip.
   if (command === "pr merge") mergeStrategy(values, config);
+  const action =
+    command === "pr comment"
+      ? commentAction(
+          {
+            ...optional("replyTo", str(values, "reply-to")),
+            ...optional("path", str(values, "path")),
+            ...optional("line", str(values, "line")),
+            before: values["before"] === true,
+            ...optional("edit", str(values, "edit")),
+            ...optional("delete", str(values, "delete")),
+            yes: values["yes"] === true,
+            ...optional("body", str(values, "body")),
+            ...optional("bodyFile", str(values, "body-file")),
+          },
+          io.interactive,
+        )
+      : undefined;
   const git = deps.createGit(io.cwd);
   const input = {
     ...optional("repo", str(values, "repo")),
@@ -400,8 +459,11 @@ async function runCommand(
   };
   const local = deps.createState(io.env);
   const markSeen = markSeenFor(local, region);
+  let reviewApi: Promise<ReviewApi> | undefined;
+  const review = () =>
+    (reviewApi ??= deps.createReviewApi({ region, ...optional("profile", ctx.profile) }));
   // On a terminal, pr view and a bare pr list open the review screen instead of printing.
-  const review = (start: ReviewRequest["start"]) =>
+  const reviewScreen = (start: ReviewRequest["start"]) =>
     deps.openReview({
       repository: ctx.repository,
       start,
@@ -539,7 +601,7 @@ async function runCommand(
         values["state"] === undefined &&
         values["limit"] === undefined
       ) {
-        await review(null);
+        await reviewScreen(null);
         return 0;
       }
       const state = (str(values, "state") ?? "open").toUpperCase();
@@ -557,18 +619,86 @@ async function runCommand(
       else for (const line of listLines(prs)) io.out(line);
       return 0;
     }
+    case "branch delete": {
+      const name = positionals[0] as string;
+      const { tip } = await deleteBranchByName(name, {
+        api,
+        git,
+        ctx,
+        config,
+        ...(values["yes"] === true ? {} : { confirm: io.confirm }),
+      });
+      if (json) print({ repository: ctx.repository, branch: name, commit: tip, deleted: true });
+      else io.out(`Deleted ${name} (${tip.slice(0, 7)}) on CodeCommit.`);
+      return 0;
+    }
     case "pr comment": {
+      const act = action as CommentAction;
       const { pr, commentId } = await commentOnPullRequest(
         positionals[0],
+        act,
         {
           ...optional("body", str(values, "body")),
           ...optional("bodyFile", str(values, "body-file")),
         },
-        prDeps,
+        { ...prDeps, review },
       );
-      if (json) print({ commentId, pullRequest: prJson(pr, region) });
-      else done(`Commented on #${pr.id} ${printable(pr.title)}`, pr);
+      if (json)
+        print({
+          ...commentActionJson(act, commentId),
+          pullRequest: prJson(pr, region),
+        });
+      else done(`${commentActionLine(act)} #${pr.id} ${printable(pr.title)}`, pr);
       return 0;
+    }
+    case "pr drafts": {
+      const pr = await resolvePullRequest(positionals[0], prDeps);
+      const storage = draftStorage(local.drafts, region);
+      const key = draftKey({ pullRequestId: pr.id, authorArn: pr.authorArn });
+      const stored = await storage.load(key);
+      noteStored(io, stored);
+      if (values["submit"] !== true || stored.drafts.length === 0) {
+        if (json) {
+          print(
+            values["submit"] === true
+              ? { posted: 0, remaining: [], pullRequest: prJson(pr, region) }
+              : draftsJson(stored.drafts),
+          );
+        } else if (stored.drafts.length === 0) io.err(`No drafts on #${pr.id}.`);
+        else for (const line of draftLines(stored.drafts)) io.out(line);
+        return 0;
+      }
+      // Loaded here only: it brings the review screen's blob decoding, which
+      // reads lines the way they were shown when the drafts were written.
+      const { createReviewService } = await import("../core/review.js");
+      let current = stored.drafts;
+      const result = await postPullRequestDrafts({
+        service: createReviewService(await review(), ctx.clone ? git : undefined),
+        repository: pr.repository,
+        pullRequestId: pr.id,
+        current: () => current,
+        save: async (list) => (current = (await storage.save(key, list)).drafts),
+      });
+      const moved = result.remaining.filter((d) => d.problem?.kind === "moved").length;
+      if (json) {
+        print({
+          posted: result.posted,
+          remaining: draftsJson(result.remaining),
+          pullRequest: prJson(pr, region),
+        });
+      } else
+        done(`Posted ${plural(result.posted, "draft")} on #${pr.id} ${printable(pr.title)}`, pr);
+      if (result.stopped?.problem) {
+        io.err(
+          `lazycc: stopped at draft ${result.stopped.id.slice(0, 8)}: ${result.stopped.problem.message}`,
+        );
+      }
+      if (moved > 0) {
+        io.err(
+          `lazycc: ${plural(moved, "draft")} not posted: ${moved === 1 ? "its line" : "their lines"} changed in new commits. Check ${moved === 1 ? "it" : "them"} in \`lazycc pr view ${pr.id}\` (D).`,
+        );
+      }
+      return result.stopped || moved > 0 ? 1 : 0;
     }
     case "pr approve": {
       const approve = values["revoke"] !== true;
@@ -600,16 +730,20 @@ async function runCommand(
     }
     case "pr view": {
       const pr = await resolvePullRequest(positionals[0], prDeps);
-      if (io.interactive && !json) {
-        await review({ pullRequestId: pr.id });
+      // --comments prints on a terminal too: the review screen shows them anyway.
+      const threads =
+        values["comments"] === true ? await loadComments(pr, await review()) : undefined;
+      if (io.interactive && !json && !threads) {
+        await reviewScreen({ pullRequestId: pr.id });
         return 0;
       }
       if (json) {
-        print(await viewJson(pr));
+        print({ ...(await viewJson(pr)), ...(threads ? { comments: commentsJson(threads) } : {}) });
         return 0;
       }
       const checks = await loadChecks(pr);
       for (const line of viewLines(pr, region, checks)) io.out(line);
+      if (threads) for (const line of commentLines(threads)) io.out(line);
       return 0;
     }
     default: {
@@ -633,6 +767,46 @@ async function runCommand(
     }
   }
 }
+
+function commentActionJson(action: CommentAction, commentId: string) {
+  switch (action.kind) {
+    case "comment": {
+      const l = action.location;
+      return { action: "comment", commentId, ...(l ? { location: placeJson(l) } : {}) };
+    }
+    case "reply":
+      return { action: "reply", commentId, inReplyTo: action.commentId };
+    default:
+      return { action: action.kind, commentId };
+  }
+}
+
+function commentActionLine(action: CommentAction): string {
+  switch (action.kind) {
+    case "comment":
+      return action.location ? `Commented on ${where(action.location)} in` : "Commented on";
+    case "reply":
+      return `Replied to comment ${action.commentId} on`;
+    case "edit":
+      return `Edited comment ${action.commentId} on`;
+    default:
+      return `Deleted comment ${action.commentId} on`;
+  }
+}
+
+/** What the review screen's header says about drafts.json, on stderr. */
+function noteStored(io: Io, stored: StoredDrafts): void {
+  if (stored.setAside) {
+    io.err(`lazycc: drafts.json could not be read; it was moved to ${stored.setAside}.`);
+  }
+  if (stored.hidden > 0) {
+    io.err(
+      `lazycc: ${plural(stored.hidden, "draft")} written by another lazycc version kept, not shown.`,
+    );
+  }
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 interface TopStart {
   readonly start: TopRequest["start"];

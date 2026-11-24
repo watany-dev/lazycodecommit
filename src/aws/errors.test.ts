@@ -115,3 +115,14 @@ describe("explainAwsError for pull request refusals", () => {
     expect(explainAwsError(err("constructor", "x"), undefined)).toBeUndefined();
   });
 });
+
+describe("explainAwsError for comment refusals", () => {
+  it("says whose comment can be edited, and that a deleted one is gone", () => {
+    expect(explainAwsError(err("CommentNotCreatedByCallerException", "x"), undefined)).toBe(
+      "You can only edit your own comments.",
+    );
+    expect(explainAwsError(err("CommentDeletedException", "x"), undefined)).toBe(
+      "Comment has already been deleted.",
+    );
+  });
+});

@@ -2,11 +2,19 @@ import { describe, expect, it } from "vitest";
 import { version } from "../../package.json" with { type: "json" };
 import type { CiApi, CiRun } from "../aws/ci.js";
 import type { CodeCommitApi } from "../aws/codecommit.js";
+import type { CommentThread, ReviewApi } from "../aws/review.js";
 import { newDraft } from "../core/commentDrafts.js";
 import type { Git } from "../git/git.js";
 import { GitError } from "../git/git.js";
 import { type Config, ConfigError } from "../state/config.js";
-import { type FakeState, fakeApi, fakeGit, fakeState, pullRequest } from "../testing/fakes.js";
+import {
+  type FakeState,
+  fakeApi,
+  fakeGit,
+  fakeReviewApi,
+  fakeState,
+  pullRequest,
+} from "../testing/fakes.js";
 import type { ReviewRequest, TopRequest } from "../tui/index.js";
 import { type Deps, run, USAGE } from "./main.js";
 
@@ -15,7 +23,10 @@ interface Setup {
   onTop?: (request: TopRequest) => Promise<void>;
   git?: Partial<Git>;
   api?: CodeCommitApi;
+  review?: ReviewApi;
   ci?: CiApi;
+  /** The answer to every question. */
+  confirm?: boolean;
   config?: Config | Error;
   env?: Record<string, string>;
   state?: FakeState;
@@ -30,6 +41,7 @@ async function cli(args: string[], setup: Setup = {}) {
   const confirms: string[] = [];
   const apiOptions: object[] = [];
   const ciOptions: object[] = [];
+  const reviewOptions: object[] = [];
   const reviews: ReviewRequest[] = [];
   const tops: TopRequest[] = [];
   const deps: Deps = {
@@ -41,7 +53,7 @@ async function cli(args: string[], setup: Setup = {}) {
       interactive: setup.interactive ?? false,
       confirm: async (question) => {
         confirms.push(question);
-        return true;
+        return setup.confirm ?? true;
       },
       edit: setup.edit ?? (async (t) => t),
       readFile: async (path) => setup.files?.[path] ?? null,
@@ -51,6 +63,10 @@ async function cli(args: string[], setup: Setup = {}) {
     createApi: async (o) => {
       apiOptions.push(o);
       return setup.api ?? fakeApi();
+    },
+    createReviewApi: async (o) => {
+      reviewOptions.push(o);
+      return setup.review ?? fakeReviewApi();
     },
     createCiApi: async (o) => {
       ciOptions.push(o);
@@ -75,6 +91,7 @@ async function cli(args: string[], setup: Setup = {}) {
     confirms,
     apiOptions,
     ciOptions,
+    reviewOptions,
     reviews,
     tops,
   };
@@ -754,6 +771,434 @@ describe("pr comment", () => {
   });
 });
 
+const thread = (
+  comments: object[],
+  location: CommentThread["location"] = null,
+  outdated = false,
+) => ({
+  location,
+  ...(outdated ? { outdated } : {}),
+  comments,
+});
+const commentsOf6 = () => [
+  thread([
+    {
+      commentId: "k1",
+      content: "Why \x1b[2Jthis?\nSecond line.",
+      authorArn: "arn:aws:iam::123456789012:user/bob",
+      creationDate: new Date("2026-11-03T00:00:00Z"),
+    },
+    {
+      commentId: "k2",
+      content: "Because.",
+      authorArn: "arn:aws:iam::123456789012:user/me",
+      creationDate: new Date("2026-11-03T01:00:00Z"),
+      inReplyTo: "k1",
+    },
+  ]),
+  thread(
+    [
+      {
+        commentId: "k3",
+        authorArn: "arn:aws:iam::123456789012:user/me",
+        creationDate: new Date("2026-11-04T00:00:00Z"),
+        deleted: true,
+      },
+    ],
+    { filePath: "src/a.ts", filePosition: 12, relativeFileVersion: "BEFORE" },
+    true,
+  ),
+];
+
+describe("pr comment on a line, as a reply, edited or deleted", () => {
+  it("comments on a line of the new side, and of the old with --before", async () => {
+    const review = fakeReviewApi();
+    const r = await cli(["pr", "comment", "6", "--path", "src/a.ts", "--line", "3", "-b", "Nit"], {
+      api: commentApi(),
+      review,
+    });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")[0]).toBe("Commented on src/a.ts:3 in #6 Add ^[[2Jthing");
+    const old = await cli(
+      ["pr", "comment", "6", "--path", "a", "--line", "1", "--before", "-b", "Old"],
+      { api: commentApi(), review },
+    );
+    expect(old.out.split("\n")[0]).toBe("Commented on a:1 (before) in #6 Add ^[[2Jthing");
+    expect(review.writes).toEqual(["comment 6 src/a.ts:3:AFTER Nit", "comment 6 a:1:BEFORE Old"]);
+    expect(r.reviewOptions).toEqual([{ region: "ap-northeast-1" }]);
+  });
+
+  it("prints an inline comment's place in JSON", async () => {
+    const r = await cli(["pr", "comment", "6", "--path", "a", "--line", "2", "-b", "x", "--json"], {
+      api: commentApi(),
+    });
+    expect(json(r.out)).toMatchObject({
+      action: "comment",
+      commentId: "n1",
+      location: { path: "a", line: 2, side: "after" },
+      pullRequest: { id: "6" },
+    });
+  });
+
+  it("does not open the review client for a comment on the whole PR", async () => {
+    const r = await cli(["pr", "comment", "6", "-b", "x"], { api: commentApi() });
+    expect(r.reviewOptions).toEqual([]);
+  });
+
+  it("replies to a comment of the PR", async () => {
+    const review = fakeReviewApi(commentsOf6());
+    const r = await cli(["pr", "comment", "6", "--reply-to", "k1", "-b", "Thanks", "--json"], {
+      api: commentApi(),
+      review,
+    });
+    expect(r.code).toBe(0);
+    expect(review.writes).toEqual(["reply k1 Thanks"]);
+    expect(json(r.out)).toMatchObject({ action: "reply", commentId: "n1", inReplyTo: "k1" });
+  });
+
+  it("refuses a comment id that is not on the PR, before writing", async () => {
+    const review = fakeReviewApi(commentsOf6());
+    for (const flag of ["--reply-to", "--edit", "--delete"]) {
+      const r = await cli(
+        ["pr", "comment", "6", flag, "nope", ...(flag === "--delete" ? ["--yes"] : ["-b", "x"])],
+        {
+          api: commentApi(),
+          review,
+        },
+      );
+      expect(r).toMatchObject({
+        code: 1,
+        err: "lazycc: #6 has no comment nope. Run `lazycc pr view 6 --comments` for the ids.",
+      });
+    }
+    expect(review.writes).toEqual([]);
+  });
+
+  it("edits a comment, starting the editor from its text", async () => {
+    const review = fakeReviewApi(commentsOf6());
+    const edits: string[] = [];
+    const r = await cli(["pr", "comment", "6", "--edit", "k2"], {
+      api: commentApi(),
+      review,
+      interactive: true,
+      edit: async (text) => {
+        edits.push(text);
+        return "Because it is faster.\n";
+      },
+    });
+    expect(r.code).toBe(0);
+    expect(edits).toEqual(["Because."]);
+    expect(review.writes).toEqual(["edit k2 Because it is faster."]);
+    expect(r.out.split("\n")[0]).toBe("Edited comment k2 on #6 Add ^[[2Jthing");
+  });
+
+  it("gives up on an unchanged edit, and on a deleted comment", async () => {
+    const review = fakeReviewApi(commentsOf6());
+    const untouched = await cli(["pr", "comment", "6", "--edit", "k1"], {
+      api: commentApi(),
+      review,
+      interactive: true,
+    });
+    expect(untouched.err).toBe("lazycc: Aborted: the comment is unchanged.");
+    const same = await cli(["pr", "comment", "6", "--edit", "k2", "-b", "Because."], {
+      api: commentApi(),
+      review,
+    });
+    expect(same).toMatchObject({ code: 1, err: "lazycc: Aborted: the comment is unchanged." });
+    const gone = await cli(["pr", "comment", "6", "--edit", "k3", "-b", "x"], {
+      api: commentApi(),
+      review,
+    });
+    expect(gone).toMatchObject({ code: 1, err: "lazycc: Comment k3 is deleted." });
+    expect(review.writes).toEqual([]);
+  });
+
+  it("deletes after asking on a terminal, and with --yes without asking", async () => {
+    const review = fakeReviewApi(commentsOf6());
+    const asked = await cli(["pr", "comment", "6", "--delete", "k1"], {
+      api: commentApi(),
+      review,
+      interactive: true,
+    });
+    expect(asked.confirms).toEqual(["Delete comment k1 (bob: Why ^[[2Jthis?)?"]);
+    expect(asked.out.split("\n")[0]).toBe("Deleted comment k1 on #6 Add ^[[2Jthing");
+    const r = await cli(["pr", "comment", "6", "--delete", "k2", "--yes", "--json"], {
+      api: commentApi(),
+      review,
+    });
+    expect(r.confirms).toEqual([]);
+    expect(json(r.out)).toMatchObject({ action: "delete", commentId: "k2" });
+    expect(review.writes).toEqual(["delete k1", "delete k2"]);
+  });
+
+  it("keeps the comment when the question is declined, or it is already deleted", async () => {
+    const review = fakeReviewApi(commentsOf6());
+    const deps = { api: commentApi(), review, interactive: true };
+    const declined = await cli(["pr", "comment", "6", "--delete", "k1"], {
+      ...deps,
+      confirm: false,
+    });
+    expect(declined).toMatchObject({
+      code: 1,
+      err: "lazycc: Aborted: the comment was not deleted.",
+    });
+    const gone = await cli(["pr", "comment", "6", "--delete", "k3"], deps);
+    expect(gone).toMatchObject({ code: 1, err: "lazycc: Comment k3 is already deleted." });
+    expect(review.writes).toEqual([]);
+  });
+
+  it.each([
+    [["--reply-to", "k1", "--edit", "k2"], "--reply-to and --edit cannot be used together"],
+    [["--edit", "", "-b", "x"], "--edit needs a comment id"],
+    [
+      ["--reply-to", "k1", "--path", "a", "--line", "1"],
+      "--path and --line cannot be used with --reply-to",
+    ],
+    [["--path", "a", "-b", "x"], "--path needs --line"],
+    [["--line", "1", "-b", "x"], "--line needs --path"],
+    [["--before", "-b", "x"], "--line needs --path"],
+    [["--path", "", "--line", "3", "-b", "x"], "--path needs a file path"],
+    [["--path", "a", "--line", "0", "-b", "x"], "--line must be a positive integer: 0"],
+    [["--path", "a", "--line", "1e1", "-b", "x"], "--line must be a positive integer: 1e1"],
+    [["--yes", "-b", "x"], "--yes goes with --delete"],
+    [["--delete", "k1", "--yes", "-b", "x"], "--delete takes no --body or --body-file"],
+    [["--delete", "k1"], "Not a terminal: pass --yes to delete without confirming"],
+    [["--reply-to", "k1"], "Not a terminal: pass --body or --body-file"],
+  ])("exits 2 for %j without calling AWS", async (flags, message) => {
+    const r = await cli(["pr", "comment", "6", ...flags], { api: commentApi() });
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(message);
+    expect(r.apiOptions).toEqual([]);
+  });
+});
+
+describe("pr view --comments", () => {
+  it("prints the threads with the ids pr comment takes", async () => {
+    const r = await cli(["pr", "view", "6", "--comments"], {
+      api: commentApi(),
+      review: fakeReviewApi(commentsOf6()),
+    });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n").slice(-13)).toEqual([
+      "",
+      "Comments:",
+      "",
+      "General",
+      "  bob  2026-11-03T00:00:00Z  k1",
+      "    Why ^[[2Jthis?",
+      "    Second line.",
+      "    me  2026-11-03T01:00:00Z  k2",
+      "      Because.",
+      "",
+      "src/a.ts:12 (before) (outdated)",
+      "  me  2026-11-04T00:00:00Z  k3",
+      "    (deleted)",
+    ]);
+  });
+
+  it("says when there are none, and prints on a terminal too", async () => {
+    const r = await cli(["pr", "view", "6", "--comments"], {
+      api: commentApi(),
+      interactive: true,
+    });
+    expect(r.reviews).toEqual([]);
+    expect(r.out.split("\n").slice(-2)).toEqual(["", "No comments."]);
+  });
+
+  it("adds the comments to the JSON, one entry each", async () => {
+    const r = await cli(["pr", "view", "6", "--comments", "--json"], {
+      api: commentApi(),
+      review: fakeReviewApi(commentsOf6()),
+    });
+    const out = json(r.out);
+    expect(out).toMatchObject({ id: "6", checks: null });
+    expect(out.comments).toEqual([
+      {
+        id: "k1",
+        author: "arn:aws:iam::123456789012:user/bob",
+        content: "Why \x1b[2Jthis?\nSecond line.",
+        deleted: false,
+        inReplyTo: null,
+        location: null,
+        outdated: false,
+        createdAt: "2026-11-03T00:00:00Z",
+        updatedAt: null,
+      },
+      expect.objectContaining({ id: "k2", inReplyTo: "k1" }),
+      expect.objectContaining({
+        id: "k3",
+        content: null,
+        deleted: true,
+        location: { path: "src/a.ts", line: 12, side: "before" },
+        outdated: true,
+      }),
+    ]);
+  });
+
+  it("leaves comments out of the JSON without the flag", async () => {
+    const r = await cli(["pr", "view", "6", "--json"], { api: commentApi() });
+    expect(json(r.out).comments).toBeUndefined();
+    expect(r.reviewOptions).toEqual([]);
+  });
+});
+
+const detail = (sourceCommit: string) => ({
+  getPullRequestDetail: async () => ({
+    pullRequest: {
+      pullRequestId: "6",
+      pullRequestTargets: [{ destinationCommit: "d1", sourceCommit }],
+    },
+    differences: [{ afterBlob: { blobId: "b2", path: "a.ts" } }],
+    commentThreads: [],
+  }),
+});
+
+describe("pr drafts", () => {
+  const tip = { beforeCommitId: "d1", afterCommitId: "s1" };
+  const KEY = "ap-northeast-1/123456789012/6";
+  const inline = (lineText: string, commits = tip) =>
+    newDraft(
+      "Rename this.",
+      {
+        kind: "inline",
+        location: { filePath: "a.ts", filePosition: 2, relativeFileVersion: "AFTER", lineText },
+      },
+      commits,
+    );
+  const reply = newDraft(
+    "Agreed.",
+    { kind: "reply", inReplyTo: "k1", replyTo: { author: "bob", excerpt: "Why?" } },
+    tip,
+  );
+  const general = newDraft("Looks good\nover all.", { kind: "general" }, tip);
+  function withDrafts(...drafts: unknown[]) {
+    const state = fakeState();
+    state.draftLists.set(KEY, JSON.parse(JSON.stringify(drafts)));
+    return state;
+  }
+
+  it("lists the PR's drafts in posting order", async () => {
+    const d = inline("let x");
+    const r = await cli(["pr", "drafts", "6"], {
+      api: commentApi(),
+      state: withDrafts(general, d, reply),
+    });
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")).toEqual([
+      `${general.id.slice(0, 8)}  general       Looks good`,
+      `${d.id.slice(0, 8)}  a.ts:2        Rename this.`,
+      `${reply.id.slice(0, 8)}  reply to bob  Agreed.`,
+    ]);
+    expect(r.reviewOptions).toEqual([]);
+  });
+
+  it("lists them as JSON", async () => {
+    const d = inline("let x");
+    const r = await cli(["pr", "drafts", "6", "--json"], {
+      api: commentApi(),
+      state: withDrafts(d, reply),
+    });
+    expect(json(r.out)).toEqual([
+      {
+        id: d.id,
+        kind: "inline",
+        content: "Rename this.",
+        createdAt: d.createdAt,
+        location: { path: "a.ts", line: 2, side: "after" },
+        inReplyTo: null,
+        problem: null,
+      },
+      expect.objectContaining({ kind: "reply", inReplyTo: "k1", location: null }),
+    ]);
+  });
+
+  it("says when there are none", async () => {
+    const r = await cli(["pr", "drafts", "6", "--submit"], { api: commentApi() });
+    expect(r).toMatchObject({ code: 0, out: "", err: "No drafts on #6." });
+    expect(r.reviewOptions).toEqual([]);
+  });
+
+  it("posts them in order with --submit, and keeps none", async () => {
+    const state = withDrafts(general, inline("let x"), reply);
+    const review = fakeReviewApi([], detail("s1"));
+    const r = await cli(["pr", "drafts", "6", "--submit"], { api: commentApi(), review, state });
+    expect(r.code).toBe(0);
+    expect(review.writes).toEqual([
+      "comment 6 Looks good\nover all.",
+      "comment 6 a.ts:2:AFTER Rename this.",
+      "reply k1 Agreed.",
+    ]);
+    expect(r.out.split("\n")[0]).toBe("Posted 3 drafts on #6 Add ^[[2Jthing");
+    expect(state.draftLists.has(KEY)).toBe(false);
+  });
+
+  it("leaves a draft whose line changed in new commits, and exits 1", async () => {
+    const state = withDrafts(inline("let x"), general);
+    // Outside a clone the line is read from CodeCommit.
+    const review = fakeReviewApi([], detail("s2"), { b2: "one\nlet y\n" });
+    const r = await cli(
+      ["pr", "drafts", "6", "-R", "demo", "--region", "ap-northeast-1", "--submit", "--json"],
+      {
+        api: commentApi(),
+        review,
+        git: { topLevel: async () => null },
+        state,
+      },
+    );
+    expect(r.code).toBe(1);
+    expect(review.writes).toEqual(["comment 6 Looks good\nover all."]);
+    expect(json(r.out)).toMatchObject({
+      posted: 1,
+      remaining: [{ kind: "inline", problem: { kind: "moved" } }],
+    });
+    expect(r.err).toBe(
+      "lazycc: 1 draft not posted: its line changed in new commits. Check it in `lazycc pr view 6` (D).",
+    );
+    expect(state.draftLists.get(KEY)).toHaveLength(1);
+  });
+
+  it("moves a draft onto new commits when its line still reads the same", async () => {
+    // Inside a clone the line is read with git, as the review screen reads it.
+    const review = fakeReviewApi([], detail("s2"));
+    const r = await cli(["pr", "drafts", "6", "--submit"], {
+      api: commentApi(),
+      review,
+      git: { blob: async () => Buffer.from("one\r\nlet x\r\n") },
+      state: withDrafts(inline("let x")),
+    });
+    expect(r.code).toBe(0);
+    expect(review.writes).toEqual(["comment 6 a.ts:2:AFTER Rename this."]);
+  });
+
+  it("stops at the first refusal, keeping it and the rest", async () => {
+    const state = withDrafts(general, reply);
+    const review = fakeReviewApi([], {
+      ...detail("s1"),
+      postComment: async () => {
+        throw Object.assign(new Error("too long"), {
+          name: "CommentContentSizeLimitExceededException",
+          $metadata: { httpStatusCode: 400 },
+        });
+      },
+    });
+    const r = await cli(["pr", "drafts", "6", "--submit"], { api: commentApi(), review, state });
+    expect(r.code).toBe(1);
+    expect(r.out.split("\n")[0]).toBe("Posted 0 drafts on #6 Add ^[[2Jthing");
+    expect(r.err).toBe(
+      `lazycc: stopped at draft ${general.id.slice(0, 8)}: The comment is over CodeCommit's 10,240 character limit.`,
+    );
+    expect(state.draftLists.get(KEY)).toHaveLength(2);
+  });
+
+  it("says when drafts written by another version are kept", async () => {
+    const r = await cli(["pr", "drafts", "6"], {
+      api: commentApi(),
+      state: withDrafts(general, { id: "x", future: true }),
+    });
+    expect(r.err).toBe("lazycc: 1 draft written by another lazycc version kept, not shown.");
+  });
+});
+
 describe("pr approve", () => {
   it("approves, and revokes with --revoke", async () => {
     const a = fakeApi([pullRequest({ id: "6" })]);
@@ -1284,6 +1729,111 @@ describe("branch", () => {
       },
     });
     expect(outcome).toEqual({ message: expect.stringContaining("aws sso login --profile dev") });
+  });
+});
+
+function deleting(prs = [pullRequest({ id: "3", sourceBranch: "topic" })], tips = ["r0ffee"]) {
+  const deleted: string[] = [];
+  let read = 0;
+  const api = fakeApi(prs, {
+    branchCommit: async (_repo, branch) =>
+      branch === "missing" ? undefined : tips[Math.min(read++, tips.length - 1)],
+    deleteBranch: async (repo, branch) => void deleted.push(`${repo}/${branch}`),
+  });
+  return { api, deleted };
+}
+
+describe("branch delete", () => {
+  it("deletes on CodeCommit after asking, and drops origin/<name>", async () => {
+    const { api, deleted } = deleting();
+    const dropped: string[] = [];
+    const r = await cli(["branch", "delete", "old"], {
+      api,
+      interactive: true,
+      git: { dropRemoteBranch: async (b) => void dropped.push(b) },
+    });
+    expect(r.code).toBe(0);
+    expect(r.confirms).toEqual(["Delete old (r0ffee) on CodeCommit?"]);
+    expect(r.out).toBe("Deleted old (r0ffee) on CodeCommit.");
+    expect(deleted).toEqual(["demo/old"]);
+    expect(dropped).toEqual(["old"]);
+  });
+
+  it("deletes with --yes without asking, and prints JSON", async () => {
+    const { api, deleted } = deleting();
+    const r = await cli(["branch", "delete", "old", "--yes", "--json"], { api });
+    expect(r.confirms).toEqual([]);
+    expect(json(r.out)).toEqual({
+      repository: "demo",
+      branch: "old",
+      commit: "r0ffee",
+      deleted: true,
+    });
+    expect(deleted).toEqual(["demo/old"]);
+  });
+
+  it.each([
+    ["main", "main is the default branch."],
+    ["topic", "topic has an open pull request (#3)."],
+    ["missing", "demo has no branch named missing."],
+  ])("refuses %s before asking", async (name, message) => {
+    const { api, deleted } = deleting();
+    const r = await cli(["branch", "delete", name], { api, interactive: true });
+    expect(r).toMatchObject({ code: 1, err: `lazycc: ${message}`, confirms: [] });
+    expect(deleted).toEqual([]);
+  });
+
+  it("keeps a branch a PR was opened from while the question was open", async () => {
+    // The tip is read a second time after the answer; the PR exists from then on.
+    let tipReads = 0;
+    const deleted: string[] = [];
+    const api = fakeApi([], {
+      branchCommit: async () => (tipReads++, "r0ffee"),
+      listPullRequestIds: async () => (tipReads > 1 ? ["9"] : []),
+      getPullRequests: async (ids) => ids.map((id) => pullRequest({ id, sourceBranch: "old" })),
+      deleteBranch: async (_r, b) => void deleted.push(b),
+    });
+    const r = await cli(["branch", "delete", "old"], { api, interactive: true });
+    expect(r).toMatchObject({ code: 1, err: "lazycc: old has an open pull request (#9)." });
+    expect(r.confirms).toHaveLength(1);
+    expect(deleted).toEqual([]);
+  });
+
+  it("keeps a branch that moved while the question was open, or when declined", async () => {
+    const moved = deleting(undefined, ["r0ffee", "beef000"]);
+    const r = await cli(["branch", "delete", "old"], { api: moved.api, interactive: true });
+    expect(r).toMatchObject({
+      code: 1,
+      err: "lazycc: old has moved since the question (now beef000). Run it again.",
+    });
+    const gone = deleting(undefined, ["r0ffee", undefined as unknown as string]);
+    const g = await cli(["branch", "delete", "old"], { api: gone.api, interactive: true });
+    expect(g.err).toBe("lazycc: old no longer exists on CodeCommit.");
+    const declined = deleting();
+    const d = await cli(["branch", "delete", "old"], {
+      api: declined.api,
+      interactive: true,
+      confirm: false,
+    });
+    expect(d).toMatchObject({ code: 1, err: "lazycc: Aborted: the branch was not deleted." });
+    expect([...moved.deleted, ...gone.deleted, ...declined.deleted]).toEqual([]);
+  });
+
+  it.each([
+    [["branch", "delete"], "branch delete needs a branch name"],
+    [["branch", "delete", "old"], "Not a terminal: pass --yes to delete without confirming"],
+    [["branch", "delete", "a", "b", "--yes"], "Unexpected argument: b"],
+  ])("exits 2 for %j without calling AWS", async (args, message) => {
+    const r = await cli(args);
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(message);
+    expect(r.apiOptions).toEqual([]);
+  });
+
+  it("prints its usage with --help", async () => {
+    const r = await cli(["branch", "delete", "--help"]);
+    expect(r.out).toContain("lazycc branch delete <name> [--yes]");
+    expect(r.out).not.toContain("  lazycc branch\n");
   });
 });
 
